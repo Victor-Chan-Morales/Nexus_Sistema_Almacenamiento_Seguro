@@ -37,10 +37,6 @@ La figura expresa límites lógicos. No afirma que todos los módulos ya existan
 - **PostgreSQL**: fuente de verdad de identidad, permisos, plan, relaciones y metadatos.
 - **MinIO/S3**: bytes de objetos. PostgreSQL registra la clave de objeto y datos de la versión, no el contenido.
 
-## Capa visual
-
-La web implementa las pantallas y componentes bajo propiedad de Víctor. Debe usar Inter y los tokens de color definidos en `docs/IDENTIDAD_VISUAL.md` (`apps/web/src/app/globals.css`). Esa guía consolida la paleta compartida por el equipo; la correspondencia exacta de colores, tamaños y estados se confirma contra cada frame de Figma en `docs/FIGMA_MAP.md`. La API no depende de estilos ni de componentes visuales.
-
 ## Límites multi-tenant
 
 1. La API deriva `organizationId` del usuario autenticado y su membresía activa.
@@ -55,7 +51,7 @@ Files valida sesión, pertenencia, carpeta y límites; Storage persiste el objet
 ## Seguridad objetivo
 
 - Contraseñas con Argon2id; TLS para tráfico externo; tokens y sesiones revocables.
-- MFA/TOTP, verificación de correo, restablecimiento seguro de contraseña y RBAC según alcance y entregas.
+- Verificación de correo, restablecimiento seguro de contraseña, sesiones revocables y RBAC. MFA/TOTP queda fuera del alcance actual y se reserva para una fase posterior.
 - Cifrado autenticado de archivos en streaming con libsodium y diseño envelope DEK/KEK conforme a la propuesta.
 - Las claves reales se conservan fuera de PostgreSQL; la base almacena referencias y material cifrado permitido por el modelo.
 - Mensajes API no filtran stack traces, llaves, tokens, rutas internas ni contenido.
@@ -64,16 +60,6 @@ Files valida sesión, pertenencia, carpeta y límites; Storage persiste el objet
 ## Despliegue por etapas
 
 El objetivo final de la propuesta es separar dominios y permitir cloud, on-premises e híbrido. El alcance inicial usa dominios modulares y servicios locales de desarrollo. La decisión exacta de ejecutar una API modular en un proceso o varios contenedores debe seguir el ADR de 30% y aprobarse por el equipo; esto no modifica el objetivo final.
-
-## Revisión de responsabilidades en el diagrama de clases
-
-El diagrama nuevo añade servicios de aplicación para IAM, Billing e instalación. Esa separación es compatible con la arquitectura si cada servicio coordina su caso de uso dentro del dominio dueño y depende de interfaces pequeñas.
-
-No se adopta automáticamente DatabaseServiceClient como puerta de acceso común a todos los dominios. IAM, Billing, Files y Audit conservan puertos/repositorios propios; una implementación compartida puede usar la misma conexión/pool de PostgreSQL, pero no debe concentrar operaciones de negocio de todos los módulos ni hacer que un módulo consulte directamente las entidades internas de otro. La API de Files consulta a Billing mediante un contrato de cuota aprobado.
-
-Las asociaciones Usuario–Membresía–Organización, Usuario–Sesión, recurso–Destino y recurso–permiso deben seguir visibles en el modelo, con integridad referencial y validación de tenant. Un método que recibe organizationId como argumento no sustituye la autorización derivada de la sesión.
-
-AuthService debe ser el orquestador de autenticación; User mantiene únicamente las reglas propias del estado de la cuenta. Evitar duplicar login, MFA o recuperación entre entidad y servicio. La implementación de instalación, enlaces, cifrado completo y auditoría avanzada se entrega por hitos, según alcance aprobado. Véase `docs/revision-diagrama-clases.md`.
 
 ## SOLID aplicado
 
