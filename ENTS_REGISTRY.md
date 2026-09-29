@@ -35,7 +35,7 @@ Este registro es operativo. Actualícelo cuando cambie un responsable, ruta, int
 - `apps/api/src/modules/billing/**`: Anthony.
 - `apps/api/src/modules/files/**` y `storage/**`: Miguel, con revisión de integración de Víctor.
 - `apps/api/src/shared/**`, contrato, composición de app, Compose y migraciones integradas: Víctor coordina; cada módulo propone cambios.
-- `docs/**`: documentos de equipo; cambios de reglas/contratos requieren acuerdo y registro.
+- `docs/**`: documentos de equipo; cambios de reglas/contratos requieren acuerdo y registro. La guía de identidad visual es referencia común; Víctor custodia sus tokens web e integración con las pantallas.
 
 ## Interfaces entre módulos
 
