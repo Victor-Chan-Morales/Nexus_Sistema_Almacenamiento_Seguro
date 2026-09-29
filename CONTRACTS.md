@@ -1,6 +1,6 @@
 # Contratos compartidos de API y frontend
 
-> **Estado: PROPUESTO v0.1 — requiere revisión del equipo antes de implementarse.** Es una traducción inicial del recorrido acordado en el plan del 30%; no afirma que existan endpoints. Toda respuesta que aparezca en una página provisional debe llevar datos de maqueta claramente identificados hasta que API esté conectada.
+> **Estado: APROBADO v0.2 para el primer flujo.** Es una traducción del recorrido acordado; no afirma que todos los endpoints ya estén implementados. Toda respuesta que aparezca en una página provisional debe llevar datos de maqueta claramente identificados hasta que API esté conectada.
 
 ## Convenciones
 
@@ -35,15 +35,15 @@
 - Una solicitud de carga solo responde éxito después de que el objeto y sus metadatos estén confirmados.
 - La activación de plan es siempre `simulated: true`; no ejecutar ni pedir datos de tarjeta.
 
-## Contratos que deben decidirse antes de integrar
+## Decisiones operativas del contrato
 
-1. ¿Correo debe verificarse antes de iniciar sesión? El requisito final exige verificación; para demo local se necesita un flujo reproducible sin correo real.
-2. ¿La sesión se guarda en cookie httpOnly o en otro mecanismo? Sebastián define y Víctor lo consume; no persistir tokens sensibles en `localStorage` por conveniencia.
-3. Tamaño máximo/tipos de archivo permitidos por planes.
-4. Nombre y estado inicial del drive de demostración (el diccionario soporta personal y de equipo).
-5. Si cambiar de plan con suscripción vigente se bloquea o se tramita una revisión.
-6. Qué estados exactos muestra Figma y qué endpoints alimentan Dashboard.
+1. La verificación se realizará mediante `EmailService`; el token vence en 15 minutos y se usa una sola vez.
+2. La sesión usa refresh token en cookie `HttpOnly`; no se persisten tokens en `localStorage`.
+3. El límite inicial por archivo es 100 MB; el plan demo tiene 5 GB y 5 usuarios.
+4. El registro crea el Drive personal `Mi espacio` y la carpeta raíz `Archivos`.
+5. El cambio de plan se valida mediante `PLAN_REVISION`; una reducción no se acepta si el uso excede el nuevo límite.
+6. Los estados visuales definitivos se cotejan con Figma, sin cambiar las reglas de API aprobadas.
 
 ## Requisitos de identidad no implementados por este contrato del 30%
 
-El curso y la propuesta requieren verificación de correo, recuperación de contraseña, sesiones seguras, RBAC completo; MFA/TOTP queda fuera del alcance actual. Este primer contrato cubre solo lo mínimo que se decida para el flujo demostrable. Los demás endpoints deben diseñarse y aprobarse antes de su implementación, no simularse como ya terminados.
+El curso y la propuesta requieren verificación de correo, recuperación de contraseña, sesiones seguras y RBAC completo. MFA/TOTP queda fuera del alcance actual. Este contrato cubre el flujo aprobado; los endpoints posteriores deben conservar estas reglas y documentarse antes de implementarse.
