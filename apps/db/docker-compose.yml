@@ -1,0 +1,57 @@
+# Infraestructura de PostgreSQL.
+# Ver database/README.md para el flujo completo de comandos.
+#
+# Una base de datos compartida, el resto de microservicios hablan
+# con `database-service` por HTTP, usando DATABASE_SERVICE_URL — nunca DATABASE_URL.
+
+networks:
+  paas_backend:
+    name: paas_backend
+
+volumes:
+  postgres_data:
+
+services:
+  # Base de datos
+  postgres:
+    image: postgres:16-alpine
+    container_name: paas_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      # Solo para desarrollo
+      # Quitar este mapeo de puerto en producción; los servicios se conectan por la red interna.
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - paas_backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # Migraciones
+  migrate:
+    image: ghcr.io/amacneil/dbmate:latest
+    container_name: paas_db_migrate
+    profiles: ["tools"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      DBMATE_MIGRATIONS_DIR: /db/migrations
+      DBMATE_NO_DUMP_SCHEMA: "true"
+    volumes:
+      - ./database/migrations:/db/migrations:ro
+    networks:
+      - paas_backend
+    command: ["--no-dump-schema", "--wait", "up"]
+
+ 
