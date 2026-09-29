@@ -52,20 +52,6 @@ En el primer corte se permite un rol mínimo de administrador para la cuenta que
 9. El destino efectivo puede heredarse de organización/carpeta según la política; el cliente no puede sobrescribir destinos permitidos ni consultar credenciales.
 10. Las operaciones de lista, preview, descarga, eliminación, enlace y versión deben verificar tenant y permiso incluso si reciben UUID. El error de recurso ajeno no revela su existencia.
 
-## Consistencia estructural del modelo
-
-El diagrama de clases describe responsabilidades y relaciones, pero no reemplaza el diccionario ni aprueba por sí mismo una migración. Las asociaciones que limitan el acceso deben quedar visibles en el diagrama y protegidas con claves foráneas/índices en PostgreSQL:
-
-1. Usuario pertenece a organización mediante Membresía; una membresía pertenece a un usuario y una organización. Se mantiene la unicidad del par user_id + organization_id. Una sesión pertenece a un usuario.
-2. Cada drive, carpeta, archivo, destino, suscripción, solicitud de instalación e instalación tiene una organización propietaria o un camino inequívoco para validar ese tenant. No se autoriza por UUID solamente.
-3. Una carpeta tiene un drive y puede heredar el destino de la organización. Cada FileVersion conserva el destino donde se escribió y la referencia de llave usada si el cifrado está habilitado.
-4. FileVersion registra el tamaño real, checksum, object_key, uploaded_by y uploaded_at. El valor del navegador declarado nunca determina la cuota consumida.
-5. El modelo de Plan debe concordar con el catálogo: límite de almacenamiento, límite de usuarios y precio simulado. La unidad de persistencia/API y los campos descripción/vigencia deben resolverse entre el diccionario y CONTRACTS.md antes de crear migraciones.
-6. Todo AuditEvent conserva como mínimo organización, actor, acción, resultado, recurso si existe, correlation_id y hora UTC. Para la cadena por organización se guardan prev_hash y record_hash; no se guardan secretos ni contenido.
-7. Los servicios de aplicación pueden orquestar estos casos, pero no deben eliminar relaciones de pertenencia ni duplicar comportamiento entre servicio y entidad.
-
-La revisión del diagrama recibido y sus pendientes está en `docs/revision-diagrama-clases.md`. Las nuevas clases de instalación, MFA, recuperación, cifrado completo, enlaces y auditoría avanzada pertenecen al alcance final, salvo que el plan del hito las priorice explícitamente.
-
 ## Alcance funcional por corte
 
 ### Recorrido objetivo para 30%
@@ -79,7 +65,7 @@ La revisión del diagrama recibido y sus pendientes está en `docs/revision-diag
 
 ### Requerimientos del producto final que siguen vigentes
 
-- Verificar correo, recuperar contraseña, sesiones revocables, MFA/TOTP y RBAC completo.
+- Verificar correo, recuperar contraseña, sesiones revocables y RBAC completo. MFA/TOTP queda fuera del alcance actual y se conserva como mejora futura.
 - Versionado, papelera/recuperación, enlaces temporales protegidos y revocación.
 - Auditoría centralizada e integridad de registros.
 - Cifrado en streaming con libsodium y gestión Envelope DEK/KEK.
@@ -93,3 +79,18 @@ Si algo se pospone del 30%, anótelo como pendiente del siguiente corte; no lo d
 - Registrar operaciones críticas según política: login, cambios de permisos, carga, descarga, compartir y eliminación.
 - Guardar actor, organización, recurso, resultado, hora y correlation ID que sean necesarios; no guardar contraseñas, tokens completos, DEK/KEK ni contenido.
 - El objetivo de auditoría inmutable/hash-chain debe explicarse antes de presentar una implementación simple como cumplimiento completo.
+
+
+## Decisiones aprobadas en la revisión del modelo
+
+- Una cuenta puede pertenecer a varias organizaciones mediante `MEMBERSHIP`; no se repite el par usuario-organización.
+- Cada versión conserva el destino donde nació. Las carpetas pueden heredar el destino predeterminado de su organización.
+- Una organización mantiene una sola suscripción activa; los cambios de plan se validan antes de aplicarse.
+- Los permisos pueden asignarse a usuarios o equipos sobre archivos o carpetas. Si existen varios permisos, se aplica el nivel más alto.
+- Una carga solo crea una versión disponible después de confirmar tamaño real, integridad y cifrado. La idempotencia evita duplicados.
+- Los archivos eliminados lógicamente siguen ocupando cuota hasta su eliminación definitiva.
+- Las sesiones pueden coexistir en varios dispositivos; cambiar la contraseña revoca todas las sesiones activas.
+- MFA/TOTP no se implementará en el alcance actual por limitación de tiempo.
+- Los enlaces compartidos son de solo lectura, apuntan a una versión fija, vencen obligatoriamente y pueden revocarse.
+- La creación de usuario, organización, membresía, suscripción demo y cuota debe ser atómica.
+- Las reglas multi-tenant se validan en cada operación y ningún identificador enviado por el cliente sirve como prueba de autorización.
