@@ -1,6 +1,6 @@
 # Contratos compartidos de API y frontend
 
-> **Estado: PROPUESTO v0.2 — requiere revisión del equipo antes de implementarse.** Es una traducción inicial del recorrido acordado en el plan del 30%; no afirma que existan endpoints. Toda respuesta que aparezca en una página provisional debe llevar datos de maqueta claramente identificados hasta que API esté conectada.
+> **Estado: PROPUESTO v0.1 — requiere revisión del equipo antes de implementarse.** Es una traducción inicial del recorrido acordado en el plan del 30%; no afirma que existan endpoints. Toda respuesta que aparezca en una página provisional debe llevar datos de maqueta claramente identificados hasta que API esté conectada.
 
 ## Convenciones
 
@@ -44,17 +44,6 @@
 5. Si cambiar de plan con suscripción vigente se bloquea o se tramita una revisión.
 6. Qué estados exactos muestra Figma y qué endpoints alimentan Dashboard.
 
-## Reconciliación pendiente con el diagrama de clases
-
-La versión v0.2 registra aclaraciones para revisión; el contrato sigue **propuesto** y no se considera aprobado por la actualización del diagrama. El informe de comparación está en `docs/revision-diagrama-clases.md`.
-
-- La API presenta storageLimitBytes en bytes. El diccionario persiste storage_limit_gb; Billing debe convertir de forma determinista antes de responder y nunca mezclar unidades.
-- El contrato incluye userLimit, pero la clase Plan del SVG no lo muestra. Mantenerlo en la respuesta propuesta hasta que el equipo corrija el diagrama o apruebe otra decisión.
-- description y validityDays aparecen en la salida de catálogo propuesta, pero no están en la tabla PLAN del diccionario. No inventar columnas: aprobar la actualización del diccionario o ajustar el contrato antes de implementarlo.
-- La respuesta de carga debe informar sizeBytes real y uploadedAt. El modelo persistente FILE_VERSION debe incluir size_bytes, uploaded_by y uploaded_at según diccionario; cualquier nueva respuesta HTTP se acuerda con Files y Víctor antes de implementarla.
-- Los cambios de asociación Usuario–Membresía, Usuario–Sesión, Organización–Instalación, Carpeta/Versión–Destino y versión–llave son cambios de modelo interno. No cambian rutas HTTP automáticamente; actualizar este contrato solo si un consumidor externo necesita nuevos datos.
-- AuthService, BillingService e InstallationService son propuestas de organización interna. DatabaseServiceClient no se convierte en un endpoint ni en dependencia compartida de todos los módulos sin una decisión arquitectónica.
-
 ## Requisitos de identidad no implementados por este contrato del 30%
 
-El curso y la propuesta requieren verificación de correo, recuperación de contraseña, sesiones seguras, MFA/TOTP y RBAC completo. Este primer contrato cubre solo lo mínimo que se decida para el flujo demostrable. Los demás endpoints deben diseñarse y aprobarse antes de su implementación, no simularse como ya terminados.
+El curso y la propuesta requieren verificación de correo, recuperación de contraseña, sesiones seguras, RBAC completo; MFA/TOTP queda fuera del alcance actual. Este primer contrato cubre solo lo mínimo que se decida para el flujo demostrable. Los demás endpoints deben diseñarse y aprobarse antes de su implementación, no simularse como ya terminados.
