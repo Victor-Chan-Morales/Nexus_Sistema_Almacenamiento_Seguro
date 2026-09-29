@@ -1,0 +1,16 @@
+{
+  "name": "nexus-almacenamiento-seguro",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["apps/web"],
+  "engines": {
+    "node": ">=22 <27"
+  },
+  "scripts": {
+    "dev:web": "npm run dev --workspace @nexus/web",
+    "build:web": "npm run build --workspace @nexus/web",
+    "lint:web": "npm run lint --workspace @nexus/web",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down"
+  }
+}
