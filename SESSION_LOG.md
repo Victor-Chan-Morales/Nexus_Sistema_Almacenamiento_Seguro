@@ -27,3 +27,12 @@ Se aprobaron las reglas revisadas para organizaciones, membresías, archivos, ve
 ## 2026-09-29 — cierre de aclaraciones operativas
 
 Se aprobaron las propuestas 1 a 12: correo mediante EmailService, sesiones con access/refresh token, límites de archivos y cuota, Drive inicial, cambios de plan, rol Auditor, nombres y versiones, papelera, auditoría, instalación, contrato API y restricciones ER/migraciones. La consolidación está en `docs/decisions/ADR-003-detalles-operativos-aprobados.md`.
+
+
+## [2026-09-29] - Acuerdos Files y Storage MVP (30%)
+**Participante:** Miguel (rama: feature/miguel/files-storage-mvp)
+**Decisiones registradas:**
+1. **Alcance:** Se utilizarán las tablas de `files` de la migración original (drive, folder, file, file_version, destination, tenant_quota).
+2. **Cuota (Billing):** Se validará el límite en Bytes contra `files.tenant_quota`. Se responderá 402 `STORAGE_QUOTA_EXCEEDED` al llegar al 100%.
+3. **Huérfanos:** Si la inserción en BD falla tras subir a MinIO, Files ejecutará una compensación (`deleteFile`) para no dejar basura.
+4. **Idempotencia:** Confirmado en `CONTRACTS.md` el uso del header `Idempotency-Key` para la subida.
