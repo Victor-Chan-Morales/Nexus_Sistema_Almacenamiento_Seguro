@@ -20,26 +20,12 @@ El diccionario completo sigue siendo la referencia para la meta final. No creen 
 3. Identidad, plan y metadatos son SQL; contenido del archivo es object storage.
 4. `size_bytes` proviene de `FILE_VERSION`; el uso del dashboard no se ingresa manualmente.
 5. En el 30%, se puede guardar solo la primera versión por archivo; mantener una forma compatible con la futura entidad `FILE_VERSION`.
-6. No modelar ahora instalaciones, enlaces, equipos, auditoría completa, llaves, reservas concurrentes o política híbrida si el recorrido del 30% no las necesita. No eliminarlas del producto final.
-
-## Revisión del diagrama de clases compartido
-
-El diagrama actualizado agrega servicios de aplicación y cubre más capacidades del producto final. No reemplaza el modelo mínimo de este documento ni autoriza a crear todas sus entidades en el siguiente avance. La comparación técnica y las correcciones pendientes están en `docs/revision-diagrama-clases.md`.
-
-Para cualquier implementación del recorrido, deben permanecer explícitas estas relaciones y datos:
-
-- Usuario–Membresía–Organización y Usuario–Sesión, con claves foráneas y multiplicidad; la membresía conserva UNIQUE(user_id, organization_id).
-- Organización con sus drives, carpetas, archivos, destinos, suscripciones e instalaciones; cada consulta valida tenant en API.
-- Carpeta con destino efectivo opcional/heredado; FileVersion con destino inmutable de la versión y referencia de llave correspondiente.
-- FILE_VERSION incluye tamaño real, número secuencial, object_key, checksum, uploaded_by y uploaded_at, además del material cifrado/referencia de KEK cuando se implemente cifrado.
-- PLAN incluye los límites definidos por el diccionario. La conversión entre storage_limit_gb y storageLimitBytes debe ser determinista y documentada.
-- AUDIT_EVENT conserva organización, actor, recurso, resultado, correlation_id, occurred_at, prev_hash y record_hash en el alcance de auditoría.
-
-Estos puntos no amplían el avance por sí solos; indican condiciones de consistencia para las entidades que sí entren al corte.
+6. No modelar ahora instalaciones, enlaces, equipos, auditoría completa, llaves, reservas concurrentes o política híbrida si el recorrido del 30% no las necesita. No eliminarlas del producto final. MFA/TOTP queda fuera del alcance actual.
 
 ## Pendiente de validar
 
 - Si la primera unidad operativa será un drive personal o de equipo.
 - Cómo se representa el rol Auditor, que es stakeholder/rol en la propuesta pero no aparece como valor inicial en la tabla `ROLE` del diccionario.
-- Índice parcial/otra regla que limite a una suscripción activa por organización.
+- Implementar una restricción o índice parcial que limite a una suscripción activa por organización.
+- La revisión aprobada establece una sola suscripción activa por organización; la migración debe expresarlo con una restricción o índice parcial.
 - Restricciones únicas de nombre de carpeta por padre, soft-delete y política de cuotas.
