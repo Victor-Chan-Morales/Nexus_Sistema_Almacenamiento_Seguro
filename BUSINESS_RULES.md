@@ -94,3 +94,7 @@ Si algo se pospone del 30%, anótelo como pendiente del siguiente corte; no lo d
 - Los enlaces compartidos son de solo lectura, apuntan a una versión fija, vencen obligatoriamente y pueden revocarse.
 - La creación de usuario, organización, membresía, suscripción demo y cuota debe ser atómica.
 - Las reglas multi-tenant se validan en cada operación y ningún identificador enviado por el cliente sirve como prueba de autorización.
+
+## Detalles operativos aprobados
+
+Los valores concretos para correo, sesiones, límites, Drive inicial, planes, papelera, auditoría, instalación, API y migraciones están consolidados en `docs/decisions/ADR-003-detalles-operativos-aprobados.md`. Este ADR complementa las reglas anteriores.
