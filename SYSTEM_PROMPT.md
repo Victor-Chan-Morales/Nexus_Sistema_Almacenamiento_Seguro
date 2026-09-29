@@ -14,7 +14,8 @@ El stack base documentado es Next.js/TypeScript, NestJS/TypeScript, PostgreSQL 1
 4. `ARCHITECTURE.md` y ADR vigentes definen límites y dependencias.
 5. `ENTS_REGISTRY.md` asigna dueños y fronteras de módulos.
 6. Figma es la fuente visual. Si los frames no están disponibles en el repositorio, deje anotado qué comprobación falta y no invente un diseño como si estuviera aprobado.
-7. `SESSION_LOG.md` registra acuerdos y bloqueos recientes. Sus entradas no sustituyen una aprobación que falte.
+7. `docs/IDENTIDAD_VISUAL.md` es la referencia compartida para la paleta y la familia tipográfica Inter. Los usos semánticos sugeridos deben cotejarse con Figma.
+8. `SESSION_LOG.md` registra acuerdos y bloqueos recientes. Sus entradas no sustituyen una aprobación que falte.
 
 ## Reglas de trabajo
 
@@ -26,6 +27,7 @@ El stack base documentado es Next.js/TypeScript, NestJS/TypeScript, PostgreSQL 1
 - No guarde contraseñas, JWT, refresh tokens, secretos TOTP, DEK, KEK, credenciales, claves privadas ni archivos reales en Git, logs o mensajes de error.
 - No marque una acción como exitosa hasta que la operación correspondiente haya concluido. Etiquete claramente cualquier simulación.
 - No implemente pantallas nuevas ni cambie nombres/campos de Figma sin autorización del dueño del mockup.
+- Use los tokens CSS compartidos y la fuente Inter de `docs/IDENTIDAD_VISUAL.md`. No introduzca colores o fuentes de marca nuevos sin registrarlos y coordinarlos; valide cada pantalla contra su frame antes de considerarla aprobada.
 - Registre nuevas decisiones o bloqueos en `SESSION_LOG.md`; no sobrescriba entradas anteriores.
 - Si un requisito está incompleto o hay un conflicto, explique la duda con la ruta de archivo y el efecto, y continúe solo con trabajo independiente.
 
