@@ -22,10 +22,10 @@ El diccionario completo sigue siendo la referencia para la meta final. No creen 
 5. En el 30%, se puede guardar solo la primera versión por archivo; mantener una forma compatible con la futura entidad `FILE_VERSION`.
 6. No modelar ahora instalaciones, enlaces, equipos, auditoría completa, llaves, reservas concurrentes o política híbrida si el recorrido del 30% no las necesita. No eliminarlas del producto final. MFA/TOTP queda fuera del alcance actual.
 
-## Pendiente de validar
+## Decisiones operativas aprobadas
 
-- Si la primera unidad operativa será un drive personal o de equipo.
-- Cómo se representa el rol Auditor, que es stakeholder/rol en la propuesta pero no aparece como valor inicial en la tabla `ROLE` del diccionario.
-- Implementar una restricción o índice parcial que limite a una suscripción activa por organización.
-- La revisión aprobada establece una sola suscripción activa por organización; la migración debe expresarlo con una restricción o índice parcial.
-- Restricciones únicas de nombre de carpeta por padre, soft-delete y política de cuotas.
+- El registro crea el Drive personal `Mi espacio` y la carpeta raíz `Archivos`.
+- `Auditor` es un rol formal de solo lectura sobre la auditoría de su organización.
+- Una organización tiene como máximo una suscripción activa, mediante índice parcial o restricción equivalente.
+- Los nombres de carpeta son únicos dentro del mismo padre sin distinguir mayúsculas/minúsculas; la papelera usa borrado lógico y conserva cuota durante 30 días.
+- Los valores iniciales de cuota y archivo están en `docs/decisions/ADR-003-detalles-operativos-aprobados.md`.
