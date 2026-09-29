@@ -4,7 +4,7 @@
 
 1. Lea `SYSTEM_PROMPT.md`, `BUSINESS_RULES.md`, `CONTRACTS.md` y la entrada vigente de `SESSION_LOG.md`.
 2. Confirme en `ENTS_REGISTRY.md` quién es dueño de la carpeta/archivo.
-3. Busque el frame Figma asociado en `docs/FIGMA_MAP.md`.
+3. Busque el frame Figma asociado en `docs/FIGMA_MAP.md` y revise `docs/IDENTIDAD_VISUAL.md` para los colores y tipografía compartidos.
 4. Publique qué va a cambiar y qué contrato consume. Si no está acordado, marque la tarea como bloqueada por contrato, no lo invente en código.
 
 ## Ramas y commits
@@ -31,6 +31,7 @@ Coordinen antes de cambiar:
 - `package.json`, workspace, configuración común y `docker-compose.yml`.
 - `CONTRACTS.md`, `BUSINESS_RULES.md`, `ENTS_REGISTRY.md` y `docs/modelo-minimo.md`.
 - Esquema/migraciones compartidas y componentes compartidos de `apps/web/src/components`.
+- `docs/IDENTIDAD_VISUAL.md` y `apps/web/src/app/globals.css`: Víctor mantiene los tokens compartidos; propongan cambios en PR y registren cualquier actualización de la identidad visual.
 
 Un solo PR debe cambiar una misma migración. Los módulos envían una propuesta de migración al integrador; no editen la misma tabla/esquema concurrentemente.
 

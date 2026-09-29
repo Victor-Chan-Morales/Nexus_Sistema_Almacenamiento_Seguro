@@ -1,6 +1,6 @@
 # Mapa de mockups a rutas y contratos
 
-**Estado:** falta adjuntar el enlace/export de Figma. Esta tabla es un índice de preparación, no una especificación visual aprobada.
+**Estado:** falta adjuntar el enlace/export de Figma. Esta tabla es un índice de preparación, no una especificación visual aprobada. La paleta y la tipografía Inter compartidas por el equipo están documentadas en `docs/IDENTIDAD_VISUAL.md`.
 
 | ID y nombre exactos de Figma | Ruta | Responsable de frontend | Dominio API | Frame revisado | Campos / acciones confirmados | Estado |
 |---|---|---|---|---|---|---|
@@ -18,6 +18,7 @@ Anoten el nombre/ID exacto del frame, enlace navegable, captura aprobada, campos
 
 - [ ] Se puede encontrar el frame en el archivo compartido.
 - [ ] Texto, títulos, jerarquía, color, medidas y controles coinciden.
+- [ ] La paleta corresponde a `docs/IDENTIDAD_VISUAL.md`; Inter se aplica consistentemente y la geometría final se valida en el frame.
 - [ ] Se identificaron estado inicial, carga, vacío, error y éxito que aparezcan en Figma.
 - [ ] Cada botón tiene comportamiento contratado o está claramente marcado como pendiente.
 - [ ] No se agregaron datos de plan, nombres o límites de ejemplo como si fueran reales.

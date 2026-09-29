@@ -8,8 +8,9 @@ Repositorio inicial para el proyecto de Ingeniería de Software I. Nexus es una 
 
 1. Lean `SYSTEM_PROMPT.md`, `ARCHITECTURE.md`, `BUSINESS_RULES.md` y `CONTRIBUTING.md`.
 2. Revisen `ENTS_REGISTRY.md`, `CONTRACTS.md` y `docs/FIGMA_MAP.md` para saber quién es dueño de cada parte.
-3. Comparen cada ruta de la web con Figma. No inventen campos ni estados que cambien el diseño aprobado.
-4. Acuerden los contratos y la decisión de despliegue de 30% en el equipo antes de que agentes implementen módulos en paralelo.
+3. Consulten `docs/IDENTIDAD_VISUAL.md` para la paleta acordada y la tipografía Inter.
+4. Comparen cada ruta de la web con Figma. No inventen campos ni estados que cambien el diseño aprobado.
+5. Acuerden los contratos y la decisión de despliegue de 30% en el equipo antes de que agentes implementen módulos en paralelo.
 
 ## Stack base
 
@@ -65,9 +66,10 @@ apps/
     src/shared/        identidad, errores y utilidades compartidas aprobadas
     src/               README de arranque; se completa en el trabajo de API
     README.md
- docs/
-   decisions/          decisiones arquitectónicas con fecha y estado
- .github/              plantillas para PR e incidencias
+docs/
+  decisions/            decisiones arquitectónicas con fecha y estado
+  IDENTIDAD_VISUAL.md   colores, tipografía y reglas para pantallas
+.github/                plantillas para PR e incidencias
 ```
 
 ## Fuentes funcionales
