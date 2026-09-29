@@ -2,6 +2,16 @@
 
 Registro dinámico de decisiones, acuerdos pendientes y bloqueos. Añada entradas nuevas al principio; no borre historia. Las propuestas se marcan como pendientes hasta que el equipo las acepte.
 
+## 2026-09-28 — revisión del diagrama de clases
+
+- **Estado:** el SVG nuevo fue comparado con DiagramaClases.svg; su aprobación como modelo de implementación queda pendiente.
+- **Cambio observado:** pasa de 29 a 33 clases; agrega AuthService, BillingService, InstallationService y DatabaseServiceClient. No se detectaron cambios en atributos de clases existentes; sí se trasladaron métodos y cambiaron/eliminaron asociaciones.
+- **Decisiones de documentación:** se mantienen las fronteras IAM (Sebastián), Billing (Anthony), Files/Storage (Miguel) e integración/frontend (Víctor). InstallationService queda sin dueño hasta acuerdo. DatabaseServiceClient no se acepta como servicio de aplicación transversal; repositorios/puertos permanecen por dominio.
+- **Pendientes bloqueantes:** restaurar/definir asociaciones Usuario–Membresía/Sesión, tenant–instalación, carpeta/versión–destino, versión–llave, usuario/equipo–permisos; agregar campos persistentes faltantes de FILE_VERSION y AUDIT_EVENT.
+- **Pendiente Billing:** alinear storage_limit_gb del diccionario con storageLimitBytes del contrato y resolver userLimit, description y validityDays antes de migrar. No inventar columnas ni cambiar unidades en frontend.
+- **Alcance:** MFA, recuperación, instalación, cifrado completo, enlaces y auditoría avanzada siguen en el producto final, no se consideran parte automática del siguiente hito.
+- **Referencia:** `docs/revision-diagrama-clases.md` contiene comparación y criterio de cierre.
+
 ## 2026-09-29 — identidad visual compartida
 
 - **Estado:** propuesta implementada en rama para revisión mediante PR.
