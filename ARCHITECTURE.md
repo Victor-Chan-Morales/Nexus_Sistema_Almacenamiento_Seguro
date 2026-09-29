@@ -37,6 +37,10 @@ La figura expresa límites lógicos. No afirma que todos los módulos ya existan
 - **PostgreSQL**: fuente de verdad de identidad, permisos, plan, relaciones y metadatos.
 - **MinIO/S3**: bytes de objetos. PostgreSQL registra la clave de objeto y datos de la versión, no el contenido.
 
+## Capa visual
+
+La web implementa las pantallas y componentes bajo propiedad de Víctor. Debe usar Inter y los tokens de color definidos en `docs/IDENTIDAD_VISUAL.md` (`apps/web/src/app/globals.css`). Esa guía consolida la paleta compartida por el equipo; la correspondencia exacta de colores, tamaños y estados se confirma contra cada frame de Figma en `docs/FIGMA_MAP.md`. La API no depende de estilos ni de componentes visuales.
+
 ## Límites multi-tenant
 
 1. La API deriva `organizationId` del usuario autenticado y su membresía activa.
