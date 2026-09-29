@@ -1,9 +1,10 @@
 # Mapa de mockups a rutas y contratos
 
-**Estado:** falta adjuntar el enlace/export de Figma. Esta tabla es un índice de preparación, no una especificación visual aprobada. La paleta y la tipografía Inter compartidas por el equipo están documentadas en `docs/IDENTIDAD_VISUAL.md`.
+**Estado:** se recibió el enlace del archivo Figma; la comparación visual y la validación de rutas aún están pendientes. Este mapa no sustituye la revisión de cada frame. La paleta y la tipografía Inter están documentadas en `docs/IDENTIDAD_VISUAL.md`.
 
-| ID y nombre exactos de Figma | Ruta | Responsable de frontend | Dominio API | Frame revisado | Campos / acciones confirmados | Estado |
+| ID y nombre del frame | Ruta propuesta | Responsable de frontend | Dominio API | Frame revisado | Campos / acciones confirmados | Estado |
 |---|---|---|---|---|---|---|
+| [Landing de servicios y acceso al registro — nodo 107-10592](https://www.figma.com/design/rgO3iIMUvvWDyl6GQa6umF/ProyectoIngenieriaSoftware?node-id=107-10592&t=AjEQaNl10oWRPfdD-1) | `/` (confirmar ruta) | Víctor | Billing / registro | No | Presenta los servicios y permite continuar a crear una cuenta, según Víctor | Enlace recibido; revisión pendiente |
 | Pendiente: inicio de sesión | `/login` | Víctor | IAM — Sebastián | No | Pendiente | Estructura de ruta |
 | Pendiente: registro | `/registro` | Víctor | IAM — Sebastián | No | Pendiente | Estructura de ruta |
 | Pendiente: planes/contratación | `/planes` | Víctor | Billing — Anthony | No | Pendiente | Estructura de ruta |
@@ -12,7 +13,7 @@
 
 ## Cómo completar cada fila
 
-Anoten el nombre/ID exacto del frame, enlace navegable, captura aprobada, campos (tipo/obligatorio), botones, resultado/estado, ruta web, endpoints y responsable. Marquen “revisado” solo después de comparar la implementación con Figma.
+Anoten el nombre/ID exacto del frame, enlace navegable, captura aprobada, campos (tipo/obligatorio), botones, resultado/estado, ruta web, endpoints y responsable. Marquen “revisado” solo después de comparar la implementación con Figma. En la landing, confirmar si la acción de contratación deriva a planes o inicia directamente el registro.
 
 ## Checklist por pantalla
 

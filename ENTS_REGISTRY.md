@@ -37,6 +37,19 @@ Este registro es operativo. Actualícelo cuando cambie un responsable, ruta, int
 - `apps/api/src/shared/**`, contrato, composición de app, Compose y migraciones integradas: Víctor coordina; cada módulo propone cambios.
 - `docs/**`: documentos de equipo; cambios de reglas/contratos requieren acuerdo y registro. La guía de identidad visual es referencia común; Víctor custodia sus tokens web e integración con las pantallas.
 
+## Clases nuevas del diagrama en revisión
+
+La clase del diagrama no cambia la propiedad del módulo ni amplía automáticamente el hito:
+
+| Clase propuesta | Dueño para implementación | Frontera |
+|---|---|---|
+| AuthService | Sebastián | IAM; entrega contrato de sesión y errores a Víctor. |
+| BillingService | Anthony | Billing; publica plan vigente y límite para Dashboard/Files. |
+| InstallationService | Pendiente de acuerdo | El equipo define responsable y alcance antes de implementarlo. |
+| DatabaseServiceClient | No aprobado como servicio compartido | Mantener repositorios/puertos por dominio; Víctor coordina solo la composición y conexión común. |
+
+Las relaciones Usuario–Membresía–Sesión, tenant–recursos, recurso–destino y permiso–sujeto deben conservarse aunque se muevan métodos a servicios. Los hallazgos completos están en `docs/revision-diagrama-clases.md`.
+
 ## Interfaces entre módulos
 
 | Proveedor | Consumidor | Interfaz mínima |

@@ -22,6 +22,21 @@ El diccionario completo sigue siendo la referencia para la meta final. No creen 
 5. En el 30%, se puede guardar solo la primera versión por archivo; mantener una forma compatible con la futura entidad `FILE_VERSION`.
 6. No modelar ahora instalaciones, enlaces, equipos, auditoría completa, llaves, reservas concurrentes o política híbrida si el recorrido del 30% no las necesita. No eliminarlas del producto final.
 
+## Revisión del diagrama de clases compartido
+
+El diagrama actualizado agrega servicios de aplicación y cubre más capacidades del producto final. No reemplaza el modelo mínimo de este documento ni autoriza a crear todas sus entidades en el siguiente avance. La comparación técnica y las correcciones pendientes están en `docs/revision-diagrama-clases.md`.
+
+Para cualquier implementación del recorrido, deben permanecer explícitas estas relaciones y datos:
+
+- Usuario–Membresía–Organización y Usuario–Sesión, con claves foráneas y multiplicidad; la membresía conserva UNIQUE(user_id, organization_id).
+- Organización con sus drives, carpetas, archivos, destinos, suscripciones e instalaciones; cada consulta valida tenant en API.
+- Carpeta con destino efectivo opcional/heredado; FileVersion con destino inmutable de la versión y referencia de llave correspondiente.
+- FILE_VERSION incluye tamaño real, número secuencial, object_key, checksum, uploaded_by y uploaded_at, además del material cifrado/referencia de KEK cuando se implemente cifrado.
+- PLAN incluye los límites definidos por el diccionario. La conversión entre storage_limit_gb y storageLimitBytes debe ser determinista y documentada.
+- AUDIT_EVENT conserva organización, actor, recurso, resultado, correlation_id, occurred_at, prev_hash y record_hash en el alcance de auditoría.
+
+Estos puntos no amplían el avance por sí solos; indican condiciones de consistencia para las entidades que sí entren al corte.
+
 ## Pendiente de validar
 
 - Si la primera unidad operativa será un drive personal o de equipo.

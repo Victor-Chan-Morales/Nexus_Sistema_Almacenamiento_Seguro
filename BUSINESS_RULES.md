@@ -52,6 +52,20 @@ En el primer corte se permite un rol mínimo de administrador para la cuenta que
 9. El destino efectivo puede heredarse de organización/carpeta según la política; el cliente no puede sobrescribir destinos permitidos ni consultar credenciales.
 10. Las operaciones de lista, preview, descarga, eliminación, enlace y versión deben verificar tenant y permiso incluso si reciben UUID. El error de recurso ajeno no revela su existencia.
 
+## Consistencia estructural del modelo
+
+El diagrama de clases describe responsabilidades y relaciones, pero no reemplaza el diccionario ni aprueba por sí mismo una migración. Las asociaciones que limitan el acceso deben quedar visibles en el diagrama y protegidas con claves foráneas/índices en PostgreSQL:
+
+1. Usuario pertenece a organización mediante Membresía; una membresía pertenece a un usuario y una organización. Se mantiene la unicidad del par user_id + organization_id. Una sesión pertenece a un usuario.
+2. Cada drive, carpeta, archivo, destino, suscripción, solicitud de instalación e instalación tiene una organización propietaria o un camino inequívoco para validar ese tenant. No se autoriza por UUID solamente.
+3. Una carpeta tiene un drive y puede heredar el destino de la organización. Cada FileVersion conserva el destino donde se escribió y la referencia de llave usada si el cifrado está habilitado.
+4. FileVersion registra el tamaño real, checksum, object_key, uploaded_by y uploaded_at. El valor del navegador declarado nunca determina la cuota consumida.
+5. El modelo de Plan debe concordar con el catálogo: límite de almacenamiento, límite de usuarios y precio simulado. La unidad de persistencia/API y los campos descripción/vigencia deben resolverse entre el diccionario y CONTRACTS.md antes de crear migraciones.
+6. Todo AuditEvent conserva como mínimo organización, actor, acción, resultado, recurso si existe, correlation_id y hora UTC. Para la cadena por organización se guardan prev_hash y record_hash; no se guardan secretos ni contenido.
+7. Los servicios de aplicación pueden orquestar estos casos, pero no deben eliminar relaciones de pertenencia ni duplicar comportamiento entre servicio y entidad.
+
+La revisión del diagrama recibido y sus pendientes está en `docs/revision-diagrama-clases.md`. Las nuevas clases de instalación, MFA, recuperación, cifrado completo, enlaces y auditoría avanzada pertenecen al alcance final, salvo que el plan del hito las priorice explícitamente.
+
 ## Alcance funcional por corte
 
 ### Recorrido objetivo para 30%
