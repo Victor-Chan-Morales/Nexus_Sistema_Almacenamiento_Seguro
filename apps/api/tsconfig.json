@@ -5,7 +5,7 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "outDir": "./dist",
-    "baseUrl": "./",
+    "rootDir": "./src",
     "esModuleInterop": true
   },
   "exclude": ["node_modules", "dist"]
