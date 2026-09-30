@@ -3,12 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "workspaces": [
-    "apps/web"
+    "apps/web",
+    "apps/api"
   ],
   "engines": {
     "node": ">=22 <27"
   },
-  "scripts": {
+"scripts": {
+    "dev:api": "npm run start:dev --workspace apps/api",
     "dev:web": "npm run dev --workspace @nexus/web",
     "build:web": "npm run build --workspace @nexus/web",
     "lint:web": "npm run lint --workspace @nexus/web",
@@ -16,9 +18,12 @@
     "infra:down": "docker compose down"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1143.0"
+    "@aws-sdk/client-s3": "^3.1143.0",
+    "@nestjs/platform-express": "^12.1.1",
+    "multer": "^2.4.0"
   },
   "devDependencies": {
+    "@types/multer": "^2.3.0",
     "@types/node": "^26.6.3"
   }
 }
