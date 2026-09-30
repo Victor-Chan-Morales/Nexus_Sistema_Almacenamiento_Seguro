@@ -1,10 +1,6 @@
 /** Shared HTTP transport for the approved Nexus API contract. */
-
-export type ApiErrorPayload = {
-  code?: string;
-  message?: string;
-  requestId?: string;
-};
+import type { ApiErrorPayload, ApiRequestOptions } from "./types";
+export type { ApiRequestOptions } from "./types";
 
 export class ApiError extends Error {
   readonly status: number;
@@ -19,12 +15,6 @@ export class ApiError extends Error {
     this.requestId = requestId;
   }
 }
-
-export type ApiRequestOptions = {
-  accessToken?: string;
-  headers?: HeadersInit;
-  signal?: AbortSignal;
-};
 
 function apiUrl(path: string) {
   const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, "");

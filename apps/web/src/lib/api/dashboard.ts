@@ -1,14 +1,6 @@
-import { apiRequest, ApiRequestOptions } from "./client";
+import { apiRequest } from "./client";
+import type { ApiRequestOptions, DashboardResponse } from "./types";
 
-/** `plan` and `recentActivity` need fuller schemas from the domain owners. */
-export type DashboardResponse = {
-  organizationName: string;
-  plan: unknown;
-  storageUsedBytes: number;
-  storageLimitBytes: number;
-  recentActivity: unknown[];
-};
-
-export function getDashboard(accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
-  return apiRequest<DashboardResponse>("/dashboard", { method: "GET" }, { ...options, accessToken });
+export function getDashboard<TPlan = unknown, TActivity = unknown>(accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
+  return apiRequest<DashboardResponse<TPlan, TActivity>>("/dashboard", { method: "GET" }, { ...options, accessToken });
 }

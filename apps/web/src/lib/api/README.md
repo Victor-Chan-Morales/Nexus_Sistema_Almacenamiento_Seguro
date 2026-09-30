@@ -3,6 +3,7 @@
 La base HTTP compartida y los clientes tipados implementan las rutas del contrato aprobado en `CONTRACTS.md`:
 
 - `client.ts`: transporte JSON/blob, inclusión de cookies, bearer token explícito y normalización de errores.
+- `types.ts`: DTO compartidos para solicitudes y respuestas de los cuatro dominios.
 - `iam.ts`: registro, login y usuario actual.
 - `billing.ts`: catálogo y activación simulada de suscripción.
 - `dashboard.ts`: resumen del espacio de trabajo.

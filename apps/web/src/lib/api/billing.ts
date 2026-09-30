@@ -1,30 +1,11 @@
-import { apiRequest, ApiRequestOptions } from "./client";
-
-export type Plan = {
-  id: string;
-  name: string;
-  description: string;
-  priceMonthly: number;
-  storageLimitBytes: number;
-  userLimit: number;
-  validityDays: number;
-};
-
-export type PlanCatalogResponse = { items: Plan[] };
-
-export type ActivateSubscriptionResponse = {
-  subscriptionId: string;
-  status: "active";
-  simulated: true;
-  startDate: string;
-  endDate: string | null;
-};
+import { apiRequest } from "./client";
+import type { ActivateSubscriptionResponse, ApiRequestOptions, PlanCatalogResponse, UUID } from "./types";
 
 export function getPlans(options?: ApiRequestOptions) {
   return apiRequest<PlanCatalogResponse>("/plans", { method: "GET" }, options);
 }
 
-export function activateSubscription(planId: string, accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
+export function activateSubscription(planId: UUID, accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
   return apiRequest<ActivateSubscriptionResponse>("/subscriptions/activate", {
     method: "POST",
     body: JSON.stringify({ planId }),

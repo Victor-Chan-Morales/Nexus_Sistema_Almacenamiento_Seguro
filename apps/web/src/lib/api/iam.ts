@@ -1,34 +1,5 @@
-import { apiRequest, ApiRequestOptions } from "./client";
-
-export type RegisterInput = {
-  fullName: string;
-  email: string;
-  password: string;
-  organizationName: string;
-};
-
-export type RegisterResponse = {
-  userId: string;
-  organizationId: string;
-  role: string;
-  verificationRequired: boolean;
-};
-
-export type LoginInput = { email: string; password: string };
-
-export type LoginResponse = {
-  accessToken: string;
-  expiresAt: string;
-  user: { id: string; fullName: string; email: string };
-  organization: { id: string; name: string };
-  role: string;
-};
-
-export type CurrentUserResponse = {
-  user: { id: string; fullName: string; email: string };
-  organization: { id: string; name: string };
-  role: string;
-};
+import { apiRequest } from "./client";
+import type { ApiRequestOptions, CurrentUserResponse, LoginInput, LoginResponse, RegisterInput, RegisterResponse } from "./types";
 
 export function register(input: RegisterInput, options?: ApiRequestOptions) {
   return apiRequest<RegisterResponse>("/auth/register", { method: "POST", body: JSON.stringify(input), headers: { "Content-Type": "application/json" } }, options);
