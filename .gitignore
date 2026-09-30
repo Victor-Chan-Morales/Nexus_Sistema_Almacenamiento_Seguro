@@ -10,3 +10,7 @@ coverage/
 .DS_Store
 .vscode/
 .idea/
+
+
+npm-debug.log*
+database/schema.sql
