@@ -28,6 +28,20 @@ Este registro es operativo. Actualícelo cuando cambie un responsable, ruta, int
 | `/dashboard` | Resumen de organización, plan y uso | Víctor | IAM, Billing, Files | ID/frame pendiente |
 | `/archivos` | Carpetas, carga/listado/descarga | Víctor | Files/Storage (Miguel) | ID/frame pendiente |
 
+### Rutas adicionales de la interfaz web
+
+Estas rutas siguen bajo la propiedad de Web común/Víctor. Las rutas marcadas como demostración solo gestionan estado local y no implican que el dominio de API esté implementado.
+
+| Ruta Next.js | Pantalla | Propietario de código | Dependencias de dominio | Figma |
+|---|---|---|---|---|
+| `/` | Landing y acceso | Víctor | Registro/Billing | Frame existente; cotejo pendiente |
+| `/verificar-correo` | Verificación | Víctor | IAM (Sebastián), EmailService | ID/frame pendiente |
+| `/recuperar-contrasena` | Recuperación | Víctor | IAM (Sebastián), EmailService | ID/frame pendiente |
+| `/archivos/[folderId]` | Contenido de carpeta | Víctor | Files/Storage (Miguel) | ID/frame pendiente |
+| `/papelera` | Elementos eliminados | Víctor | Files (Miguel) | ID/frame pendiente |
+| `/configuracion` | Configuración de cuenta/organización | Víctor | IAM; alcance posterior | ID/frame pendiente |
+| `/auditoria` | Eventos de actividad | Víctor | Audit; fase posterior | ID/frame pendiente |
+
 ## Límites de carpetas
 
 - `apps/web/**`: Víctor. Los compañeros describen campos, estados y errores que sus módulos necesitan; no implementan pantallas en paralelo.

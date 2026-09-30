@@ -2,7 +2,7 @@
 
 Repositorio inicial para el proyecto de Ingeniería de Software I. Nexus es una plataforma para que organizaciones administren archivos y controlen dónde se almacenan: nube, infraestructura propia o un modelo híbrido.
 
-> **Estado:** estructura base para el avance funcional. Las pantallas web son esqueletos navegables y deben cotejarse con los mockups reales de Figma antes de presentarlas. No hay operaciones de autenticación, pagos, base de datos ni carga de archivos implementadas todavía.
+> **Estado:** prototipo frontend navegable. Los formularios, contratación y operaciones de archivos son simulaciones locales; no hay autenticación, pagos, base de datos ni carga real de binarios conectados.
 
 ## Antes de empezar
 
@@ -35,7 +35,14 @@ npm install
 npm run dev:web
 ```
 
-Abra `http://localhost:3000`. Las rutas base son `/login`, `/registro`, `/planes`, `/dashboard` y `/archivos`. Por ahora muestran estructura y textos de preparación, no funcionalidad real.
+Abra `http://localhost:3000`. La web incluye estas rutas:
+
+- Sitio público: `/`, `/servicios`, `/planes` y `/contacto`.
+- Planes y suscripción: `/planes/[planId]`, `/suscripcion`, `/suscripcion/confirmar`, `/suscripcion/exito`, `/suscripcion/fallida`, `/suscripcion/cambiar-plan`, `/suscripcion/cambio-rechazado` y `/suscripcion/vencida`.
+- Acceso: `/registro`, `/registro/completado`, `/verificar-correo`, `/login`, `/recuperar-contrasena`, `/nueva-contrasena` y `/sesion-vencida`.
+- Espacio de trabajo: `/dashboard`, `/dashboard/vacio`, `/dashboard/cuota-excedida`, `/dashboard/super-admin`, `/archivos`, `/archivos/[folderId]`, `/archivos/cuota-excedida`, `/papelera`, `/configuracion` y `/auditoria`.
+
+El sitio público y sus formularios son frontend de demostración: no envían solicitudes ni llaman a la API. El recorrido de identidad muestra estados de registro, verificación, inicio de sesión y recuperación sin guardar contraseñas. La contratación y suscripción usan valores de referencia en almacenamiento local; no procesan pagos y esperan el catálogo real de Billing. El dashboard y el explorador usan datos locales de muestra. La administración de archivos permite probar creación de carpetas, validaciones, carga simulada, duplicados/versiones, detalle, descarga demostrativa y papelera; no transfiere ni almacena los binarios en MinIO/S3. Las versiones y la descarga de demostración contienen solo metadatos simulados. `/configuracion` y `/auditoria` siguen como estructuras iniciales. Ninguna pantalla se declara cotejada con Figma hasta revisar sus frames; consulta `docs/FIGMA_MAP.md`.
 
 ## Servicios locales
 
