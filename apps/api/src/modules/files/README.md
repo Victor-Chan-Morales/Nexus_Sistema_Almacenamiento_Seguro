@@ -1,5 +1,16 @@
-# Módulo FILES
+# Módulo Files
 
-**Dueño inicial:** Miguel.
+**Dueño:** Miguel.
 
-Implementar aquí únicamente la responsabilidad asignada en `ENTS_REGISTRY.md`. Antes de generar controladores o entidades, confirmar el contrato aprobado, las dependencias y la versión común del proyecto NestJS. No editar módulos ajenos ni guardar secretos en este directorio.
+## Responsabilidades
+- Creación y listado de carpetas jerárquicas con aislamiento multi-tenant.
+- Registro de metadatos de archivos con soporte de múltiples versiones (`FileVersion`).
+- Control de cuota y tamaño acumulado por organización.
+- Generación de URLs prefirmadas seguras para descarga de objetos.
+- Eliminación lógica (soft-delete).
+
+## Comunicación en el Monolito Modular
+`FilesModule` consume directamente mediante inyección de dependencias:
+- `BillingService`: para validar que la subida no supere la cuota de la organización.
+- `StorageService`: para enviar el flujo binario al repositorio MinIO/S3.
+Todo se realiza dentro del mismo proceso sin llamadas HTTP ni endpoints de red intermedios.

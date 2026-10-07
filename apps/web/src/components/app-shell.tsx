@@ -28,13 +28,14 @@ export function AppShell({ active, children, superAdmin = false }: { active: str
   const name = demo?.user.name ?? "Ana Martínez";
   const initials = name.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
   const items = superAdmin ? adminNavigation : navigation;
-  const currentLabel = items.find(([, , href]) => href === active)?.[1] ?? (pathname.includes("archivos/") ? "Mis archivos" : "Espacio de trabajo");
+  const currentItem = items.find(([, , href]) => href === active || pathname.startsWith(`${href}/`));
+  const currentLabel = currentItem?.[1] ?? (pathname.includes("archivos/") ? "Mis archivos" : "Espacio de trabajo");
   return <div className="app-shell">
     <aside className="sidebar">
       <Link href="/dashboard" className="brand-link"><Brand /></Link>
       <p className="nav-caption">{superAdmin ? "ADMINISTRACIÓN DE PLATAFORMA" : "ESPACIO DE TRABAJO"}</p>
       <nav className="side-nav" aria-label="Navegación principal">
-        {items.map(([icon, label, href]) => <Link key={href} href={href} aria-current={active === href ? "page" : undefined}><span className="nav-icon"><UiIcon name={icon} size={17} /></span>{label}</Link>)}
+        {items.map(([icon, label, href]) => <Link key={href} href={href} aria-current={active === href || pathname.startsWith(`${href}/`) ? "page" : undefined}><span className="nav-icon"><UiIcon name={icon} size={17} /></span>{label}</Link>)}
       </nav>
       <div className="sidebar-bottom"><Link href="/perfil" className="sidebar-account-link" aria-label="Ver mi perfil"><span className="avatar">{initials}</span><span><strong>{name}</strong><small>{superAdmin ? "Super Admin · demostración" : "Administradora"}</small></span></Link><button className="icon-button" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={() => { sessionStorage.removeItem("nexus-demo-session"); router.push("/login"); }}><UiIcon name="logout" size={17} /></button></div>
     </aside>

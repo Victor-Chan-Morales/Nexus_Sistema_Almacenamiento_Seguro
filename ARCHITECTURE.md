@@ -57,9 +57,48 @@ Files valida sesión, pertenencia, carpeta y límites; Storage persiste el objet
 - Mensajes API no filtran stack traces, llaves, tokens, rutas internas ni contenido.
 - Auditoría futura sin secretos ni contenido de archivos y con controles de integridad descritos en el diccionario.
 
-## Despliegue por etapas
+## Despliegue — Monolito Modular (decisión vigente)
 
-El objetivo final de la propuesta es separar dominios y permitir cloud, on-premises e híbrido. El alcance inicial usa dominios modulares y servicios locales de desarrollo. La decisión exacta de ejecutar una API modular en un proceso o varios contenedores debe seguir el ADR de 30% y aprobarse por el equipo; esto no modifica el objetivo final.
+La arquitectura actual usa un **monolito modular**: un único proceso NestJS que contiene
+todos los dominios (IAM, Billing, Files, Storage, Health). Esta decisión fue tomada para
+el corte del 30% del proyecto universitario con el objetivo de reducir la complejidad
+operacional y cumplir el plazo de entrega.
+
+```
+Persona usuaria
+      │ HTTPS
+      ▼
+Next.js (puerto 3000)  ──── HTTP/JSON ────► NestJS Monolito (puerto 3001)
+   proceso independiente                          │
+                                    ┌─────────────┼─────────────────────┐
+                                    │             │                     │
+                               IamModule    BillingModule          FilesModule
+                               (auth/JWT)   (planes/subs)      (archivos/cuotas)
+                                    │             │                     │
+                               StorageModule ◄────┴─────── HealthModule
+                              (MinIO client)                  (/api/health)
+                                    │
+                    ┌───────────────┴──────────────┐
+                    ▼                              ▼
+             PostgreSQL 16                    MinIO / S3
+          (contenedor Docker)            (contenedor Docker)
+```
+
+**Comunicación entre módulos:** llamadas directas de método (inyección de dependencias
+de NestJS), sin llamadas HTTP entre módulos. Por ejemplo, `FilesService` recibe
+`BillingService` y `StorageService` como constructor arguments — sin `HttpModule`.
+
+**Contenedores Docker Compose:**
+- `postgres` — persistencia de datos
+- `minio` — almacenamiento de objetos
+- `api` — monolito NestJS (todos los módulos en un proceso)
+
+**Frontend:** `apps/web` (Next.js) corre como proceso independiente (`npm run dev:web`)
+y consume el API en `http://localhost:3001`.
+
+Esta decisión no modifica los objetivos finales de la propuesta. Cuando el proyecto
+madure, los módulos pueden extraerse a micro-servicios siguiendo las interfaces ya
+definidas.
 
 ## SOLID aplicado
 

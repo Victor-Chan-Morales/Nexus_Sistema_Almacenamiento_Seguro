@@ -10,7 +10,14 @@
     "dev:web": "npm run dev --workspace @nexus/web",
     "build:web": "npm run build --workspace @nexus/web",
     "lint:web": "npm run lint --workspace @nexus/web",
+
+    "dev:api": "cd apps/api && npm run dev",
+    "build:api": "cd apps/api && npm run build",
+    "start:api": "cd apps/api && npm run start",
+    "install:api": "cd apps/api && npm install",
+
     "infra:up": "docker compose up -d",
-    "infra:down": "docker compose down"
+    "infra:down": "docker compose down",
+    "infra:logs": "docker compose logs -f"
   }
 }

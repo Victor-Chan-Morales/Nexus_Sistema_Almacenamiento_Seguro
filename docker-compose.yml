@@ -1,4 +1,5 @@
 services:
+  # ── Base de datos ─────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: nexus-postgres-dev
@@ -17,6 +18,7 @@ services:
       timeout: 5s
       retries: 10
 
+  # ── Almacenamiento de objetos ──────────────────────────────────────────────
   minio:
     image: minio/minio:RELEASE.2025-04-22T22-12-26Z
     container_name: nexus-minio-dev
@@ -30,6 +32,38 @@ services:
       - "9001:9001"
     volumes:
       - nexus-minio-data:/data
+
+  # ── API (monolito modular NestJS) ─────────────────────────────────────────
+  # Un único contenedor con todos los módulos: IAM, Billing, Files, Storage, Health.
+  # El frontend Next.js corre como proceso independiente (npm run dev:web).
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: nexus-api-dev
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: development
+      API_PORT: 3001
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   nexus-postgres-data:

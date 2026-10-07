@@ -30,6 +30,15 @@ const artwork: Record<string, ReactNode> = {
   more: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>,
   close: <path d="m6 6 12 12M18 6 6 18"/>,
   restore: <><path d="M3 11a9 9 0 1 1 2.6 6.4M3 5v6h6"/><path d="M12 7v5l3 2"/></>,
+  cloud: <path d="M7 18a5 5 0 1 1 .8-9.9A6 6 0 0 1 19 9a4.5 4.5 0 0 1 0 9H7Z"/>,
+  server: <><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6"/></>,
+  layers: <><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></>,
+  envelope: <><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></>,
+  arrowRight: <><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></>,
+  arrowLeft: <><path d="M19 12H5"/><path d="m11 18-6-6 6-6"/></>,
+  arrowDown: <><path d="M12 5v14"/><path d="m18 13-6 6-6-6"/></>,
+  warning: <><path d="M10.3 4.3 2.8 17.2A2 2 0 0 0 4.5 20h15a2 2 0 0 0 1.7-2.8L13.7 4.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 3h.01"/></>,
+  plus: <path d="M12 5v14m-7-7h14"/>,
 };
 
 export function UiIcon({ name, size = 18, className }: { name: keyof typeof artwork; size?: number; className?: string }) {

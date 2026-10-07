@@ -12,7 +12,7 @@ export type DemoSubscription = {
 };
 
 export const initialSubscription: DemoSubscription = {
-  planId: "profesional",
+  planId: "business",
   status: "active",
   startedAt: "2026-09-01",
   expiresAt: "2026-10-01",

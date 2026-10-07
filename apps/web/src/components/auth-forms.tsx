@@ -3,13 +3,13 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
-import { initialDemo, readDemo, writeDemo, DEMO_SESSION } from "@/lib/demo";
-import { NexusMark } from "@/components/brand";
+import { FormEvent, useState, useSyncExternalStore } from "react";
+import { DEMO_EVENT, initialDemo, readDemo, writeDemo, DEMO_SESSION } from "@/lib/demo";
+import { Brand } from "@/components/brand";
 import { UiIcon } from "@/components/ui-icon";
 
 function AuthLogo() {
-  return <Link className="auth-logo-link" href="/" aria-label="Nexus, página principal"><NexusMark priority /></Link>;
+  return <Link className="auth-logo-link" href="/" aria-label="Nexus, página principal"><Brand /></Link>;
 }
 
 function AuthFrame({ eyebrow, title, lead, children, className = "" }: { eyebrow?: string; title: string; lead: string; children: React.ReactNode; className?: string }) {
@@ -19,6 +19,18 @@ function AuthFrame({ eyebrow, title, lead, children, className = "" }: { eyebrow
 function passwordIsStrong(password: string) {
   return password.length >= 8 && /[A-Z]/.test(password) && /[a-z]/.test(password) && /\d/.test(password);
 }
+
+function subscribeToDemo(onChange: () => void) {
+  window.addEventListener(DEMO_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(DEMO_EVENT, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+function getDemoEmail() { return readDemo().user.email; }
+function getServerDemoEmail() { return initialDemo.user.email; }
 
 export function LoginForm() {
   const router = useRouter();
@@ -96,7 +108,7 @@ export function RegisterForm() {
 
 export function RegistrationComplete() {
   return <AuthFrame className="auth-result-card" title="Cuenta creada" lead="Tu registro se completó correctamente.">
-    <div className="auth-result-icon" aria-hidden="true">✉</div>
+    <div className="auth-result-icon" aria-hidden="true"><UiIcon name="envelope" size={25} /></div>
     <div className="auth-result-notice"><strong>Tu cuenta está pendiente de verificar</strong><span>Revisa tu correo electrónico y abre el enlace o ingresa el código que te enviamos.</span></div>
     <Link className="button button-primary button-wide auth-submit" href="/verificar-correo">Continuar a la verificación</Link>
     <p className="auth-switch"><Link href="/login">Volver al inicio de sesión</Link></p>
@@ -107,8 +119,7 @@ export function VerifyForm() {
   const router = useRouter();
   const [status, setStatus] = useState("");
   const [done, setDone] = useState(false);
-  const [email, setEmail] = useState(initialDemo.user.email);
-  useEffect(() => { setEmail(readDemo().user.email); }, []);
+  const email = useSyncExternalStore(subscribeToDemo, getDemoEmail, getServerDemoEmail);
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const code = String(new FormData(e.currentTarget).get("code") ?? "").trim();
@@ -116,9 +127,9 @@ export function VerifyForm() {
     const state = readDemo(); state.verified = true; writeDemo(state); setDone(true); setStatus("");
   }
   return <AuthFrame className="auth-result-card" title={done ? "Correo verificado" : "Verifica tu correo"} lead={done ? "Tu cuenta está lista. Ya puedes iniciar sesión." : "Ingresa el código de verificación que enviamos a tu correo electrónico."}>
-    <div className="auth-result-icon" aria-hidden="true">{done ? "✓" : "✉"}</div>
+    <div className="auth-result-icon" aria-hidden="true"><UiIcon name={done ? "check" : "envelope"} size={25} /></div>
     {done ? <Link className="button button-primary button-wide auth-submit" href="/login">Iniciar sesión</Link> : <form className="auth-form" onSubmit={submit} noValidate>
-      <div className="field"><label htmlFor="verify-email">Correo electrónico</label><input id="verify-email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></div>
+      <div className="field"><label htmlFor="verify-email">Correo electrónico</label><input id="verify-email" type="email" autoComplete="email" value={email} readOnly required /><small>Usa otra cuenta desde el enlace inferior para verificar un correo distinto.</small></div>
       <div className="field"><label htmlFor="verify-code">Código de verificación</label><input id="verify-code" name="code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="Ingresa tu código" required /></div>
       {status && <div className="auth-alert" role="alert">{status}</div>}
       <button className="button button-primary button-wide auth-submit" type="submit">Verificar correo</button>
@@ -135,11 +146,11 @@ export function RecoverForm() {
   const [email, setEmail] = useState("");
   function submit(e: FormEvent<HTMLFormElement>) { e.preventDefault(); setEmail(String(new FormData(e.currentTarget).get("email") ?? "")); setSent(true); }
   return <AuthFrame className="auth-result-card" title={sent ? "Revisa tu correo" : "Recupera tu contraseña"} lead={sent ? `Si existe una cuenta para ${email}, recibirás instrucciones para restablecer tu contraseña.` : "Ingresa el correo asociado a tu cuenta y te enviaremos instrucciones para restablecerla."}>
-    {sent ? <><div className="auth-result-icon" aria-hidden="true">✉</div><div className="auth-result-notice"><strong>Solicitud registrada</strong><span>Esta confirmación es simulada; no se envió ningún correo.</span></div><Link className="button button-primary button-wide auth-submit" href="/nueva-contrasena">Abrir nueva contraseña (demo)</Link><button className="text-button auth-resend-button" onClick={() => setSent(false)}>Usar otro correo</button></> : <form className="auth-form" onSubmit={submit}>
+    {sent ? <><div className="auth-result-icon" aria-hidden="true"><UiIcon name="envelope" size={25} /></div><div className="auth-result-notice"><strong>Solicitud registrada</strong><span>Esta confirmación es simulada; no se envió ningún correo.</span></div><Link className="button button-primary button-wide auth-submit" href="/nueva-contrasena">Abrir nueva contraseña (demo)</Link><button className="text-button auth-resend-button" onClick={() => setSent(false)}>Usar otro correo</button></> : <form className="auth-form" onSubmit={submit}>
       <div className="field"><label htmlFor="recover-email">Correo electrónico</label><input id="recover-email" name="email" type="email" autoComplete="email" placeholder="tu@correo.com" required /></div>
       <button className="button button-primary button-wide auth-submit" type="submit">Enviar instrucciones</button>
     </form>}
-    <p className="auth-switch"><Link href="/login">← Volver a iniciar sesión</Link></p>
+    <p className="auth-switch"><Link href="/login"><UiIcon name="arrowLeft" size={15} /> Volver a iniciar sesión</Link></p>
   </AuthFrame>;
 }
 
@@ -158,7 +169,7 @@ export function NewPasswordForm() {
     setDone(true); setError("");
   }
   return <AuthFrame className="auth-result-card" title={expired ? "Enlace vencido" : done ? "Contraseña actualizada" : "Crea una nueva contraseña"} lead={expired ? "El enlace ya no es válido. Solicita uno nuevo para proteger tu cuenta." : done ? "Tu contraseña se cambió correctamente." : "Elige una contraseña segura para volver a acceder a tu cuenta."}>
-    {expired ? <><div className="auth-alert" role="alert">El enlace de recuperación venció.</div><Link className="button button-primary button-wide auth-submit" href="/recuperar-contrasena">Solicitar otro enlace</Link></> : done ? <><div className="auth-result-icon" aria-hidden="true">✓</div><Link className="button button-primary button-wide auth-submit" href="/login">Ir al inicio de sesión</Link></> : <form className="auth-form" onSubmit={submit} noValidate>
+    {expired ? <><div className="auth-alert" role="alert">El enlace de recuperación venció.</div><Link className="button button-primary button-wide auth-submit" href="/recuperar-contrasena">Solicitar otro enlace</Link></> : done ? <><div className="auth-result-icon" aria-hidden="true"><UiIcon name="check" size={25} /></div><Link className="button button-primary button-wide auth-submit" href="/login">Ir al inicio de sesión</Link></> : <form className="auth-form" onSubmit={submit} noValidate>
       <div className="field"><label htmlFor="new-password">Contraseña nueva</label><input id="new-password" name="password" type="password" autoComplete="new-password" placeholder="Mínimo 8 caracteres" required /><small>Incluye una mayúscula y un número.</small></div>
       <div className="field"><label htmlFor="new-password-confirm">Confirmar contraseña</label><input id="new-password-confirm" name="confirmation" type="password" autoComplete="new-password" placeholder="Repite tu contraseña" required /></div>
       {error && <div className="auth-alert" role="alert">{error}</div>}
@@ -171,7 +182,7 @@ export function NewPasswordForm() {
 
 export function SessionExpired() {
   return <AuthFrame className="auth-result-card" title="Tu sesión venció" lead="Por seguridad, tu sesión terminó. Inicia sesión nuevamente para continuar.">
-    <div className="auth-result-icon" aria-hidden="true">⌑</div>
+    <div className="auth-result-icon" aria-hidden="true"><UiIcon name="shield" size={25} /></div>
     <Link className="button button-primary button-wide auth-submit" href="/login">Iniciar sesión nuevamente</Link>
     <p className="auth-switch"><Link href="/">Volver al sitio de Nexus</Link></p>
   </AuthFrame>;
