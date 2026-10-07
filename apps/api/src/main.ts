@@ -1,14 +1,31 @@
 import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  
-  // Habilitamos CORS para que el Next.js de Víctor pueda enviarnos archivos
-  app.enableCors();
 
-  // Levantamos la API en el puerto 3001 (para que no choque con el frontend ni con MinIO)
-  await app.listen(3001);
-  console.log(`🚀 API de Nexus corriendo en http://localhost:3001`);
+  // Prefijo global para todas las rutas del API
+  app.setGlobalPrefix('api');
+
+  // Habilitamos CORS para que el frontend Next.js pueda consumir el API
+  app.enableCors({
+    origin: process.env.WEB_URL ?? 'http://localhost:3000',
+    credentials: true,
+  });
+
+  // Validación automática de DTOs con class-validator
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  );
+
+  const port = process.env.API_PORT ?? 3001;
+  await app.listen(port);
+  console.log(`🚀 Nexus API corriendo en http://localhost:${port}/api`);
 }
+
 bootstrap();
