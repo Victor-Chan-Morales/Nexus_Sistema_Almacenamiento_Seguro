@@ -23,7 +23,7 @@ import { StorageService } from './storage.service';
         const Minio = require('minio');
         return new Minio.Client({
           endPoint: config.get('MINIO_ENDPOINT', 'localhost'),
-          port: config.get<number>('MINIO_PORT', 9000),
+          port: parseInt(String(config.get('MINIO_PORT', 9000)), 10),
           useSSL: config.get('MINIO_USE_SSL', 'false') === 'true',
           accessKey: config.get('MINIO_ROOT_USER', 'nexus_local'),
           secretKey: config.get('MINIO_ROOT_PASSWORD', 'local_only_change_me_please'),

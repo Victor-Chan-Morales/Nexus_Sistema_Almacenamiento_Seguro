@@ -135,7 +135,7 @@ export class FilesService {
     organizationId: string;
     ownerId: string;
     folderId?: string;
-    file: Express.Multer.File;
+    file: any;
     idempotencyKey?: string;
   }): Promise<FileRecord> {
     const { organizationId, ownerId, folderId, file, idempotencyKey } = params;
@@ -225,7 +225,7 @@ export class FilesService {
           if (typeof (this.storageService as any).delete === 'function') {
             await (this.storageService as any).delete(objectKey);
           }
-        } catch (storageError) {
+        } catch (storageError: any) {
           this.logger.error(`No se pudo compensar el objeto en MinIO: ${storageError.message}`);
         }
         throw dbError;

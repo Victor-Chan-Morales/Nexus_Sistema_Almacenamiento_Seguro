@@ -91,7 +91,7 @@ export class FilesController {
         ],
       }),
     )
-    file: Express.Multer.File,
+    file: any,
     @Body('folderId') folderId: string,
     @Headers('Idempotency-Key') idempotencyKey: string,
     @Request() req: any,
