@@ -13,8 +13,8 @@ import {
   Headers,
   ParseFilePipe,
   MaxFileSizeValidator,
-  FileTypeValidator,
   Res,
+  BadRequestException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -84,10 +84,6 @@ export class FilesController {
       new ParseFilePipe({
         validators: [
           new MaxFileSizeValidator({ maxSize: 100 * 1024 * 1024 }),
-          // Tipos permitidos según ADR-003: PDF, DOCX, XLSX, PPTX, JPG, PNG, TXT, ZIP
-          new FileTypeValidator({
-            fileType: '.(png|jpeg|jpg|pdf|txt|doc|docx|xlsx|pptx|zip)',
-          }),
         ],
       }),
     )
@@ -96,6 +92,14 @@ export class FilesController {
     @Headers('Idempotency-Key') idempotencyKey: string,
     @Request() req: any,
   ) {
+    // Validación de tipos según ADR-003 (PDF, DOCX, XLSX, PPTX, JPG, PNG, TXT, ZIP)
+    const allowedMimes = /(png|jpeg|jpg|pdf|text|plain|zip|officedocument|msword)/i;
+    if (!file || !allowedMimes.test(file.mimetype)) {
+      throw new BadRequestException(
+        `Tipo de archivo no permitido: ${file?.mimetype || 'desconocido'}`,
+      );
+    }
+
     const orgId = req.user.organizationId;
     const userId = req.user.userId || req.user.id;
 
@@ -134,7 +138,7 @@ export class FilesController {
     return this.filesService.softDelete(fileId, orgId);
   }
 
-  // Compatibilidad hacia atrás si algún cliente aún llama a /files/folders
+  // Compatibilidad hacia atrás
   @Get('folders')
   listFoldersLegacy(@Request() req: any, @Query('parentId') parentId?: string) {
     return this.filesService.listFolders(req.user.organizationId, parentId);
