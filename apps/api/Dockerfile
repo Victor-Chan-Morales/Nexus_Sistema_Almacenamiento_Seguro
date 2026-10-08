@@ -3,9 +3,12 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
+# Alpine no siempre incluye el conjunto de autoridades raíz necesario para npm.
+RUN apk add --no-cache ca-certificates && update-ca-certificates
+
 # Instala dependencias primero (aprovecha caché de Docker)
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 
 # Copia el código fuente y compila TypeScript
 COPY . .
@@ -16,9 +19,11 @@ FROM node:22-alpine AS runner
 
 WORKDIR /app
 
+RUN apk add --no-cache ca-certificates && update-ca-certificates
+
 # Solo dependencias de producción
 COPY package*.json ./
-RUN npm ci --production && npm cache clean --force
+RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 
 # Copia el código compilado desde la etapa de construcción
 COPY --from=builder /app/dist ./dist

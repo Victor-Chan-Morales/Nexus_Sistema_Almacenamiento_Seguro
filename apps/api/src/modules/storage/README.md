@@ -3,7 +3,7 @@
 **Dueño:** Miguel.
 
 ## Responsabilidades
-- Implementación de la estrategia de almacenamiento de objetos con MinIO/S3.
+- Implementación de la estrategia de almacenamiento de objetos con SeaweedFS (S3).
 - Métodos de transporte de binarios: `put`, `get`, `delete`, `getPresignedUrl`.
 - Aislamiento multi-tenant a nivel de object-key (`<organizationId>/<fileId>/v<version>`).
 

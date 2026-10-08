@@ -39,7 +39,7 @@ import { HealthModule } from './modules/health/health.module';
     IamModule,       // Identidad: usuarios, organizaciones, roles, sesiones
     BillingModule,   // Facturación: planes, suscripciones (simuladas)
     FilesModule,     // Archivos: carpetas, metadatos, versiones, cuotas
-    StorageModule,   // Almacenamiento: contrato con MinIO/S3
+    StorageModule,   // Almacenamiento: contrato con SeaweedFS (S3)
     HealthModule,    // Salud: endpoint /api/health para verificar el sistema
   ],
 })

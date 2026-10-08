@@ -19,7 +19,7 @@ export class FileVersion {
   @Column({ name: 'version_number' })
   versionNumber: number;
 
-  /** Clave del objeto en MinIO con prefijo de organización */
+  /** Clave del objeto en SeaweedFS con prefijo de organización */
   @Column({ name: 'object_key' })
   objectKey: string;
 

@@ -1,3 +1,5 @@
+> **Nota de vigencia:** la selección de MinIO para el entorno local quedó reemplazada por SeaweedFS/S3 en [ADR-004](ADR-004-almacenamiento-seaweedfs.md). El resto de esta decisión conserva el contexto original del corte.
+
 # ADR-001: Adopción de Monolito Modular para Nexus
 
 - **Estado:** APROBADO por el equipo.

@@ -16,7 +16,7 @@
     "start:api": "cd apps/api && npm run start",
     "install:api": "cd apps/api && npm install",
 
-    "infra:up": "docker compose up -d",
+    "infra:up": "docker compose up -d postgres seaweedfs",
     "infra:down": "docker compose down",
     "infra:logs": "docker compose logs -f"
   }

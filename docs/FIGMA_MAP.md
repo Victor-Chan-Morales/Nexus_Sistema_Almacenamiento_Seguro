@@ -63,4 +63,4 @@ Se preparó navegación y contenido inicial en estas rutas. La implementación v
 | `/perfil` | Perfil de cuenta: nombre editable en la demostración, correo de solo lectura, estado de verificación, acceso a recuperación de contraseña y organización asociada | Sin frame específico; campos basados en `USER` de `docs/modelo-minimo.md` y en el estado de cuenta documentado. Guardado solo local, pendiente de conectar con IAM y cotejo visual |
 | `/configuracion`, `/auditoria` | Solo estructura inicial | Pendiente de frame |
 
-Las acciones de demostración solo alteran datos locales del navegador. La selección de un archivo no transfiere sus bytes a MinIO ni sustituye las operaciones de API de IAM, Billing o Files.
+Las acciones de demostración solo alteran datos locales del navegador. La selección de un archivo no transfiere sus bytes a SeaweedFS ni sustituye las operaciones de API de IAM, Billing o Files.

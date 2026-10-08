@@ -21,7 +21,7 @@ import { BillingModule } from '../billing/billing.module';
   imports: [
     TypeOrmModule.forFeature([FileRecord, Folder, FileVersion]),
     IamModule,     // Para verificar identidad del usuario
-    StorageModule, // Para guardar/recuperar bytes en MinIO
+    StorageModule, // Para guardar/recuperar bytes en SeaweedFS
     BillingModule, // Para verificar cuota de almacenamiento
   ],
   controllers: [FilesController],

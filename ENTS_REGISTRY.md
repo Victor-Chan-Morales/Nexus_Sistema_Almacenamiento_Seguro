@@ -12,10 +12,10 @@ Este registro es operativo. Actualícelo cuando cambie un responsable, ruta, int
 
 | Módulo | Dueño | Responsable de frontend | Alcance del primer corte | No pertenece aquí |
 |---|---|---|---|---|
-| Web común | Víctor | Víctor | Layout, navegación, rutas, componentes visuales, consumo tipado de API y ajuste a Figma | Reglas de autorización, SQL, credenciales MinIO |
+| Web común | Víctor | Víctor | Layout, navegación, rutas, componentes visuales, consumo tipado de API y ajuste a Figma | Reglas de autorización, SQL, credenciales SeaweedFS |
 | IAM | Sebastián | Víctor | Registro, login, hash, sesión/JWT y asociación inicial usuario-organización | Pantallas duplicadas, Billing, archivos |
 | Billing | Anthony | Víctor | Catálogo y activación simulada por organización | Cobro real, pantallas paralelas, cuota de Files |
-| Files + Storage | Miguel | Víctor | Carpetas, metadatos, primera carga/descarga, interfaz `StorageProvider`, MinIO | UI paralela, login, cobro |
+| Files + Storage | Miguel | Víctor | Carpetas, metadatos, primera carga/descarga, interfaz `StorageProvider`, SeaweedFS | UI paralela, login, cobro |
 | Integración | Víctor | Víctor | Contratos compartidos, estructura web, Compose/migraciones consolidadas y validación del recorrido | Reescritura silenciosa de la lógica de un dueño |
 
 ## Rutas y archivos de web

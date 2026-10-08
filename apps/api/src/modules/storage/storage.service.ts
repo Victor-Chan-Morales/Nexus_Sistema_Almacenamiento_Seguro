@@ -1,27 +1,37 @@
 import { Injectable, Inject, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Readable } from 'stream';
+import { OnModuleInit } from '@nestjs/common';
+import {
+  CreateBucketCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  PutObjectCommand,
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 /**
  * StorageService — contrato de almacenamiento de objetos.
  *
- * Implementa put / get / delete sobre MinIO.
+ * Implementa put / get / delete sobre un proveedor compatible con S3.
  * El patrón Strategy permite agregar S3 u otro proveedor
  * sin modificar FilesModule (Principio Open/Closed — SOLID).
  */
 @Injectable()
-export class StorageService {
+export class StorageService implements OnModuleInit {
   private readonly bucket: string;
 
   constructor(
-    @Inject('MINIO_CLIENT') private readonly minioClient: any,
+    @Inject('S3_CLIENT') private readonly s3Client: any,
+    @Inject('S3_PUBLIC_CLIENT') private readonly s3PublicClient: any,
     private readonly config: ConfigService,
   ) {
-    this.bucket = this.config.get<string>('MINIO_BUCKET', 'nexus-dev');
+    this.bucket = this.config.get<string>('S3_BUCKET', 'nexus-dev');
   }
 
   /**
-   * Guarda un objeto en MinIO.
+   * Guarda un objeto en el almacenamiento S3.
    * @param objectKey   Clave única del objeto (incluye prefijo de org)
    * @param stream      Stream con los bytes del archivo
    * @param size        Tamaño en bytes (-1 si desconocido)
@@ -34,13 +44,13 @@ export class StorageService {
     contentType: string,
   ): Promise<void> {
     try {
-      await this.minioClient.putObject(
-        this.bucket,
-        objectKey,
-        stream,
-        size,
-        { 'Content-Type': contentType },
-      );
+      await this.s3Client.send(new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: objectKey,
+        Body: stream,
+        ...(size >= 0 ? { ContentLength: size } : {}),
+        ContentType: contentType,
+      }));
     } catch (err) {
       throw new InternalServerErrorException(`Error al guardar el objeto: ${err.message}`);
     }
@@ -51,7 +61,11 @@ export class StorageService {
    */
   async get(objectKey: string): Promise<Readable> {
     try {
-      return await this.minioClient.getObject(this.bucket, objectKey);
+      const result = await this.s3Client.send(new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: objectKey,
+      }));
+      return result.Body as Readable;
     } catch (err) {
       throw new InternalServerErrorException(`Error al obtener el objeto: ${err.message}`);
     }
@@ -62,7 +76,10 @@ export class StorageService {
    */
   async delete(objectKey: string): Promise<void> {
     try {
-      await this.minioClient.removeObject(this.bucket, objectKey);
+      await this.s3Client.send(new DeleteObjectCommand({
+        Bucket: this.bucket,
+        Key: objectKey,
+      }));
     } catch (err) {
       throw new InternalServerErrorException(`Error al eliminar el objeto: ${err.message}`);
     }
@@ -75,10 +92,10 @@ export class StorageService {
    */
   async getPresignedUrl(objectKey: string, expirySeconds = 3600): Promise<string> {
     try {
-      return await this.minioClient.presignedGetObject(
-        this.bucket,
-        objectKey,
-        expirySeconds,
+      return await getSignedUrl(
+        this.s3PublicClient,
+        new GetObjectCommand({ Bucket: this.bucket, Key: objectKey }),
+        { expiresIn: expirySeconds },
       );
     } catch (err) {
       throw new InternalServerErrorException(`Error al generar URL prefirmada: ${err.message}`);
@@ -90,9 +107,16 @@ export class StorageService {
    * Llamado al iniciar la aplicación.
    */
   async ensureBucket(): Promise<void> {
-    const exists = await this.minioClient.bucketExists(this.bucket);
-    if (!exists) {
-      await this.minioClient.makeBucket(this.bucket, 'us-east-1');
+    try {
+      await this.s3Client.send(new HeadBucketCommand({ Bucket: this.bucket }));
+    } catch (error) {
+      const missingBucket = error?.$metadata?.httpStatusCode === 404 || error?.name === 'NotFound';
+      if (!missingBucket) throw error;
+      await this.s3Client.send(new CreateBucketCommand({ Bucket: this.bucket }));
     }
+  }
+
+  async onModuleInit(): Promise<void> {
+    await this.ensureBucket();
   }
 }

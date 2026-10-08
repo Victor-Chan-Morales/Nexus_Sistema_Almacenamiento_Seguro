@@ -14,12 +14,12 @@ Next.js Web ── JSON/multipart ──► NestJS API
                                       ├── IAM: identidad, sesiones y membresías
                                       ├── Billing: planes y suscripción simulada
                                       ├── Files: carpetas, metadatos y reglas de cuota
-                                      ├── Storage: interfaz de proveedor + MinIO/S3
+                                      ├── Storage: interfaz de proveedor + SeaweedFS (S3)
                                       └── Audit: eventos relevantes (fase posterior)
                                                │
                            ┌───────────────────┴──────────────────┐
                            ▼                                      ▼
-                    PostgreSQL 16                           MinIO / S3
+                    PostgreSQL 16                           SeaweedFS (S3)
                identidad, permisos,                     contenido cifrado,
                suscripciones, metadatos                  separado de metadatos
 ```
@@ -33,9 +33,9 @@ La figura expresa límites lógicos. No afirma que todos los módulos ya existan
 - **IAM**: usuario, organización, membresía, rol y sesión. Determina el contexto organizacional autorizado.
 - **Billing**: plan, suscripción y operaciones marcadas como simuladas. No procesa dinero real.
 - **Files**: carpetas, archivos, versiones, límites y autorización de recursos.
-- **Storage**: contrato pequeño (`put`, `get`, `delete`) e implementación MinIO para el primer entorno. La lógica de Files depende del contrato, no del SDK concreto.
+- **Storage**: contrato pequeño (`put`, `get`, `delete`) e implementación SeaweedFS para el primer entorno. La lógica de Files depende del contrato, no del SDK concreto.
 - **PostgreSQL**: fuente de verdad de identidad, permisos, plan, relaciones y metadatos.
-- **MinIO/S3**: bytes de objetos. PostgreSQL registra la clave de objeto y datos de la versión, no el contenido.
+- **SeaweedFS (S3)**: bytes de objetos. PostgreSQL registra la clave de objeto y datos de la versión, no el contenido.
 
 ## Límites multi-tenant
 
@@ -46,7 +46,7 @@ La figura expresa límites lógicos. No afirma que todos los módulos ya existan
 
 ## Manejo de archivos
 
-Files valida sesión, pertenencia, carpeta y límites; Storage persiste el objeto. FileVersion persiste tamaño y clave del objeto. El caso de uso confirma éxito después de guardar metadatos. Si el guardado en PostgreSQL falla después de que MinIO recibió el objeto, se intenta una compensación para retirar el objeto huérfano y se registra el fallo de forma segura. No se finge atomicidad distribuida entre SQL y object storage.
+Files valida sesión, pertenencia, carpeta y límites; Storage persiste el objeto. FileVersion persiste tamaño y clave del objeto. El caso de uso confirma éxito después de guardar metadatos. Si el guardado en PostgreSQL falla después de que SeaweedFS recibió el objeto, se intenta una compensación para retirar el objeto huérfano y se registra el fallo de forma segura. No se finge atomicidad distribuida entre SQL y object storage.
 
 ## Seguridad objetivo
 
@@ -76,11 +76,11 @@ Next.js (puerto 3000)  ──── HTTP/JSON ────► NestJS Monolito (p
                                (auth/JWT)   (planes/subs)      (archivos/cuotas)
                                     │             │                     │
                                StorageModule ◄────┴─────── HealthModule
-                              (MinIO client)                  (/api/health)
+                              (SeaweedFS client)                  (/api/health)
                                     │
                     ┌───────────────┴──────────────┐
                     ▼                              ▼
-             PostgreSQL 16                    MinIO / S3
+             PostgreSQL 16                    SeaweedFS (S3)
           (contenedor Docker)            (contenedor Docker)
 ```
 
@@ -90,7 +90,7 @@ de NestJS), sin llamadas HTTP entre módulos. Por ejemplo, `FilesService` recibe
 
 **Contenedores Docker Compose:**
 - `postgres` — persistencia de datos
-- `minio` — almacenamiento de objetos
+- `SeaweedFS` — almacenamiento de objetos
 - `api` — monolito NestJS (todos los módulos en un proceso)
 
 **Frontend:** `apps/web` (Next.js) corre como proceso independiente (`npm run dev:web`)
@@ -106,4 +106,4 @@ definidas.
 - **O:** agregar S3 u otro destino añadiendo una implementación de `StorageProvider` y configuración, sin reescribir reglas de archivos.
 - **L:** toda implementación del proveedor respeta el resultado/error definido para guardar, recuperar y eliminar.
 - **I:** separar interfaz de operaciones de objetos de las operaciones administrativas del bucket.
-- **D:** `FilesService` recibe `StorageProvider` por inyección; no instancia el cliente MinIO directamente.
+- **D:** `FilesService` recibe `StorageProvider` por inyección; no instancia el cliente SeaweedFS directamente.

@@ -111,7 +111,7 @@ export class FilesService {
     // 3. Generar clave de objeto con prefijo de organización (seguridad multi-tenant)
     const objectKey = `${params.organizationId}/${fileRecord.id}/v${versionNumber}`;
 
-    // 4. Guardar en MinIO — llamada directa a StorageService (sin HTTP)
+    // 4. Guardar en SeaweedFS — llamada directa a StorageService (sin HTTP)
     await this.storageService.put(objectKey, params.stream, params.sizeBytes, params.mimeType);
 
     // 5. Registrar versión
