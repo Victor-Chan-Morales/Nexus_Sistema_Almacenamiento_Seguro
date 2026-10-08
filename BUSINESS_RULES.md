@@ -5,7 +5,7 @@ Estas reglas traducen la propuesta aprobada, los lineamientos del curso y el dic
 ## Estado y fuentes
 
 - **Producto final:** almacenamiento seguro organizacional, con gestión de identidad, roles, archivos y versiones, destinos cloud/on-premises/híbridos, enlaces protegidos, auditoría, planes y despliegue Docker.
-- **Avance funcional 30%:** recorrido vertical pequeño y repetible. Se puede usar una sola implementación MinIO de desarrollo; esto no elimina el objetivo futuro de varios destinos.
+- **Avance funcional 30%:** recorrido vertical pequeño y repetible. Se puede usar una sola implementación SeaweedFS de desarrollo; esto no elimina el objetivo futuro de varios destinos.
 - Fuente visual: mockups reales de Figma. No se agregan campos ni acciones a una pantalla aprobada sin acuerdo.
 - Si la propuesta, el lineamiento, el diccionario o una regla aquí chocan, documenten el caso en `SESSION_LOG.md` y acuerden cuál prevalece antes de implementar.
 
@@ -43,7 +43,7 @@ En el primer corte se permite un rol mínimo de administrador para la cuenta que
 
 1. Un archivo pertenece a una carpeta y organización. La carpeta y el drive deben pertenecer al mismo tenant.
 2. Una carpeta raíz tiene `parent_folder_id = NULL`. Un padre no puede causar ciclos ni pertenecer a otro drive u organización.
-3. La clave del objeto en MinIO/S3 la genera el servidor; el nombre original es metadato visible, no ruta de almacenamiento.
+3. La clave del objeto en SeaweedFS (S3) la genera el servidor; el nombre original es metadato visible, no ruta de almacenamiento.
 4. El binario no se guarda en PostgreSQL. `FILE_VERSION` mantiene `object_key`, tamaño real (`size_bytes`), checksum, número secuencial y quién/cuándo cargó.
 5. La primera carga exitosa crea la primera versión (número 1) y actualiza `FILE.current_version_id`; futuras versiones incrementan secuencialmente sin sobrescribir bytes anteriores.
 6. Se descuenta/contabiliza el espacio con el tamaño real confirmado de versiones activas conforme a la regla final de cuota, no con el tamaño declarado en el navegador.
@@ -60,7 +60,7 @@ En el primer corte se permite un rol mínimo de administrador para la cuenta que
 - Asociación usuario-organización y ruta privada con sesión válida.
 - Ver catálogo y activar suscripción de demostración.
 - Ver organización, plan y espacio usado en dashboard.
-- Crear carpeta, cargar un archivo pequeño a MinIO, listar metadatos y descargar el mismo contenido.
+- Crear carpeta, cargar un archivo pequeño a SeaweedFS, listar metadatos y descargar el mismo contenido.
 - Confirmar en API que otra organización no puede listar ni descargar esos recursos.
 
 ### Requerimientos del producto final que siguen vigentes

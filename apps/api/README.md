@@ -1,17 +1,36 @@
-# API NestJS (estructura por inicializar)
+# API NestJS (Monolito Modular)
 
-El repositorio reserva este espacio para una API NestJS + TypeScript con módulos de dominio. Antes de generar la aplicación, el equipo debe aceptar `CONTRACTS.md`, definir versión común de NestJS/Node y acordar qué servicios corren en el Compose inicial.
+La API de Nexus está desarrollada en **NestJS + TypeScript** bajo el patrón de **Monolito Modular**. Todos los dominios del sistema coexisten en un único proceso backend con comunicación interna in-process (inyección de dependencias), evitando la sobrecarga de latencia y red entre servicios.
 
-Carpetas previstas:
+## Estructura de módulos (`src/modules/`)
 
-```text
-src/
-  modules/iam/
-  modules/billing/
-  modules/files/
-  modules/storage/
-  modules/health/
-  shared/          # filtros de error, contexto de request y utilidades realmente comunes
+| Módulo | Responsable | Descripción | Exportaciones principales |
+|---|---|---|---|
+| `iam/` | Sebastián | Autenticación, registro, login con Argon2id + JWT, entidades de usuario, organización y membresía. | `IamService`, `JwtModule`, `PassportModule` |
+| `billing/` | Anthony | Catálogo de planes, suscripciones (simuladas) y cálculo de límites de almacenamiento por organización. | `BillingService` |
+| `files/` | Miguel | Gestión de carpetas jerárquicas, metadatos de archivos, control de versiones y verificación de cuota. | `FilesService` |
+| `storage/` | Miguel | Proveedor de almacenamiento compatible con SeaweedFS (S3) (patrón Strategy). | `StorageService` |
+| `health/` | Víctor | Endpoint de liveness y verificación de PostgreSQL con `@nestjs/terminus`. | `HealthModule` |
+
+## Comunicación interna entre módulos
+
+En lugar de llamadas HTTP entre servicios, la comunicación se realiza mediante **inyección de dependencias** de NestJS:
+- `FilesModule` importa directamente `BillingModule` e inyecta `BillingService` para consultar cuotas (`this.billingService.getStorageLimitBytes(orgId)`).
+- `FilesModule` importa directamente `StorageModule` e inyecta `StorageService` para persistir binarios (`this.storageService.put(...)`).
+- Los endpoints protegidos obtienen la identidad del usuario y su organización mediante el decorador `@CurrentUser()` o `req.user`.
+
+## Ejecución
+
+### Desarrollo local (hot-reload)
+```bash
+npm run dev
+# o desde la raíz del monorepo:
+npm run dev:api
 ```
+La API estará disponible en `http://localhost:3001/api`.
 
-Los responsables de IAM, Billing y Files implementan dentro de sus módulos asignados. No generen la aplicación completa sobre `main` sin revisar el paquete/workspace existente y coordinar la migración inicial.
+### Compilación y producción
+```bash
+npm run build
+npm run start
+```

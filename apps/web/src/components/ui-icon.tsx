@@ -1,0 +1,46 @@
+import type { ReactNode } from "react";
+
+const artwork: Record<string, ReactNode> = {
+  dashboard: <><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="11" width="7" height="10" rx="1.5"/><rect x="3" y="14" width="8" height="7" rx="1.5"/></>,
+  files: <><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h4l2 2h7A2.5 2.5 0 0 1 21 9.5v8a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><path d="M3 10h18"/></>,
+  plans: <><path d="M12 3v18M17 7.5c0-1.4-1.7-2.5-4.5-2.5S8 6.1 8 7.5 9.5 10 12.5 10s4.5 1.1 4.5 2.5-1.7 2.5-4.5 2.5S8 13.9 8 12.5"/><path d="M7 19h10"/></>,
+  trash: <><path d="M4 7h16M9 7V4h6v3m3 0-1 14H7L6 7"/><path d="M10 11v6m4-6v6"/></>,
+  audit: <><path d="M5 4h14v17H5zM8 8h8M8 12h8M8 16h5"/><path d="m3 7 2-2"/></>,
+  subscription: <><rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 10h18M7 15h4"/><path d="M7 3v4m10-4v4"/></>,
+  settings: <><circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.1.8-1.2 2.1-1.3-.5a7.5 7.5 0 0 1-1.5.9l-.2 1.4h-2.5l-.3-1.4a7.5 7.5 0 0 1-1.5-.9l-1.3.5-1.2-2.1 1.1-.9a7.1 7.1 0 0 1 0-1.8l-1.1-.9 1.2-2.1 1.3.5a7.5 7.5 0 0 1 1.5-.9l.3-1.4h2.5l.2 1.4a7.5 7.5 0 0 1 1.5.9l1.3-.5 1.2 2.1-1.1.9a7.1 7.1 0 0 1-.1 1.8Z"/></>,
+  organizations: <><circle cx="9" cy="8" r="3"/><path d="M3 20v-1a6 6 0 0 1 12 0v1z"/><path d="M16 5.5a3 3 0 0 1 0 5.8M18 14a5 5 0 0 1 3 4.6V20h-4"/></>,
+  install: <><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4m-5-9 3-3 2 2 4-4"/></>,
+  activity: <><path d="M3 12h4l2.2-6 4.2 12 2.1-6H21"/></>,
+  user: <><circle cx="12" cy="8" r="4"/><path d="M5 21v-1a7 7 0 0 1 14 0v1"/></>,
+  mail: <><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></>,
+  check: <path d="m5 12 4 4L19 6"/>,
+  logout: <><path d="M10 17l5-5-5-5m5 5H3"/><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/></>,
+  notifications: <><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9m-8 12h4"/></>,
+  chevron: <path d="m7 10 5 5 5-5"/>,
+  upload: <><path d="M12 16V4m-5 5 5-5 5 5"/><path d="M4 15v5h16v-5"/></>,
+  folder: <><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h4l2 2h7A2.5 2.5 0 0 1 21 9.5v8a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/></>,
+  search: <><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4 4"/></>,
+  grid: <><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="14" y="3" width="7" height="8" rx="1.5"/><rect x="3" y="14" width="8" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></>,
+  recent: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></>,
+  shared: <><circle cx="8" cy="8" r="3"/><path d="M2.5 20a5.5 5.5 0 0 1 11 0M15 8h6m-3-3v6m-2 4a5 5 0 0 1 5 5"/></>,
+  team: <><circle cx="12" cy="8" r="3"/><path d="M5 20a7 7 0 0 1 14 0M4 8h2m-1-1v2m14 7 1.5 1.5M20 15l-1.5 1.5"/></>,
+  info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></>,
+  shield: <><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/></>,
+  storage: <><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></>,
+  more: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>,
+  close: <path d="m6 6 12 12M18 6 6 18"/>,
+  restore: <><path d="M3 11a9 9 0 1 1 2.6 6.4M3 5v6h6"/><path d="M12 7v5l3 2"/></>,
+  cloud: <path d="M7 18a5 5 0 1 1 .8-9.9A6 6 0 0 1 19 9a4.5 4.5 0 0 1 0 9H7Z"/>,
+  server: <><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6"/></>,
+  layers: <><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></>,
+  envelope: <><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></>,
+  arrowRight: <><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></>,
+  arrowLeft: <><path d="M19 12H5"/><path d="m11 18-6-6 6-6"/></>,
+  arrowDown: <><path d="M12 5v14"/><path d="m18 13-6 6-6-6"/></>,
+  warning: <><path d="M10.3 4.3 2.8 17.2A2 2 0 0 0 4.5 20h15a2 2 0 0 0 1.7-2.8L13.7 4.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 3h.01"/></>,
+  plus: <path d="M12 5v14m-7-7h14"/>,
+};
+
+export function UiIcon({ name, size = 18, className }: { name: keyof typeof artwork; size?: number; className?: string }) {
+  return <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{artwork[name]}</svg>;
+}

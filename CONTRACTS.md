@@ -2,6 +2,8 @@
 
 > **Estado: APROBADO v0.2 para el primer flujo.** Es una traducción del recorrido acordado; no afirma que todos los endpoints ya estén implementados. Toda respuesta que aparezca en una página provisional debe llevar datos de maqueta claramente identificados hasta que API esté conectada.
 
+Los DTO de TypeScript que representan estos campos para el frontend se mantienen en `apps/web/src/lib/api/types.ts`. Son tipos de compilación, no validación de datos recibidos en tiempo de ejecución. Las partes cuyo esquema aún no está acordado permanecen abiertas hasta que su dueño de dominio confirme la respuesta.
+
 ## Convenciones
 
 - Content-Type: JSON; carga de archivos usa `multipart/form-data`.
