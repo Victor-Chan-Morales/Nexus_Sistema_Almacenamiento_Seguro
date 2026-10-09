@@ -1,10 +1,10 @@
 # Plan individual de Miguel para Files y Storage
 
-**Responsabilidad:** carpetas, metadatos, carga y descarga de archivos en Files; almacenamiento binario mediante Storage/MinIO dentro del monolito modular.
+**Responsabilidad:** carpetas, metadatos, carga y descarga de archivos en Files; almacenamiento binario mediante Storage/SeaweedFS dentro del monolito modular.
 
 ## Resultado esperado
 
-Una persona autenticada crea/lista una carpeta, carga un archivo permitido, ve sus metadatos y descarga el mismo contenido. PostgreSQL conserva metadatos y versiones; MinIO conserva bytes. Todas las operaciones validan tenant y cuota en la API.
+Una persona autenticada crea/lista una carpeta, carga un archivo permitido, ve sus metadatos y descarga el mismo contenido. PostgreSQL conserva metadatos y versiones; SeaweedFS conserva bytes. Todas las operaciones validan tenant y cuota en la API.
 
 ## Pasos de trabajo
 
@@ -38,7 +38,7 @@ Una persona autenticada crea/lista una carpeta, carga un archivo permitido, ve s
 - Si falla la persistencia después de guardar el objeto, intentar compensar eliminándolo y registrar el error sin exponer datos internos.
 - No devolver éxito hasta confirmar objeto y metadatos. Revisar el manejo de una fila de archivo creada antes de completar Storage para evitar residuos incompletos.
 
-**Entrega verificable:** archivo pequeño sube, aparece en PostgreSQL y su objeto puede localizarse en MinIO; tamaño/cuota excedidos se rechazan en API.
+**Entrega verificable:** archivo pequeño sube, aparece en PostgreSQL y su objeto puede localizarse en SeaweedFS; tamaño/cuota excedidos se rechazan en API.
 
 ### 4. Listar y descargar
 
@@ -54,7 +54,7 @@ Una persona autenticada crea/lista una carpeta, carga un archivo permitido, ve s
 
 - Coordinar con Anthony la semántica de cuota: bytes reales confirmados, archivos en papelera y plan activo.
 - Avisar a Víctor de estados HTTP, respuestas y estados UI: cargando, éxito, cuota/tamaño excedido, error Storage y recurso no encontrado.
-- Documentar escenarios de éxito, cuota, tamaño, MinIO no disponible y aislamiento entre organizaciones; abrir PR revisable.
+- Documentar escenarios de éxito, cuota, tamaño, SeaweedFS no disponible y aislamiento entre organizaciones; abrir PR revisable.
 
 ## Archivos principales
 
@@ -73,7 +73,7 @@ Una persona autenticada crea/lista una carpeta, carga un archivo permitido, ve s
 
 ## Cierre de Miguel
 
-- [ ] Bytes en MinIO; metadatos y versiones en PostgreSQL.
+- [ ] Bytes en SeaweedFS; metadatos y versiones en PostgreSQL.
 - [ ] Carga valida tamaño real, tipo, cuota, carpeta y tenant en servidor.
 - [ ] Clave/prefijo lo genera el backend.
 - [ ] Descarga entrega bytes y no expone clave interna.

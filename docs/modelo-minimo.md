@@ -11,7 +11,7 @@ El diccionario completo sigue siendo la referencia para la meta final. No creen 
 - `PLAN` y `SUBSCRIPTION`: catálogo y vigencia por organización; activación de demo simulada.
 - `DRIVE`: seleccionar un drive inicial autorizado para la demo; no asumir que la organización puede escribir a cualquier drive.
 - `FOLDER`: organización, drive, padre opcional, nombre y estado lógico.
-- `FILE` y `FILE_VERSION`: metadatos visibles y ubicación/versionado del objeto; los bytes quedan en MinIO.
+- `FILE` y `FILE_VERSION`: metadatos visibles y ubicación/versionado del objeto; los bytes quedan en SeaweedFS.
 
 ## Reglas de persistencia
 

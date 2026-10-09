@@ -38,6 +38,16 @@ La web consulta el catálogo real, muestra la suscripción demo provisionada dur
 
 **Entrega verificable:** una carga de Files recibe el límite correcto en bytes del plan de la organización.
 
+### 3.1 Asegurar compatibilidad de cuota durante el cambio a SeaweedFS
+
+- Mantener a `BillingService` como origen del límite por organización. SeaweedFS guarda bytes; no define planes, límites ni uso facturable.
+- Coordinar con Miguel la unidad y semántica de `getStorageLimitBytes()` y del uso confirmado. No hacer que Billing consulte el gateway S3 o las tablas de Files directamente.
+- Acordar si el uso incluye todas las versiones conservadas y elementos en papelera; verificar que la migración de proveedor no cree incrementos de uso duplicados.
+- Revisar las respuestas ante SeaweedFS no disponible, carga compensada y cuota excedida: un objeto que no quedó confirmado con sus metadatos no debe mostrarse como carga exitosa.
+- Compartir con Víctor los estados de error de cuota y almacenamiento que debe representar la interfaz.
+
+**Entrega verificable:** Files conserva la misma validación de cuota antes y después de cambiar el proveedor, y las cargas fallidas no se contabilizan como confirmadas.
+
 ### 4. Dar datos al Dashboard y conectar UI
 
 - Acordar con Víctor el tipo del Dashboard. Billing aporta el plan/suscripción; Files aporta el uso; la agregación ocurre dentro de la API en el endpoint `GET /dashboard`.
@@ -50,6 +60,8 @@ La web consulta el catálogo real, muestra la suscripción demo provisionada dur
 ### 5. Revisar y documentar
 
 - Documentar escenarios de catálogo vacío, plan inexistente, sin sesión, organización aislada, activación repetida, cambio a plan menor y límite en bytes.
+- Actualizar las referencias de Billing que nombren MinIO; describir SeaweedFS únicamente como proveedor de objetos administrado por Storage/Files.
+- Registrar resultados de cuota observados en el entorno SeaweedFS, coordinados con Miguel; no afirmar que Billing fue validado contra el proveedor si solo se probó el endpoint interno de límite.
 - Abrir PR limitado a Billing/seed/documentación y atender revisión.
 
 ## Archivos principales
@@ -75,3 +87,6 @@ La web consulta el catálogo real, muestra la suscripción demo provisionada dur
 - [ ] Repetición/cambio de plan tiene resultado definido y respeta uso confirmado.
 - [ ] Files recibe límite en bytes mediante inyección de BillingService.
 - [ ] No hay pagos reales, tarjetas ni cuota proveniente del cliente.
+- [ ] Billing no depende del SDK ni del endpoint de MinIO/SeaweedFS.
+- [ ] Cuota y uso se verificaron en cargas correctas, excedidas y fallidas con SeaweedFS integrado.
+- [ ] La documentación no atribuye a Billing la gestión de objetos ni contiene instrucciones obsoletas de MinIO.

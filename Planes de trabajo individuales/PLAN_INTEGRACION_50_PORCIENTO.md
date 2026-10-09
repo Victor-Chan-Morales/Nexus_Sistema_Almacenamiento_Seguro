@@ -1,7 +1,7 @@
 # Plan general de integración para el hito del 50%
 
 **Fecha objetivo:** 9 de octubre de 2026  
-**Arquitectura:** monolito modular NestJS en `apps/api`, frontend Next.js en `apps/web`, PostgreSQL y MinIO gestionados con Docker Compose.
+**Arquitectura:** monolito modular NestJS en `apps/api`, frontend Next.js en `apps/web`, PostgreSQL y SeaweedFS gestionados con Docker Compose.
 
 ## Propósito y alcance
 
@@ -9,7 +9,7 @@ El objetivo de este corte es demostrar un flujo vertical integrado y repetible: 
 
 Este documento define un alcance técnico verificable a partir de `BUSINESS_RULES.md`, `CONTRACTS.md` y los ADR vigentes. No sustituye la rúbrica del curso: el repositorio no contiene una rúbrica que permita certificar que estas tareas equivalen exactamente al 50% académico.
 
-El backend se ejecuta como un solo proceso NestJS. IAM, Billing, Files, Storage y Health se comunican mediante inyección de dependencias dentro del proceso; no se crean servicios Nest independientes ni llamadas HTTP entre módulos. Next.js consume la API REST. PostgreSQL guarda identidad, suscripciones y metadatos; MinIO guarda los bytes.
+El backend se ejecuta como un solo proceso NestJS. IAM, Billing, Files, Storage y Health se comunican mediante inyección de dependencias dentro del proceso; no se crean servicios Nest independientes ni llamadas HTTP entre módulos. Next.js consume la API REST. PostgreSQL guarda identidad, suscripciones y metadatos; SeaweedFS guarda los bytes.
 
 ## Resultado que debe poder demostrarse
 
@@ -51,7 +51,7 @@ La cuota se calcula en bytes en servidor. Files consulta directamente a Billing 
 |---|---|---|
 | Víctor | Cliente web común, sesión en frontend, integración del Dashboard y entorno/documentación de ejecución | Flujo web conectado y guía de demo reproducible |
 | Sebastián | IAM, registro, login, sesión y contexto de organización | Rutas IAM y pruebas de autenticación/tenant |
-| Miguel | Files y Storage, carga, listados, carpetas y descarga | Flujo binario MinIO ↔ API ↔ web con metadatos en PostgreSQL |
+| Miguel | Files y Storage, carga, listados, carpetas y descarga | Flujo binario SeaweedFS ↔ API ↔ web con metadatos en PostgreSQL |
 | Anthony | Catálogo, suscripción demo y límite de plan | Planes persistidos, activación simulada y datos de cuota para Files/Dashboard |
 
 Cada dueño implementa su módulo y entrega un PR revisable. Los cambios a `CONTRACTS.md`, DTO compartidos, configuración global o componentes compartidos se acuerdan antes con las personas afectadas. Los módulos no deben duplicar reglas ni acceder a tablas de otro dominio directamente si pueden consumir el servicio exportado del módulo propietario.
@@ -62,7 +62,7 @@ Cada dueño implementa su módulo y entrega un PR revisable. Los cambios a `CONT
 
 - Los cuatro responsables revisan este plan y el contrato de rutas.
 - Se resuelven por escrito las diferencias de rutas de Files, descarga y agregación del Dashboard.
-- Víctor confirma que PostgreSQL, MinIO, API y Web pueden arrancar desde el repositorio; registra bloqueos reproducibles.
+- Víctor confirma que PostgreSQL, SeaweedFS, API y Web pueden arrancar desde el repositorio; registra bloqueos reproducibles.
 - Cada dueño identifica archivos que modificará y abre su rama/PR de trabajo.
 
 ### 8 de octubre — Implementación e integración
@@ -82,7 +82,7 @@ Cada dueño implementa su módulo y entrega un PR revisable. Los cambios a `CONT
 
 ## Criterios de aceptación del hito
 
-- [ ] API, web, PostgreSQL y MinIO arrancan con los comandos documentados y el API responde en `/api/health`.
+- [ ] API, web, PostgreSQL y SeaweedFS arrancan con los comandos documentados y el API responde en `/api/health`.
 - [ ] Registro crea usuario, organización y membresía; la contraseña se persiste como hash Argon2id.
 - [ ] Registro provisiona atómicamente organización, membresía, suscripción demo y Drive/carpeta iniciales según ADR-002/003, o se documenta y aprueba una decisión nueva antes de cambiar el alcance.
 - [ ] Login devuelve la sesión acordada; `/auth/me` requiere autenticación.
@@ -90,7 +90,7 @@ Cada dueño implementa su módulo y entrega un PR revisable. Los cambios a `CONT
 - [ ] Rutas privadas de la web requieren sesión; el token de acceso se mantiene en memoria y no se persiste en `localStorage`.
 - [ ] El catálogo proviene de Billing; la activación es simulada y no solicita ni procesa tarjetas.
 - [ ] Dashboard muestra plan y cuota desde API, con bytes como unidad de contrato.
-- [ ] Crear/listar carpeta, cargar/listar/descargar un archivo funciona con PostgreSQL y MinIO reales.
+- [ ] Crear/listar carpeta, cargar/listar/descargar un archivo funciona con PostgreSQL y SeaweedFS reales.
 - [ ] Files obtiene la organización desde el usuario autenticado, comprueba cuota y permisos en servidor y responde con errores seguros.
 - [ ] Una segunda organización no puede leer el recurso de la primera.
 - [ ] Se entrega evidencia de los casos de aceptación: comandos, resultado y limitaciones conocidas.

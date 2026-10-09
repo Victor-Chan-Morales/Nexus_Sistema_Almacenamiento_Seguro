@@ -7,7 +7,7 @@ import { HealthController } from './health.controller';
  * Responsable: Víctor (integración)
  *
  * Expone GET /api/health para verificar que la API, la base de datos
- * y MinIO están funcionando correctamente.
+ * y SeaweedFS están funcionando correctamente.
  */
 @Module({
   imports: [TerminusModule],

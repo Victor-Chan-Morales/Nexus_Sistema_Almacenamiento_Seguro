@@ -9,19 +9,12 @@ import { IamModule } from '../iam/iam.module';
 import { StorageModule } from '../storage/storage.module';
 import { BillingModule } from '../billing/billing.module';
 
-/**
- * Módulo FILES
- * Responsable: Miguel
- *
- * Expone endpoints de Files y Folders según el contrato acordado.
- * Consume StorageService y BillingService directamente mediante inyección modular.
- */
 @Module({
   imports: [
     TypeOrmModule.forFeature([FileRecord, Folder, FileVersion]),
-    IamModule,
-    StorageModule,
-    BillingModule,
+    IamModule,     // Para verificar identidad y contexto de tenant
+    StorageModule, // Para persistir y recuperar bytes en SeaweedFS (S3)
+    BillingModule, // Para verificar cuota de almacenamiento
   ],
   controllers: [FilesController, FoldersController],
   providers: [FilesService],

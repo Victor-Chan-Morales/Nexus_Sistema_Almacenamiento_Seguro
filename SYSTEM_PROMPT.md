@@ -4,7 +4,7 @@
 
 Usted trabaja en **Nexus**, un producto PaaS/STaaS de almacenamiento seguro para organizaciones. El producto aprobado debe permitir gestionar identidad, permisos, archivos, planes simulados, auditoría y el destino físico del almacenamiento (cloud, on-premises o híbrido). El avance inmediato es un recorrido acotado: registro e inicio de sesión, plan de demostración, dashboard, carpeta, carga y descarga de un archivo.
 
-El stack base documentado es Next.js/TypeScript, NestJS/TypeScript, PostgreSQL 16, MinIO/S3 y Docker Compose. No agregue tecnologías ni cambie versiones principales sin registrar y aprobar una decisión.
+El stack base documentado es Next.js/TypeScript, NestJS/TypeScript, PostgreSQL 16, SeaweedFS (S3) y Docker Compose. No agregue tecnologías ni cambie versiones principales sin registrar y aprobar una decisión.
 
 ## Jerarquía de referencia
 
@@ -23,7 +23,7 @@ El stack base documentado es Next.js/TypeScript, NestJS/TypeScript, PostgreSQL 1
 - Trabaje únicamente en el módulo asignado. Para cambiar un archivo compartido o propiedad ajena, abra una propuesta y espere acuerdo.
 - Aplique SOLID en dependencias concretas: responsabilidades pequeñas, abstracciones en los límites de proveedor, interfaces del tamaño necesario e inyección de dependencias. SOLID no obliga a desplegar cada dominio como microservicio.
 - La web nunca decide ni envía una organización confiable para autorización. La API obtiene el alcance desde la sesión y las membresías válidas.
-- No conecte el frontend directamente a PostgreSQL o MinIO ni exponga credenciales del almacenamiento.
+- No conecte el frontend directamente a PostgreSQL o SeaweedFS ni exponga credenciales del almacenamiento.
 - No guarde contraseñas, JWT, refresh tokens, secretos TOTP, DEK, KEK, credenciales, claves privadas ni archivos reales en Git, logs o mensajes de error.
 - No marque una acción como exitosa hasta que la operación correspondiente haya concluido. Etiquete claramente cualquier simulación.
 - No implemente pantallas nuevas ni cambie nombres/campos de Figma sin autorización del dueño del mockup.

@@ -6,7 +6,7 @@ import { StorageService } from './storage.service';
  * Módulo STORAGE
  * Responsable: Miguel
  *
- * Encapsula el contrato de almacenamiento de objetos (MinIO/S3).
+ * Encapsula el contrato de almacenamiento de objetos mediante S3.
  * FilesModule lo importa e inyecta StorageService directamente
  * en lugar de hacer llamadas HTTP a un servicio externo.
  */
@@ -14,19 +14,39 @@ import { StorageService } from './storage.service';
   imports: [ConfigModule],
   providers: [
     StorageService,
-    // Proveedor de cliente MinIO configurado desde variables de entorno
+    // Cliente compatible con S3 configurado desde variables de entorno
     {
-      provide: 'MINIO_CLIENT',
+      provide: 'S3_CLIENT',
       useFactory: (config: ConfigService) => {
-        // Importación dinámica para evitar errores si MinIO no está disponible
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const Minio = require('minio');
-        return new Minio.Client({
-          endPoint: config.get('MINIO_ENDPOINT', 'localhost'),
-          port: parseInt(String(config.get('MINIO_PORT', 9000)), 10),
-          useSSL: config.get('MINIO_USE_SSL', 'false') === 'true',
-          accessKey: config.get('MINIO_ROOT_USER', 'nexus_local'),
-          secretKey: config.get('MINIO_ROOT_PASSWORD', 'local_only_change_me_please'),
+        const { S3Client } = require('@aws-sdk/client-s3');
+        const protocol = config.get('S3_USE_SSL', 'false') === 'true' ? 'https' : 'http';
+        const endpoint = `${protocol}://${config.get('S3_ENDPOINT', 'localhost')}:${config.get<number>('S3_PORT', 8333)}`;
+        return new S3Client({
+          endpoint,
+          region: config.get('S3_REGION', 'us-east-1'),
+          forcePathStyle: true,
+          credentials: {
+            accessKeyId: config.get('S3_ACCESS_KEY', 'nexus_local'),
+            secretAccessKey: config.get('S3_SECRET_KEY', 'local_only_change_me_please'),
+          },
+        });
+      },
+      inject: [ConfigService],
+    },
+    {
+      provide: 'S3_PUBLIC_CLIENT',
+      useFactory: (config: ConfigService) => {
+        const { S3Client } = require('@aws-sdk/client-s3');
+        const endpoint = config.get('S3_PUBLIC_ENDPOINT')
+          ?? `${config.get('S3_USE_SSL', 'false') === 'true' ? 'https' : 'http'}://${config.get('S3_ENDPOINT', 'localhost')}:${config.get<number>('S3_PORT', 8333)}`;
+        return new S3Client({
+          endpoint,
+          region: config.get('S3_REGION', 'us-east-1'),
+          forcePathStyle: true,
+          credentials: {
+            accessKeyId: config.get('S3_ACCESS_KEY', 'nexus_local'),
+            secretAccessKey: config.get('S3_SECRET_KEY', 'local_only_change_me_please'),
+          },
         });
       },
       inject: [ConfigService],

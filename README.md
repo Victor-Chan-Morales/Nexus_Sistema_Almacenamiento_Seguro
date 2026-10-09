@@ -12,13 +12,14 @@ El backend está implementado y opera como un **Monolito Modular** en NestJS, co
 2. Revisen `ENTS_REGISTRY.md`, `CONTRACTS.md` y `docs/FIGMA_MAP.md` para responsabilidades por dominio.
 3. Consulten `docs/IDENTIDAD_VISUAL.md` para la paleta acordada y la tipografía Inter.
 4. Consulten `docs/decisions/ADR-001-despliegue-del-corte-30.md` para los detalles de la decisión arquitectónica aprobada.
+5. Para el proveedor de objetos local vigente, consulten `docs/decisions/ADR-004-almacenamiento-seaweedfs.md`.
 
 ## Stack base
 
 - **Web:** Next.js App Router + TypeScript (puerto 3000, proceso independiente).
 - **API:** NestJS + TypeScript en arquitectura de **Monolito Modular** (puerto 3001).
 - **Datos:** PostgreSQL 16 (contenedor Docker).
-- **Objetos:** MinIO compatible con S3 (contenedor Docker).
+- **Objetos:** SeaweedFS compatible con S3 (contenedor Docker).
 - **Orquestación local:** Docker Compose.
 
 ## Requisitos locales
@@ -48,9 +49,10 @@ cp .env.example .env
 npm run infra:up
 ```
 
-- PostgreSQL se publica en `localhost:5432`.
-- MinIO en `localhost:9000` y su consola en `localhost:9001`.
-- API NestJS se publica en `http://localhost:3001/api` con health check en `http://localhost:3001/api/health`.
+- PostgreSQL se publica en `localhost:5433` (el puerto interno de Compose sigue siendo `5432`).
+- API S3 de SeaweedFS en `localhost:8333`, estado del master en `localhost:9333` y consola del filer en `localhost:8888`.
+- `infra:up` arranca PostgreSQL y SeaweedFS en Docker. La API NestJS corre localmente en `http://localhost:3001/api` con `npm run dev:api`; health check en `http://localhost:3001/api/health`.
+- El perfil Docker opcional para la API es `docker compose --profile containerized-api up -d --build`.
 
 Para ejecutar la API en desarrollo local con recarga en caliente:
 ```bash
@@ -72,7 +74,7 @@ npm run build:api     # Compilar NestJS TypeScript a dist/
 npm run start:api     # Arrancar NestJS compilado
 
 # Infraestructura Docker
-npm run infra:up      # Levantar contenedores (postgres, minio, api)
+npm run infra:up      # Levantar PostgreSQL y SeaweedFS en Docker
 npm run infra:down    # Detener contenedores
 npm run infra:logs    # Ver logs en vivo de Docker Compose
 ```
@@ -87,7 +89,7 @@ apps/
       iam/             Autenticación, usuarios, organizaciones, membresías y JWT
       billing/         Planes, suscripciones y control de cuota
       files/           Carpetas, archivos, versiones y control de almacenamiento
-      storage/         Proveedor MinIO/S3 (patrón Strategy)
+      storage/         Proveedor S3 con SeaweedFS (patrón Strategy)
       health/          Health check (/api/health) con @nestjs/terminus
     src/shared/        Decoradores, contexto de request y utilidades comunes
     src/main.ts        Punto de entrada de la API (puerto 3001, CORS, ValidationPipe)

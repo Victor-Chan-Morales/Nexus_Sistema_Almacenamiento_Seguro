@@ -1,5 +1,8 @@
 # Bitácora de coordinación
 
+> Las entradas previas a 2026-10-08 documentan el proveedor histórico MinIO; ADR-004 establece SeaweedFS como configuración local vigente.
+
+
 Registro dinámico de decisiones, acuerdos pendientes y bloqueos. Añada entradas nuevas al principio; no borre historia. Las propuestas se marcan como pendientes hasta que el equipo las acepte.
 
 ## 2026-10-06 — Adopción e Implementación del Monolito Modular
@@ -53,3 +56,10 @@ Se aprobaron las propuestas 1 a 12: correo mediante EmailService, sesiones con a
 - Se usa el límite Demo aprobado de 5 GB/5 usuarios; no se inventan precios o planes comerciales.
 - Las pantallas restantes siguen pendientes de identificar/cotejar con sus frames correspondientes.
 - Login: se revisó `docs/figma/acceso/mk_01_login.png` y se reemplazó el formulario de correo/contraseña por el selector de espacio de trabajo del frame. El inicio sigue simulado; la seguridad y el subdominio aún no se validan con IAM.
+
+## 2026-10-08 — Migración local de almacenamiento S3 a SeaweedFS
+
+- Se reemplazó el contenedor MinIO por SeaweedFS con gateway S3 en Compose.
+- El módulo Storage usa AWS SDK for JavaScript v3 y variables S3_*; PostgreSQL sigue almacenando metadatos y SeaweedFS los bytes.
+- Las URLs prefirmadas usan S3_PUBLIC_ENDPOINT para que el navegador alcance el gateway publicado.
+- Ver decisión vigente en docs/decisions/ADR-004-almacenamiento-seaweedfs.md. Los volúmenes antiguos de MinIO no son compatibles ni se copian automáticamente.

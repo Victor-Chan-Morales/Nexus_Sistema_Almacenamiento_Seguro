@@ -9,7 +9,7 @@ La API de Nexus está desarrollada en **NestJS + TypeScript** bajo el patrón de
 | `iam/` | Sebastián | Autenticación, registro, login con Argon2id + JWT, entidades de usuario, organización y membresía. | `IamService`, `JwtModule`, `PassportModule` |
 | `billing/` | Anthony | Catálogo de planes, suscripciones (simuladas) y cálculo de límites de almacenamiento por organización. | `BillingService` |
 | `files/` | Miguel | Gestión de carpetas jerárquicas, metadatos de archivos, control de versiones y verificación de cuota. | `FilesService` |
-| `storage/` | Miguel | Proveedor de almacenamiento compatible con S3/MinIO (patrón Strategy). | `StorageService` |
+| `storage/` | Miguel | Proveedor de almacenamiento compatible con SeaweedFS (S3) (patrón Strategy). | `StorageService` |
 | `health/` | Víctor | Endpoint de liveness y verificación de PostgreSQL con `@nestjs/terminus`. | `HealthModule` |
 
 ## Comunicación interna entre módulos

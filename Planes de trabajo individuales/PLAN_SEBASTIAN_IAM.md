@@ -26,8 +26,20 @@ Una cuenta puede registrarse, iniciar sesión y consultar su perfil autenticado.
 - Implementar envío de verificación con `EmailService` conectado a Mailpit/Mailtrap en desarrollo; guardar solo hash del token, con vencimiento de 15 minutos y un solo uso. Acordar y documentar `POST /auth/verify-email` en `CONTRACTS.md` antes de exponerlo.
 - Aplicar el rol inicial acordado y devolver únicamente `{ userId, organizationId, role, verificationRequired }`.
 - Coordinar con Miguel la provisión del Drive personal `Mi espacio` y carpeta raíz `Archivos` indicada por ADR-003. Incluirla en la operación transaccional de registro o documentar y aprobar la estrategia para evitar aprovisionamiento parcial.
+- Mantener esa provisión en metadatos de PostgreSQL. El registro de IAM no debe conectarse al gateway S3 ni necesitar credenciales de SeaweedFS; coordinar con Miguel qué ocurre si SeaweedFS está indisponible durante el alta.
 
 **Entrega verificable:** registro válido persiste entidades relacionadas; correo duplicado y datos inválidos no crean registros parciales.
+
+### Consideraciones por la migración de MinIO a SeaweedFS
+
+- El cambio de proveedor no modifica autenticación, JWT, refresh, roles ni el origen del `organizationId`; preservar el contrato de IAM y el contexto tenant.
+- Confirmar que el aprovisionamiento inicial de Drive/carpeta crea solo metadatos y no almacena bytes ni claves específicas del proveedor.
+- Verificar junto con Miguel que el `organizationId` emitido por IAM coincide con el prefijo de objeto generado por Files, sin que IAM construya ni reciba dicho object key.
+- No agregar variables, SDK, credenciales o llamadas a SeaweedFS en IAM. Mantener comunicación entre módulos dentro del monolito y limitarla al contrato acordado.
+- Revisar registro, login y acceso a Files con SeaweedFS disponible y no disponible: una falla de Storage no debe otorgar acceso cruzado ni alterar la autenticación; acordar el comportamiento de alta si la provisión de metadatos falla.
+- Eliminar de la documentación propia de IAM referencias a MinIO si las hubiera; documentar solo el contrato de Files/Storage y el contexto tenant.
+
+**Entrega verificable:** IAM sigue autenticando y asignando tenant de la misma forma; Files administra el proveedor de objetos independientemente.
 
 ### 3. Completar inicio de sesión y sesión
 
@@ -77,3 +89,6 @@ Una cuenta puede registrarse, iniciar sesión y consultar su perfil autenticado.
 - [ ] JWT y `GET /auth/me` coinciden con el contrato y funcionan con guardas NestJS.
 - [ ] El tenant proviene del backend y se conserva en cada operación protegida.
 - [ ] Los casos de aceptación quedan documentados en el PR.
+- [ ] IAM no contiene dependencia directa de MinIO ni SeaweedFS, ni credenciales del proveedor.
+- [ ] La provisión de Drive/carpeta inicial permanece en PostgreSQL y respeta el aislamiento por organización.
+- [ ] Se verificó que el contexto tenant de IAM funciona en el flujo de Files integrado con SeaweedFS.

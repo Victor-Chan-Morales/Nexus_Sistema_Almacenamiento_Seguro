@@ -38,9 +38,10 @@ Un solo PR debe cambiar una misma migración. Los módulos envían una propuesta
 ## Reglas técnicas
 
 - Mantenga las dependencias y versiones aprobadas; no agregue paquetes para resolver una función pequeña sin justificarlo.
+- Mantenga `strict-ssl=true` en npm. Las etapas Alpine del Dockerfile instalan `ca-certificates`; si una red inspecciona TLS con una CA propia, añádala al almacén de confianza de la imagen, no desactive la validación.
 - No copie componentes compartidos para darles estilos distintos; amplíe el componente o cree uno específico cuando las responsabilidades realmente difieran.
 - No acople pantallas a respuestas inventadas. Use `apps/web/src/lib/api/README.md` y tipos centralizados cuando el contrato esté aprobado.
-- Toda decisión sobre almacenamiento pasa por `StorageProvider`; no llame MinIO desde IAM, Billing o el frontend.
+- Toda decisión sobre almacenamiento pasa por `StorageProvider`; no llame SeaweedFS desde IAM, Billing o el frontend.
 - En todas las consultas de recursos, valide organización y rol en backend.
 - Nunca suba `.env`, contraseñas reales, tokens, llaves, credenciales ni archivos reales. Use `.env.example` con valores solo de desarrollo.
 

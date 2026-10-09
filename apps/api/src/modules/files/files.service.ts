@@ -3,11 +3,11 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
-  ConflictException,
+  InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, IsNull } from 'typeorm';
 import { Readable } from 'stream';
 import { FileRecord } from './entities/file-record.entity';
 import { Folder } from './entities/folder.entity';
@@ -18,119 +18,117 @@ import { BillingService } from '../billing/billing.service';
 @Injectable()
 export class FilesService {
   private readonly logger = new Logger(FilesService.name);
-  private readonly processedRequests = new Set<string>();
 
   constructor(
     @InjectRepository(FileRecord)
-    private readonly fileRepo: Repository<FileRecord>,
-
+    private readonly fileRepository: Repository<FileRecord>,
     @InjectRepository(Folder)
-    private readonly folderRepo: Repository<Folder>,
-
+    private readonly folderRepository: Repository<Folder>,
     @InjectRepository(FileVersion)
-    private readonly versionRepo: Repository<FileVersion>,
-
+    private readonly versionRepository: Repository<FileVersion>,
     private readonly storageService: StorageService,
     private readonly billingService: BillingService,
   ) {}
 
-  // ── Carpetas ──────────────────────────────────────────────────────────────
+  /**
+   * Listar carpetas de una organización con soporte de navegación jerárquica
+   */
+  async listFolders(organizationId: string, parentId?: string): Promise<Folder[]> {
+    return this.folderRepository.find({
+      where: {
+        organizationId,
+        parentId: parentId ? parentId : IsNull(),
+      },
+      order: { name: 'ASC' },
+    });
+  }
 
+  /**
+   * Crear una carpeta asociada a la organización activa
+   */
   async createFolder(
     organizationId: string,
     ownerId: string,
     name: string,
     parentId?: string,
   ): Promise<Folder> {
-    if (!name || name.trim().length === 0) {
-      throw new BadRequestException('El nombre de la carpeta es requerido');
-    }
-
     if (parentId) {
-      const parent = await this.folderRepo.findOne({
-        where: { id: parentId, organizationId, isDeleted: false },
+      const parent = await this.folderRepository.findOne({
+        where: { id: parentId, organizationId },
       });
       if (!parent) {
-        throw new NotFoundException('Carpeta padre no encontrada');
+        throw new NotFoundException(
+          `Carpeta padre ${parentId} no encontrada o no pertenece a la organización`,
+        );
       }
     }
 
-    const folder = this.folderRepo.create({
+    const folder = this.folderRepository.create({
       organizationId,
       ownerId,
-      name: name.trim(),
-      parentId: parentId ?? null,
+      name,
+      parentId: parentId || null,
     });
-    return this.folderRepo.save(folder);
+
+    return this.folderRepository.save(folder);
   }
 
-  async listFolders(organizationId: string, parentId?: string): Promise<Folder[]> {
-    return this.folderRepo.find({
-      where: {
-        organizationId,
-        parentId: parentId ?? null,
-        isDeleted: false,
-      },
-      order: { name: 'ASC' },
-    });
-  }
-
+  /**
+   * Explorar el contenido de una carpeta (subcarpetas y archivos)
+   */
   async getFolderItems(organizationId: string, folderId: string) {
-    if (folderId !== 'root') {
-      const folder = await this.folderRepo.findOne({
-        where: { id: folderId, organizationId, isDeleted: false },
-      });
-      if (!folder) {
-        throw new NotFoundException('Carpeta no encontrada');
-      }
+    const folder = await this.folderRepository.findOne({
+      where: { id: folderId, organizationId },
+    });
+    if (!folder) {
+      throw new NotFoundException(`Carpeta ${folderId} no encontrada`);
     }
 
-    const actualParentId = folderId === 'root' ? null : folderId;
-
     const [folders, files] = await Promise.all([
-      this.folderRepo.find({
-        where: { organizationId, parentId: actualParentId, isDeleted: false },
+      this.folderRepository.find({
+        where: { organizationId, parentId: folderId },
         order: { name: 'ASC' },
       }),
-      this.fileRepo.find({
-        where: { organizationId, folderId: actualParentId, isDeleted: false },
-        order: { createdAt: 'DESC' },
+      this.fileRepository.find({
+        where: { organizationId, folderId, isDeleted: false },
+        order: { name: 'ASC' },
       }),
     ]);
 
-    return { folderId, folders, files };
+    return { folder, folders, files };
   }
 
-  // ── Aprovisionamiento IAM (Sebastián) ─────────────────────────────────────
-
-  async provisionInitialSpace(organizationId: string, userId: string): Promise<Folder> {
-    const rootName = 'Mi espacio';
-    let rootFolder = await this.folderRepo.findOne({
-      where: { organizationId, name: rootName, parentId: null, isDeleted: false },
-    });
-
-    if (!rootFolder) {
-      rootFolder = this.folderRepo.create({
-        organizationId,
-        ownerId: userId,
-        name: rootName,
-        parentId: null,
-      });
-      await this.folderRepo.save(rootFolder);
-    }
-
-    return rootFolder;
-  }
-
-  // ── Archivos ──────────────────────────────────────────────────────────────
-
+  /**
+   * Listar archivos de la organización (en raíz o dentro de una carpeta)
+   */
   async listFiles(organizationId: string, folderId?: string): Promise<FileRecord[]> {
-    return this.fileRepo.find({
-      where: { organizationId, folderId: folderId ?? null, isDeleted: false },
+    return this.fileRepository.find({
+      where: {
+        organizationId,
+        folderId: folderId ? folderId : IsNull(),
+        isDeleted: false,
+      },
       order: { createdAt: 'DESC' },
     });
   }
 
+  /**
+   * Cálculo de almacenamiento utilizado para verificación de cuota
+   */
+  async getUsedStorageBytes(organizationId: string): Promise<bigint> {
+    const result = await this.fileRepository
+      .createQueryBuilder('file')
+      .select('SUM(CAST(file.sizeBytes AS BIGINT))', 'totalBytes')
+      .where('file.organizationId = :organizationId', { organizationId })
+      .andWhere('file.isDeleted = false')
+      .getRawOne();
+
+    return BigInt(result?.totalBytes || 0);
+  }
+
+  /**
+   * Subida de archivo multipart con validación de cuota, metadatos y SeaweedFS
+   */
   async uploadMultipartFile(params: {
     organizationId: string;
     ownerId: string;
@@ -138,134 +136,103 @@ export class FilesService {
     file: any;
     idempotencyKey?: string;
   }): Promise<FileRecord> {
-    const { organizationId, ownerId, folderId, file, idempotencyKey } = params;
+    const { organizationId, ownerId, folderId, file } = params;
 
-    // Validación de Idempotencia
-    if (idempotencyKey) {
-      if (this.processedRequests.has(idempotencyKey)) {
-        throw new ConflictException('Petición duplicada (Idempotency-Key ya procesada)');
-      }
-      this.processedRequests.add(idempotencyKey);
+    if (!file) {
+      throw new BadRequestException('No se ha proporcionado ningún archivo');
     }
 
-    try {
-      // 1. Validar cuota con BillingService (in-process)
-      const storageLimit = await this.billingService.getStorageLimitBytes(organizationId);
-      const usedBytes = await this.getConfirmedUsageBytes(organizationId);
+    const fileSize = file.size || (file.buffer ? file.buffer.length : 0);
 
-      if (usedBytes + BigInt(file.size) > storageLimit) {
-        throw new ForbiddenException('Cuota de almacenamiento excedida');
-      }
+    // 1. Verificación de cuota in-process contra BillingService
+    const storageLimit = await this.billingService.getStorageLimitBytes(organizationId);
+    const usedBytes = await this.getUsedStorageBytes(organizationId);
 
-      // 2. Validar carpeta destino si se envía
-      if (folderId) {
-        const folder = await this.folderRepo.findOne({
-          where: { id: folderId, organizationId, isDeleted: false },
-        });
-        if (!folder) {
-          throw new NotFoundException('Carpeta no encontrada');
-        }
-      }
+    if (usedBytes + BigInt(fileSize) > storageLimit) {
+      throw new ForbiddenException('Cuota de almacenamiento excedida');
+    }
 
-      // 3. Crear o ubicar registro del archivo
-      let fileRecord = await this.fileRepo.findOne({
-        where: {
-          name: file.originalname,
-          organizationId,
-          folderId: folderId ?? null,
-          isDeleted: false,
-        },
+    // 2. Validación de carpeta de destino
+    if (folderId) {
+      const folder = await this.folderRepository.findOne({
+        where: { id: folderId, organizationId },
       });
-
-      let versionNumber = 1;
-      if (!fileRecord) {
-        fileRecord = this.fileRepo.create({
-          name: file.originalname,
-          organizationId,
-          ownerId,
-          folderId: folderId ?? null,
-          mimeType: file.mimetype,
-          sizeBytes: file.size.toString(),
-        });
-        await this.fileRepo.save(fileRecord);
-      } else {
-        const lastVersion = await this.versionRepo.findOne({
-          where: { fileId: fileRecord.id },
-          order: { versionNumber: 'DESC' },
-        });
-        versionNumber = (lastVersion?.versionNumber ?? 0) + 1;
+      if (!folder) {
+        throw new NotFoundException(`Carpeta ${folderId} no encontrada`);
       }
-
-      // 4. Clave de objeto multi-tenant en MinIO
-      const objectKey = `${organizationId}/${fileRecord.id}/v${versionNumber}-${file.originalname}`;
-      const stream = Readable.from(file.buffer);
-
-      // 5. Guardar binario en MinIO
-      await this.storageService.put(objectKey, stream, file.size, file.mimetype);
-
-      try {
-        // 6. Persistir versión en Postgres
-        const version = this.versionRepo.create({
-          fileId: fileRecord.id,
-          versionNumber,
-          objectKey,
-          sizeBytes: file.size.toString(),
-          uploadedBy: ownerId,
-        });
-        await this.versionRepo.save(version);
-
-        fileRecord.sizeBytes = file.size.toString();
-        await this.fileRepo.save(fileRecord);
-
-        return fileRecord;
-      } catch (dbError) {
-        // Compensación / Rollback de archivo huérfano si falla la BD
-        this.logger.error(`Fallo en BD, compensando archivo en Storage: ${objectKey}`);
-        try {
-          if (typeof (this.storageService as any).delete === 'function') {
-            await (this.storageService as any).delete(objectKey);
-          }
-        } catch (storageError: any) {
-          this.logger.error(`No se pudo compensar el objeto en MinIO: ${storageError.message}`);
-        }
-        throw dbError;
-      }
-    } catch (err) {
-      if (idempotencyKey) {
-        this.processedRequests.delete(idempotencyKey);
-      }
-      throw err;
     }
+
+    // 3. Crear registro de metadatos en PostgreSQL
+    const fileRecord = this.fileRepository.create({
+      name: file.originalname || 'archivo',
+      organizationId,
+      ownerId,
+      folderId: folderId || null,
+      mimeType: file.mimetype || 'application/octet-stream',
+      sizeBytes: String(fileSize),
+      isDeleted: false,
+    });
+
+    const savedFile = await this.fileRepository.save(fileRecord);
+
+    // 4. Clave de almacenamiento generada por backend con prefijo de tenant
+    const versionNumber = 1;
+    const objectKey = `${organizationId}/${savedFile.id}/v${versionNumber}-${file.originalname}`;
+
+    const fileVersion = this.versionRepository.create({
+      fileId: savedFile.id,
+      versionNumber,
+      objectKey,
+      sizeBytes: String(fileSize),
+      uploadedBy: ownerId as any,
+    });
+
+    // 5. Envío de bytes a SeaweedFS pasando (key, body, size, mimeType)
+    try {
+      await this.storageService.put(
+        objectKey,
+        file.buffer || file.stream,
+        fileSize,
+        file.mimetype || 'application/octet-stream',
+      );
+      await this.versionRepository.save(fileVersion);
+    } catch (error: any) {
+      this.logger.error(`Error guardando en SeaweedFS: ${error?.message || error}`);
+      await this.storageService.delete(objectKey).catch((delErr: any) => {
+        this.logger.warn(`Fallo al compensar borrado: ${delErr?.message || delErr}`);
+      });
+      await this.fileRepository.delete(savedFile.id).catch(() => null);
+      throw new InternalServerErrorException('Error al persistir el archivo en el almacenamiento');
+    }
+
+    return savedFile;
   }
 
+  /**
+   * Descarga binaria por stream validando aislamiento multi-tenant
+   */
   async downloadFileStream(
     fileId: string,
     organizationId: string,
   ): Promise<{ stream: Readable; mimeType: string; name: string }> {
-    const file = await this.fileRepo.findOne({
+    const file = await this.fileRepository.findOne({
       where: { id: fileId, organizationId, isDeleted: false },
     });
+
     if (!file) {
-      throw new NotFoundException('Archivo no encontrado');
+      throw new NotFoundException(`Archivo ${fileId} no encontrado`);
     }
 
-    const lastVersion = await this.versionRepo.findOne({
-      where: { fileId },
+    const latestVersion = await this.versionRepository.findOne({
+      where: { fileId: file.id },
       order: { versionNumber: 'DESC' },
     });
-    if (!lastVersion) {
-      throw new NotFoundException('Sin versiones disponibles para este archivo');
+
+    if (!latestVersion) {
+      throw new NotFoundException(`Versión no encontrada para el archivo ${fileId}`);
     }
 
-    // Obtener stream desde StorageService
-    let stream: Readable;
-    if (typeof (this.storageService as any).getStream === 'function') {
-      stream = await (this.storageService as any).getStream(lastVersion.objectKey);
-    } else if (typeof (this.storageService as any).get === 'function') {
-      stream = await (this.storageService as any).get(lastVersion.objectKey);
-    } else {
-      throw new BadRequestException('Método de lectura no soportado por StorageService');
-    }
+    const stream = await this.storageService.get(latestVersion.objectKey);
 
     return {
       stream,
@@ -274,27 +241,34 @@ export class FilesService {
     };
   }
 
-  async softDelete(fileId: string, organizationId: string): Promise<void> {
-    const file = await this.fileRepo.findOne({
+  /**
+   * Eliminación lógica (soft-delete)
+   */
+  async softDelete(fileId: string, organizationId: string): Promise<FileRecord> {
+    const file = await this.fileRepository.findOne({
       where: { id: fileId, organizationId, isDeleted: false },
     });
+
     if (!file) {
-      throw new NotFoundException('Archivo no encontrado');
+      throw new NotFoundException(`Archivo ${fileId} no encontrado`);
     }
+
     file.isDeleted = true;
-    await this.fileRepo.save(file);
+    return this.fileRepository.save(file);
   }
 
-  // ── Cuota pública para Dashboard (Víctor) ──────────────────────────────────
+  /**
+   * Búsqueda por ID con validación de tenant
+   */
+  async findFileById(fileId: string, organizationId: string): Promise<FileRecord> {
+    const file = await this.fileRepository.findOne({
+      where: { id: fileId, organizationId },
+    });
 
-  async getConfirmedUsageBytes(organizationId: string): Promise<bigint> {
-    const result = await this.fileRepo
-      .createQueryBuilder('f')
-      .select('SUM(CAST(f.sizeBytes AS BIGINT))', 'total')
-      .where('f.organizationId = :organizationId', { organizationId })
-      .andWhere('f.isDeleted = false')
-      .getRawOne();
+    if (!file) {
+      throw new NotFoundException(`Archivo ${fileId} no encontrado`);
+    }
 
-    return BigInt(result?.total ?? 0);
+    return file;
   }
 }

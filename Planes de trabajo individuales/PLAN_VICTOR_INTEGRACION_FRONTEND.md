@@ -47,6 +47,16 @@ Desde la web se puede registrar e iniciar sesión, consultar el plan y la cuota 
 
 **Entrega verificable:** pantallas conectadas a datos persistidos y sin estados de demo engañosos.
 
+### 4.1 Consideraciones por la migración de MinIO a SeaweedFS
+
+- Mantener el navegador conectado exclusivamente a la API Nexus; no llamar al gateway S3 de SeaweedFS desde `apps/web` ni exponer credenciales, bucket, endpoint interno u object keys.
+- Confirmar con Miguel que las rutas, el contrato multipart y la respuesta de descarga se mantienen aunque cambie el proveedor detrás de `StorageService`.
+- Verificar carga, listado y descarga desde la UI contra el entorno integrado con SeaweedFS; comparar el archivo descargado con el original.
+- Mostrar estados comprensibles para error temporal de Storage, tamaño/tipo rechazado y cuota excedida, sin exponer errores internos del proveedor.
+- Revisar que README y guías locales ya no instruyan a levantar MinIO, e incluir los pasos de arranque de SeaweedFS que Miguel haya verificado.
+
+**Entrega verificable:** el usuario completa la misma operación desde el frontend y el cliente no conoce cuál proveedor de objetos la atiende.
+
 ### 5. Integrar, registrar evidencia y preparar demo
 
 - Integrar PRs revisados en orden IAM → Billing → Files/Storage → Dashboard/web.
@@ -77,6 +87,9 @@ Desde la web se puede registrar e iniciar sesión, consultar el plan y la cuota 
 - [ ] Dashboard usa respuesta real protegida y muestra cuota en bytes convertidos a unidades legibles.
 - [ ] El frontend maneja 401, 403/cuota y errores de red con estados claros.
 - [ ] Entorno y demo se pueden repetir siguiendo README.
+- [ ] La UI opera con SeaweedFS solo a través de la API y no contiene configuración/credenciales del proveedor.
+- [ ] Carga y descarga se verificaron contra SeaweedFS con contenido íntegro y estados de error claros.
+- [ ] Las instrucciones de desarrollo describen SeaweedFS y reflejan un arranque realmente comprobado.
 
 ## Tarea de integración backend para Dashboard
 
