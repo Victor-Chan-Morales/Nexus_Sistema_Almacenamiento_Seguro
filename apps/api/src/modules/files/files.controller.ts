@@ -1,17 +1,66 @@
 import {
-  Controller, Get, Post, Delete, Param, Body,
-  UseGuards, Request, Query,
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Param,
+  Body,
+  Query,
+  UseGuards,
+  Request,
+  UseInterceptors,
+  UploadedFile,
+  Headers,
+  ParseFilePipe,
+  MaxFileSizeValidator,
+  Res,
+  BadRequestException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { Response } from 'express';
 import { FilesService } from './files.service';
 
 /**
- * FilesController
- *
- * GET  /api/files?orgId=&folderId=  → Lista archivos
- * GET  /api/files/:id/download      → URL de descarga prefirmada
- * POST /api/files/folders           → Crear carpeta
- * DELETE /api/files/:id             → Mover a papelera
+ * Rutas de Carpetas (/folders)
+ * Cumple con los contratos acordados para navegación y explorador de archivos.
+ */
+@Controller('folders')
+@UseGuards(AuthGuard('jwt'))
+export class FoldersController {
+  constructor(private readonly filesService: FilesService) {}
+
+  @Get()
+  listFolders(@Request() req: any, @Query('parentId') parentId?: string) {
+    const orgId = req.user.organizationId;
+    return this.filesService.listFolders(orgId, parentId);
+  }
+
+  @Post()
+  createFolder(
+    @Request() req: any,
+    @Body() body: { name: string; parentId?: string; parentFolderId?: string },
+  ) {
+    const orgId = req.user.organizationId;
+    const userId = req.user.userId || req.user.id;
+    return this.filesService.createFolder(
+      orgId,
+      userId,
+      body.name,
+      body.parentId || body.parentFolderId,
+    );
+  }
+
+  @Get(':id/items')
+  getFolderItems(@Request() req: any, @Param('id') folderId: string) {
+    const orgId = req.user.organizationId;
+    return this.filesService.getFolderItems(orgId, folderId);
+  }
+}
+
+/**
+ * Rutas de Archivos (/files)
+ * Manejo de subida multipart, descarga por stream, consulta y eliminación lógica.
  */
 @Controller('files')
 @UseGuards(AuthGuard('jwt'))
@@ -19,52 +68,93 @@ export class FilesController {
   constructor(private readonly filesService: FilesService) {}
 
   @Get()
-  listFiles(
-    @Request() req,
-    @Query('folderId') folderId?: string,
-  ) {
+  listFiles(@Request() req: any, @Query('folderId') folderId?: string) {
     const orgId = req.user.organizationId;
     return this.filesService.listFiles(orgId, folderId);
   }
 
-  @Get('folders')
-  listFolders(
-    @Request() req,
-    @Query('parentId') parentId?: string,
+  @Post('upload')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 100 * 1024 * 1024 }, // 100 MB máximo
+    }),
+  )
+  async uploadFile(
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 100 * 1024 * 1024 }),
+        ],
+      }),
+    )
+    file: any,
+    @Body('folderId') folderId: string,
+    @Headers('Idempotency-Key') idempotencyKey: string,
+    @Request() req: any,
   ) {
-    const orgId = req.user.organizationId;
-    return this.filesService.listFolders(orgId, parentId);
-  }
+    // Validación de tipos según ADR-003 (PDF, DOCX, XLSX, PPTX, JPG, PNG, TXT, ZIP)
+    const allowedMimes = /(png|jpeg|jpg|pdf|text|plain|zip|officedocument|msword)/i;
+    if (!file || !allowedMimes.test(file.mimetype)) {
+      throw new BadRequestException(
+        `Tipo de archivo no permitido: ${file?.mimetype || 'desconocido'}`,
+      );
+    }
 
-  @Post('folders')
-  createFolder(
-    @Request() req,
-    @Body() body: { name: string; parentId?: string; parentFolderId?: string },
-  ) {
     const orgId = req.user.organizationId;
-    return this.filesService.createFolder(
-      orgId,
-      req.user.userId,
-      body.name,
-      body.parentId || body.parentFolderId,
-    );
+    const userId = req.user.userId || req.user.id;
+
+    return this.filesService.uploadMultipartFile({
+      organizationId: orgId,
+      ownerId: userId,
+      folderId,
+      file,
+      idempotencyKey,
+    });
   }
 
   @Get(':id/download')
-  getDownloadUrl(
-    @Request() req,
-    @Param('id') id: string,
+  async downloadFile(
+    @Request() req: any,
+    @Param('id') fileId: string,
+    @Res() res: Response,
   ) {
     const orgId = req.user.organizationId;
-    return this.filesService.getDownloadUrl(id, orgId);
+    const { stream, mimeType, name } = await this.filesService.downloadFileStream(
+      fileId,
+      orgId,
+    );
+
+    res.set({
+      'Content-Type': mimeType,
+      'Content-Disposition': `attachment; filename="${encodeURIComponent(name)}"`,
+    });
+
+    stream.pipe(res);
   }
 
   @Delete(':id')
-  softDelete(
-    @Request() req,
-    @Param('id') id: string,
-  ) {
+  softDelete(@Request() req: any, @Param('id') fileId: string) {
     const orgId = req.user.organizationId;
-    return this.filesService.softDelete(id, orgId);
+    return this.filesService.softDelete(fileId, orgId);
+  }
+
+  // Compatibilidad hacia atrás
+  @Get('folders')
+  listFoldersLegacy(@Request() req: any, @Query('parentId') parentId?: string) {
+    return this.filesService.listFolders(req.user.organizationId, parentId);
+  }
+
+  @Post('folders')
+  createFolderLegacy(
+    @Request() req: any,
+    @Body() body: { name: string; parentId?: string; parentFolderId?: string },
+  ) {
+    const userId = req.user.userId || req.user.id;
+    return this.filesService.createFolder(
+      req.user.organizationId,
+      userId,
+      body.name,
+      body.parentId || body.parentFolderId,
+    );
   }
 }
