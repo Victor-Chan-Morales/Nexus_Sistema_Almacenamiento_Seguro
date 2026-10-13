@@ -1,0 +1,33 @@
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+
+/**
+ * Tabla iam.session. La tabla NO tiene organization_id: al refrescar, la organización se vuelve a
+ * derivar de la primera membresía activa (selector de organización: pendiente).
+ * No se mapean ip_address, user_agent ni created_at (la BD pone el valor por defecto).
+ */
+@Entity({ schema: 'iam', name: 'session' })
+export class Session {
+  @PrimaryGeneratedColumn('uuid', { name: 'session_id' })
+  id!: string;
+
+  @Column({ name: 'user_id', type: 'uuid' })
+  userId!: string;
+
+  /** SHA-256 hex del refresh token. El valor en claro solo vive en la cookie HttpOnly. */
+  @Column({ name: 'refresh_token_hash', type: 'varchar', length: 255 })
+  refreshTokenHash!: string;
+
+  @Column({ name: 'expires_at', type: 'timestamptz' })
+  expiresAt!: Date;
+
+  @Column({ name: 'revoked_at', type: 'timestamptz', nullable: true })
+  revokedAt!: Date | null;
+
+  isExpired(now: Date = new Date()): boolean {
+    return this.expiresAt.getTime() <= now.getTime();
+  }
+
+  isRevoked(): boolean {
+    return this.revokedAt !== null;
+  }
+}

@@ -1,48 +1,36 @@
-import {
-  Entity,
-  PrimaryGeneratedColumn,
-  Column,
-  CreateDateColumn,
-  UpdateDateColumn,
-  OneToMany,
-} from 'typeorm';
-import { Membership } from './membership.entity';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
-export enum UserStatus {
-  PENDING_VERIFICATION = 'pending_verification',
-  ACTIVE = 'active',
-  SUSPENDED = 'suspended',
-}
-
-@Entity('users')
+/**
+ * Tabla iam.user. No se mapean (tienen valor por defecto en la BD o no se usan aún):
+ * mfa_secret_encrypted, failed_login_attempts, last_login_at, created_at, updated_at.
+ */
+@Entity({ schema: 'iam', name: 'user' })
 export class User {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+  @PrimaryGeneratedColumn('uuid', { name: 'user_id' })
+  id!: string;
 
-  @Column({ unique: true })
-  email: string;
+  /** La BD exige minúsculas (CHECK ck_user_email_lowercase) y es único. */
+  @Column({ type: 'varchar', length: 255 })
+  email!: string;
 
-  @Column({ name: 'password_hash' })
-  passwordHash: string;
+  /** Hash Argon2id. Nunca se devuelve ni se registra. */
+  @Column({ name: 'password_hash', type: 'varchar', length: 255 })
+  passwordHash!: string;
 
-  @Column({ name: 'full_name' })
-  fullName: string;
+  @Column({ name: 'full_name', type: 'varchar', length: 150 })
+  fullName!: string;
 
-  @Column({
-    type: 'varchar',
-    default: UserStatus.PENDING_VERIFICATION,
-  })
-  status: UserStatus;
+  @Column({ name: 'email_verified', type: 'boolean', default: false })
+  emailVerified!: boolean;
 
-  @Column({ name: 'email_verified', default: false })
-  emailVerified: boolean;
+  /** MFA/TOTP está fuera del alcance actual: IAM falla cerrado si llega en true. */
+  @Column({ name: 'mfa_enabled', type: 'boolean', default: false })
+  mfaEnabled!: boolean;
 
-  @OneToMany(() => Membership, (membership) => membership.user)
-  memberships: Membership[];
+  @Column({ name: 'is_super_admin', type: 'boolean', default: false })
+  isSuperAdmin!: boolean;
 
-  @CreateDateColumn({ name: 'created_at' })
-  createdAt: Date;
-
-  @UpdateDateColumn({ name: 'updated_at' })
-  updatedAt: Date;
+  /** ENUM iam.user_status (active | inactive | locked). */
+  @Column({ type: 'varchar' })
+  status!: string;
 }

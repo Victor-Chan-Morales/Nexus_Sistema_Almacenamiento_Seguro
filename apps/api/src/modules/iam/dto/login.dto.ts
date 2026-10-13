@@ -1,9 +1,15 @@
-import { IsEmail, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
+import { trim } from './register.dto';
 
 export class LoginDto {
-  @IsEmail({}, { message: 'El correo no es válido' })
-  email: string;
+  @Transform(trim)
+  @IsEmail()
+  @MaxLength(254)
+  email!: string;
 
   @IsString()
-  password: string;
+  @MinLength(1)
+  @MaxLength(128)
+  password!: string;
 }
