@@ -1,5 +1,9 @@
-# Módulo HEALTH
+# Módulo Health
 
-**Dueño inicial:** Víctor (integración).
+**Dueño:** Víctor (Integración).
 
-Implementar aquí únicamente la responsabilidad asignada en `ENTS_REGISTRY.md`. Antes de generar controladores o entidades, confirmar el contrato aprobado, las dependencias y la versión común del proyecto NestJS. No editar módulos ajenos ni guardar secretos en este directorio.
+## Responsabilidades
+- Diagnóstico de salud de la aplicación backend y dependencias principales.
+- Expone `GET /api/health` usando `@nestjs/terminus`.
+- Comprueba conectividad directa con PostgreSQL.
+- Utilizado por las directivas de healthcheck de Docker Compose para orquestación confiable.

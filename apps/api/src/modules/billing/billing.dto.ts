@@ -1,4 +1,3 @@
-
 export class ActivateSubscriptionDto {
   planId!: string;
 }
@@ -15,8 +14,8 @@ export interface PlanResponse {
 
 export interface SubscriptionActivationResponse {
   subscriptionId: string;
-  status: string;
-  simulated: boolean;
+  status: 'active';
+  simulated: true;
   startDate: string;
-  endDate: string;
+  endDate: string | null;
 }
