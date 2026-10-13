@@ -14,6 +14,9 @@ export class Plan {
   @Column({ unique: true })
   name: string;
 
+  @Column({ nullable: true })
+  description?: string;
+
   /** Precio en centavos (0 = gratuito / simulado) */
   @Column({ name: 'price_cents', default: 0 })
   priceCents: number;
@@ -24,6 +27,9 @@ export class Plan {
 
   @Column({ name: 'max_members', default: 5 })
   maxMembers: number;
+
+  @Column({ name: 'validity_days', default: 30 })
+  validityDays: number;
 
   @Column({ type: 'varchar', default: StorageLocation.CLOUD })
   storageLocation: StorageLocation;
