@@ -1,18 +1,18 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { ModuleRef } from '@nestjs/core';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException } from '@nestjs/common';
 import { BillingService } from './billing.service';
 import { Plan, StorageLocation } from './entities/plan.entity';
 import { Subscription, SubscriptionStatus } from './entities/subscription.entity';
+import { STORAGE_USAGE_PORT, StorageUsagePort } from './ports/storage-usage.port';
 
 describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
   let service: BillingService;
   let planRepo: jest.Mocked<Partial<Repository<Plan>>>;
   let subscriptionRepo: jest.Mocked<Partial<Repository<Subscription>>>;
   let dataSource: Partial<DataSource>;
-  let moduleRef: Partial<ModuleRef>;
+  let storageUsagePort: jest.Mocked<StorageUsagePort>;
 
   const mockDemoPlan: Plan = {
     id: 'demo-plan-uuid',
@@ -21,7 +21,7 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
     priceCents: 0,
     storageLimitBytes: '5368709120', // 5 GB
     maxMembers: 5,
-    validityDays: null, // Sin vencimiento
+    validityDays: null, // Vencimiento indefinido
     storageLocation: StorageLocation.CLOUD,
     active: true,
     createdAt: new Date(),
@@ -65,8 +65,8 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
       }),
     };
 
-    moduleRef = {
-      get: jest.fn(),
+    storageUsagePort = {
+      getUsedStorageBytes: jest.fn().mockResolvedValue(BigInt(0)),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -75,14 +75,14 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
         { provide: getRepositoryToken(Plan), useValue: planRepo },
         { provide: getRepositoryToken(Subscription), useValue: subscriptionRepo },
         { provide: DataSource, useValue: dataSource },
-        { provide: ModuleRef, useValue: moduleRef },
+        { provide: STORAGE_USAGE_PORT, useValue: storageUsagePort },
       ],
     }).compile();
 
     service = module.get<BillingService>(BillingService);
   });
 
-  describe('1. Catálogo y Plan Demo sin vencimiento', () => {
+  describe('1. Catálogo, Plan Demo y Fail-Fast del Seed', () => {
     it('debe listar planes con Plan Demo gratuito y validityDays nulo', async () => {
       (planRepo.find as jest.Mock).mockResolvedValue([mockDemoPlan, mockTeamPlan]);
 
@@ -95,9 +95,15 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
       expect(demo?.storageLimitBytes).toBe('5368709120');
       expect(demo?.maxMembers).toBe(5);
     });
+
+    it('seedDefaultPlans debe fallar inmediatamente (fail-fast) si la base de datos arroja error', async () => {
+      (planRepo.findOneBy as jest.Mock).mockRejectedValue(new Error('Conexión perdida a PostgreSQL'));
+
+      await expect(service.seedDefaultPlans()).rejects.toThrow('Conexión perdida a PostgreSQL');
+    });
   });
 
-  describe('2. Provisión inicial en registro (Hook atómico)', () => {
+  describe('2. Provisión inicial en registro (Hook atómico de IAM)', () => {
     it('debe provisionar Plan Demo con status active, simulated true y expiresAt null', async () => {
       const mockManager = {
         findOne: jest.fn().mockImplementation((_entity, options) => {
@@ -144,7 +150,7 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
     });
   });
 
-  describe('3. Activación, idempotencia y validación de downgrade', () => {
+  describe('3. Inversión de Dependencias (StorageUsagePort), Idempotencia y Downgrade', () => {
     it('debe retornar la suscripción existente sin recrear si se activa el mismo plan (idempotencia)', async () => {
       (planRepo.findOneBy as jest.Mock).mockResolvedValue(mockTeamPlan);
 
@@ -167,11 +173,11 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
       expect(dataSource.transaction).not.toHaveBeenCalled();
     });
 
-    it('debe rechazar un cambio a plan menor (downgrade) si el uso supera la cuota del nuevo plan', async () => {
-      (planRepo.findOneBy as jest.Mock).mockResolvedValue(mockDemoPlan); // 5 GB = 5368709120
+    it('debe consultar StorageUsagePort y rechazar el downgrade si el uso supera la cuota del nuevo plan', async () => {
+      (planRepo.findOneBy as jest.Mock).mockResolvedValue(mockDemoPlan); // 5 GB = 5368709120 bytes
 
-      // El usuario ocupa 6 GB actualmente
-      jest.spyOn(service, 'getConfirmedStorageUsedBytes').mockResolvedValue(BigInt(6442450944));
+      // StorageUsagePort reporta 6 GB ocupados
+      storageUsagePort.getUsedStorageBytes.mockResolvedValue(BigInt(6442450944));
 
       const existingActive: Subscription = {
         id: 'active-team-sub',
@@ -187,13 +193,14 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
       jest.spyOn(service, 'getActiveSubscription').mockResolvedValue(existingActive);
 
       await expect(service.subscribe('org-123', mockDemoPlan.id)).rejects.toThrow(ConflictException);
+      expect(storageUsagePort.getUsedStorageBytes).toHaveBeenCalledWith('org-123');
     });
 
-    it('debe permitir cambio de plan si el uso no supera la cuota del nuevo plan', async () => {
+    it('debe permitir cambio de plan transaccional si el uso reportado por el puerto no supera la cuota', async () => {
       (planRepo.findOneBy as jest.Mock).mockResolvedValue(mockTeamPlan);
 
-      // El usuario ocupa 2 GB (dentro de los 100 GB de Team)
-      jest.spyOn(service, 'getConfirmedStorageUsedBytes').mockResolvedValue(BigInt(2147483648));
+      // StorageUsagePort reporta 2 GB ocupados (menor a los 100 GB de Team)
+      storageUsagePort.getUsedStorageBytes.mockResolvedValue(BigInt(2147483648));
       jest.spyOn(service, 'getActiveSubscription').mockResolvedValue(null);
 
       const result = await service.subscribe('org-123', mockTeamPlan.id);
@@ -202,7 +209,7 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
     });
   });
 
-  describe('4. Consulta de cuota y expiración', () => {
+  describe('4. Consulta de cuota, expiración y fallback de estado', () => {
     it('debe retornar el límite del plan activo para FilesModule', async () => {
       const activeDemo: Subscription = {
         id: 'sub-active',
@@ -221,11 +228,16 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
       expect(limit).toBe(BigInt(5368709120));
     });
 
-    it('debe retornar 0 bytes si la suscripción venció, bloqueando nuevas subidas', async () => {
+    it('debe retornar 0 bytes si la suscripción venció o no existe (Fallback seguro)', async () => {
       jest.spyOn(service, 'getActiveSubscription').mockResolvedValue(null);
 
       const limit = await service.getStorageLimitBytes('org-123');
       expect(limit).toBe(BigInt(0));
+
+      const summary = await service.getSubscriptionSummary('org-123');
+      expect(summary.status).toBe('inactive');
+      expect(summary.storageLimitBytes).toBe(0);
+      expect(summary.plan).toBeNull();
     });
   });
 });

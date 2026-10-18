@@ -4,20 +4,19 @@ import {
   ConflictException,
   OnModuleInit,
   Logger,
+  Inject,
 } from '@nestjs/common';
-import { ModuleRef } from '@nestjs/core';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Plan, StorageLocation } from './entities/plan.entity';
 import { Subscription, SubscriptionStatus } from './entities/subscription.entity';
+import { STORAGE_USAGE_PORT, StorageUsagePort } from './ports/storage-usage.port';
 
 /**
- * BillingService — gestión centralizada de planes, cuotas y suscripciones simuladas.
+ * BillingService — Lógica central de planes, cuotas y suscripciones simuladas.
  *
- * Consumido internamente por:
- * - FilesModule: consulta cuotas in-process (`getStorageLimitBytes`)
- * - IamModule: provisiona la suscripción Demo durante el registro atómico (`provisionInitialSubscription`)
- * - Dashboard: consulta resumen de plan y límite
+ * Aplica Inversión de Dependencias (IoC): depende de StorageUsagePort para
+ * consultar el uso de almacenamiento sin acoplarse directamente a FilesModule.
  */
 @Injectable()
 export class BillingService implements OnModuleInit {
@@ -31,18 +30,21 @@ export class BillingService implements OnModuleInit {
     private readonly subscriptionRepo: Repository<Subscription>,
 
     private readonly dataSource: DataSource,
-    private readonly moduleRef: ModuleRef,
+
+    @Inject(STORAGE_USAGE_PORT)
+    private readonly storageUsagePort: StorageUsagePort,
   ) {}
 
   async onModuleInit() {
     await this.seedDefaultPlans();
   }
 
-  // ── Catálogo y Seeding ───────────────────────────────────────────────────
+  // ── Catálogo y Seeding (Fail-Fast e Idempotente) ──────────────────────────
 
   /**
-   * Asegura la persistencia repetible e idempotente del catálogo aprobado.
-   * Si ocurre un error, se registra de forma visible y no se oculta.
+   * Asegura la persistencia repetible del catálogo aprobado.
+   * Si ocurre un error de base de datos, falla de forma inmediata (fail-fast)
+   * registrando la causa en el logger para no ocultar inconsistencias.
    */
   async seedDefaultPlans(): Promise<void> {
     try {
@@ -53,7 +55,7 @@ export class BillingService implements OnModuleInit {
           priceCents: 0,
           storageLimitBytes: '5368709120', // 5 GB
           maxMembers: 5,
-          validityDays: null, // Sin vencimiento mientras sea gratuito
+          validityDays: null, // Vencimiento indefinido mientras sea gratuito
           active: true,
           storageLocation: StorageLocation.CLOUD,
         },
@@ -63,7 +65,7 @@ export class BillingService implements OnModuleInit {
           priceCents: 1999, // US$ 19.99
           storageLimitBytes: '107374182400', // 100 GB
           maxMembers: 10,
-          validityDays: 30, // Mensual
+          validityDays: 30, // 30 días de vigencia
           active: true,
           storageLocation: StorageLocation.CLOUD,
         },
@@ -73,7 +75,7 @@ export class BillingService implements OnModuleInit {
           priceCents: 5999, // US$ 59.99
           storageLimitBytes: '536870912000', // 500 GB
           maxMembers: 30,
-          validityDays: 30, // Mensual
+          validityDays: 30, // 30 días de vigencia
           active: true,
           storageLocation: StorageLocation.CLOUD,
         },
@@ -83,7 +85,7 @@ export class BillingService implements OnModuleInit {
           priceCents: 14999, // US$ 149.99
           storageLimitBytes: '2147483648000', // 2 TB
           maxMembers: 100,
-          validityDays: 30, // Mensual
+          validityDays: 30, // 30 días de vigencia
           active: true,
           storageLocation: StorageLocation.CLOUD,
         },
@@ -95,7 +97,6 @@ export class BillingService implements OnModuleInit {
           const created = this.planRepo.create(item);
           await this.planRepo.save(created);
         } else {
-          // Asegurar que las reglas vigentes (ej. Demo sin vencimiento) se actualicen si difieren
           let modified = false;
           if (existing.validityDays !== item.validityDays) {
             existing.validityDays = item.validityDays ?? null;
@@ -113,15 +114,23 @@ export class BillingService implements OnModuleInit {
             existing.maxMembers = item.maxMembers!;
             modified = true;
           }
+          if (existing.priceCents !== item.priceCents) {
+            existing.priceCents = item.priceCents!;
+            modified = true;
+          }
           if (modified) {
             await this.planRepo.save(existing);
           }
         }
       }
 
-      this.logger.log('Catálogo de planes verificado y sincronizado correctamente.');
+      this.logger.log('Catálogo de planes validado y sincronizado con éxito.');
     } catch (error: any) {
-      this.logger.error(`Fallo crítico al sembrar el catálogo de planes: ${error?.message}`, error?.stack);
+      this.logger.error(
+        `Fallo crítico de inicialización: no se pudo sembrar el catálogo de planes: ${error?.message}`,
+        error?.stack,
+      );
+      // Fail-fast: interrumpir el arranque si el catálogo obligatorio no se puede inicializar
       throw error;
     }
   }
@@ -149,11 +158,11 @@ export class BillingService implements OnModuleInit {
     return demo;
   }
 
-  // ── Provisión Inicial de Suscripción (Hook de Registro) ──────────────────
+  // ── Provisión Inicial Atómica (Hook de Registro de IAM) ───────────────────
 
   /**
-   * Provisiona de forma atómica la suscripción inicial (Plan Demo) para una organización.
-   * Acepta un EntityManager opcional para ejecutarse dentro de la transacción de registro de IAM.
+   * Provisiona de forma atómica la suscripción Demo inicial para una organización.
+   * Se ejecuta compartiendo el EntityManager de la transacción de registro de IAM.
    */
   async provisionInitialSubscription(
     organizationId: string,
@@ -163,7 +172,7 @@ export class BillingService implements OnModuleInit {
       const demoPlan = await manager.findOne(Plan, { where: { name: 'Plan Demo' } })
         || await this.getDemoPlan();
 
-      // Idempotencia: si ya tiene suscripción activa a Demo, retornarla
+      // Idempotencia: si ya existe una suscripción activa (ej. reintento), retornarla
       const existing = await manager.findOne(Subscription, {
         where: { organizationId, status: SubscriptionStatus.ACTIVE },
         relations: ['plan'],
@@ -176,11 +185,13 @@ export class BillingService implements OnModuleInit {
         organizationId,
         planId: demoPlan.id,
         status: SubscriptionStatus.ACTIVE,
-        simulated: true,
-        expiresAt: null, // Demo no tiene vencimiento
+        simulated: true, // Sin cobro real
+        expiresAt: null, // Demo sin vencimiento
       });
 
-      return manager.save(subscription);
+      const saved = await manager.save(subscription);
+      saved.plan = demoPlan;
+      return saved;
     };
 
     if (transactionalManager) {
@@ -189,11 +200,11 @@ export class BillingService implements OnModuleInit {
     return this.dataSource.transaction(execute);
   }
 
-  // ── Suscripciones y Cambios de Plan ─────────────────────────────────────
+  // ── Ciclo de Vida y Transaccionalidad de Suscripciones ────────────────────
 
   /**
-   * Retorna la suscripción activa evaluando vigencia real.
-   * Si ha vencido, actualiza su estado a EXPIRED en base de datos.
+   * Consulta la suscripción activa evaluando expiración temporal.
+   * Si la fecha expiró, actualiza el estado a EXPIRED en BD y retorna null.
    */
   async getActiveSubscription(organizationId: string): Promise<Subscription | null> {
     const sub = await this.subscriptionRepo.findOne({
@@ -214,7 +225,7 @@ export class BillingService implements OnModuleInit {
   }
 
   /**
-   * Retorna el detalle completo de suscripción (incluso si está expirada o cancelada).
+   * Retorna el registro de suscripción más reciente para la organización.
    */
   async getSubscription(organizationId: string): Promise<Subscription | null> {
     const sub = await this.subscriptionRepo.findOne({
@@ -232,26 +243,28 @@ export class BillingService implements OnModuleInit {
   }
 
   /**
-   * Activa o cambia la suscripción para la organización autenticada de forma atómica.
-   * Reglas validadas:
-   * 1. Idempotencia: Si ya está activo el mismo plan, no cancela ni recrea; retorna la suscripción actual.
-   * 2. Downgrade validado: Si se solicita un plan menor, valida contra el uso confirmado de Files.
-   * 3. Transaccionalidad: Cancela la anterior y crea la nueva atómicamente.
-   * 4. Expiración precisa: Demo = null; Planes de pago = 30 días.
+   * Activa o cambia la suscripción para la organización bajo una única transacción de BD.
+   *
+   * Reglas:
+   * 1. Idempotencia: Si ya está activo el mismo plan, no cancela ni recrea; retorna el existente.
+   * 2. Validación de Downgrade: Si el nuevo plan tiene menos cuota que los bytes actualmente
+   *    utilizados (obtenidos vía StorageUsagePort), rechaza la operación con 409 Conflict.
+   * 3. Transaccionalidad: Cancela la suscripción anterior y persiste la nueva atómicamente.
+   * 4. Vigencia: Demo = null; Planes de pago = 30 días exactos.
    */
   async subscribe(organizationId: string, planId: string): Promise<Subscription> {
     const targetPlan = await this.findPlanById(planId);
 
-    // 1. Obtener suscripción activa actual
+    // 1. Verificar suscripción activa actual
     const currentActive = await this.getActiveSubscription(organizationId);
 
-    // Idempotencia: activación repetida del mismo plan activo
+    // Comportamiento idempotente ante activaciones repetidas del mismo plan
     if (currentActive && currentActive.planId === targetPlan.id) {
       return currentActive;
     }
 
-    // 2. Validación de downgrade (plan con menor capacidad que el almacenamiento actual)
-    const currentStorageUsed = await this.getConfirmedStorageUsedBytes(organizationId);
+    // 2. Validación de downgrade desacoplada usando StorageUsagePort
+    const currentStorageUsed = await this.storageUsagePort.getUsedStorageBytes(organizationId);
     const targetStorageLimit = BigInt(targetPlan.storageLimitBytes);
 
     if (currentStorageUsed > targetStorageLimit) {
@@ -261,9 +274,9 @@ export class BillingService implements OnModuleInit {
       });
     }
 
-    // 3. Ejecución transaccional atómica
+    // 3. Ejecución transaccional atómica (todo o nada)
     return this.dataSource.transaction(async (manager: EntityManager) => {
-      // Cancelar suscripción activa anterior si existe
+      // Cancelar suscripción previa activa
       if (currentActive) {
         currentActive.status = SubscriptionStatus.CANCELLED;
         await manager.save(currentActive);
@@ -288,13 +301,14 @@ export class BillingService implements OnModuleInit {
     });
   }
 
-  // ── Gestión Centralizada de Cuota (In-Process) ───────────────────────────
+  // ── Gestión Centralizada de Cuota y Fallback de Estado ────────────────────
 
   /**
    * Devuelve el límite de almacenamiento en bytes para una organización.
-   * Llamado directamente en memoria por FilesModule.uploadFile() sin HTTP.
+   * Usado internamente por FilesModule.uploadFile() antes de aceptar subidas.
    *
-   * Si la suscripción expiró o no existe, retorna 0n para bloquear nuevas cargas.
+   * Fallback de estado: Si la organización no tiene suscripción activa o su plan venció,
+   * retorna BigInt(0), bloqueando inmediatamente nuevas cargas por cuota excedida.
    */
   async getStorageLimitBytes(organizationId: string): Promise<bigint> {
     const activeSub = await this.getActiveSubscription(organizationId);
@@ -305,18 +319,35 @@ export class BillingService implements OnModuleInit {
   }
 
   /**
-   * Consulta el uso actual confirmado de almacenamiento invocando FilesService in-process,
-   * sin dependencias estáticas circulares de módulos.
+   * Retorna un resumen unificado para el Dashboard y módulos externos.
+   * Maneja explícitamente el fallback de organizaciones sin suscripción persistida.
    */
-  public async getConfirmedStorageUsedBytes(organizationId: string): Promise<bigint> {
-    try {
-      const filesService = this.moduleRef.get<any>('FilesService', { strict: false });
-      if (filesService && typeof filesService.getUsedStorageBytes === 'function') {
-        return await filesService.getUsedStorageBytes(organizationId);
-      }
-    } catch {
-      // Si FilesService no está disponible o inicializado
+  async getSubscriptionSummary(organizationId: string) {
+    const activeSub = await this.getActiveSubscription(organizationId);
+    if (!activeSub || !activeSub.plan) {
+      return {
+        status: 'inactive',
+        simulated: false,
+        expiresAt: null,
+        storageLimitBytes: 0,
+        plan: null,
+      };
     }
-    return BigInt(0);
+
+    return {
+      status: activeSub.status,
+      simulated: activeSub.simulated,
+      expiresAt: activeSub.expiresAt ? activeSub.expiresAt.toISOString() : null,
+      storageLimitBytes: Number(activeSub.plan.storageLimitBytes),
+      plan: {
+        id: activeSub.plan.id,
+        name: activeSub.plan.name,
+        description: activeSub.plan.description || '',
+        priceMonthly: (activeSub.plan.priceCents || 0) / 100,
+        storageLimitBytes: Number(activeSub.plan.storageLimitBytes),
+        userLimit: activeSub.plan.maxMembers,
+        validityDays: activeSub.plan.validityDays ?? null,
+      },
+    };
   }
 }
