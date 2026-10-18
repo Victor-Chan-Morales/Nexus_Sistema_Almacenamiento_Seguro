@@ -61,6 +61,19 @@ Estas decisiones completan las reglas de `ADR-002` sin reemplazarlas.
 
 ## API y base de datos
 
-- El contrato inicial queda en `v0.2` para registro, login, planes, dashboard, carpetas, carga y descarga.
+- El contrato de integración queda en `v0.3` en `CONTRACTS.md` para IAM, Billing, Files, Dashboard y web.
 - La API responde límites de almacenamiento en bytes.
 - Las migraciones implementarán claves compuestas, unicidad, aislamiento multi-tenant y una sola suscripción activa por organización.
+
+## Decisiones de integración aprobadas — 2026-10-18
+
+- Access token de 15 minutos; refresh token de 7 días, rotado, persistido solo como hash y entregado mediante cookie `nexus_refresh` (`HttpOnly`, `SameSite=Lax`, `Path=/api/auth`; `Secure` en producción). Login y refresh comparten el esquema de respuesta. Logout revoca la sesión y limpia la cookie.
+- La identidad autenticada expone `userId`, `organizationId`, `organizationName` y `role` desde la membresía activa validada. Refresh conserva ese contexto y vuelve a validar la membresía.
+- La organización se registra junto con membresía, suscripción Demo, cuota, Drive `Mi espacio` y raíz `Archivos` dentro de una sola transacción PostgreSQL. Los hooks de Billing y Files reciben el mismo contexto transaccional; el alta completa se revierte si uno falla. Ningún hook del registro necesita hablar con SeaweedFS.
+- La transacción de registro incluye un mensaje persistente de salida para el correo de verificación. El envío ocurre después del commit y se reintenta ante una falla temporal SMTP; la falla de correo no deja la cuenta sin un mensaje pendiente ni devuelve el token al navegador.
+- Las cuotas comerciales usan unidades decimales: 1 GB = 1,000,000,000 bytes y 1 TB = 1,000,000,000,000 bytes. Demo es 5 GB/5 usuarios sin vencimiento; los planes pagados vencen a los 30 días en la simulación.
+- Uso confirmado suma todas las versiones que permanecen almacenadas, incluidas las de papelera durante 30 días. No se suma `FileRecord.sizeBytes` además de `FileVersion.sizeBytes`. Las reservas de carga se contabilizan aparte y se consideran tanto al aceptar una carga como al bajar de plan.
+- Sin suscripción vigente el límite es 0 bytes; la API no aplica una cuota de respaldo. El registro normal provisiona Demo para cada organización.
+- El endpoint de cambio/activación de plan se coordina desde un `SubscriptionCoordinator` de integración que consulta Files y delega persistencia en Billing. Billing no inyecta Files; Files puede seguir consultando Billing para aplicar el límite de carga.
+- La respuesta de Dashboard usa `organizationName` del principal validado, uso confirmado de Files, plan/límite de Billing y `recentActivity: []` hasta que Audit tenga fuente de datos.
+- Las migraciones de todos los dominios comparten `database/migrations/` en la raíz. Víctor integra en un solo PR el esquema coordinado; las carpetas duplicadas bajo `apps/db/` no son una segunda fuente de migraciones.

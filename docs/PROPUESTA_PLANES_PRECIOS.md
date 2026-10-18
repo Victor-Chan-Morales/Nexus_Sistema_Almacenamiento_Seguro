@@ -11,6 +11,8 @@
 | Business | US$59.99 | 500 GB | 30 | Mensual, renovable | Organizaciones en crecimiento |
 | Enterprise | US$149.99 | 2 TB (2,000 GB) | 100 | Mensual, renovable | Organizaciones con mayor volumen |
 
+Para la API, las unidades son decimales: 1 GB = 1,000,000,000 bytes y 1 TB = 1,000,000,000,000 bytes. Por tanto, los límites son Demo 5,000,000,000; Team 100,000,000,000; Business 500,000,000,000; Enterprise 2,000,000,000,000 bytes.
+
 La vigencia mensual de los planes pagados es una propuesta para hacer predecible la cuota y permitir cambios de escala. La activación y el cobro en el prototipo siguen siendo simulados. No se propone descuento anual hasta conocer costos y comportamiento de clientes.
 
 ## Reglas comerciales sugeridas
