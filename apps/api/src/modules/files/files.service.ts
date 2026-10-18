@@ -154,7 +154,7 @@ export class FilesService {
 
   // ── Cuota ─────────────────────────────────────────────────────────────────
 
-  private async getUsedStorageBytes(organizationId: string): Promise<bigint> {
+  public async getUsedStorageBytes(organizationId: string): Promise<bigint> {
     const result = await this.fileRepo
       .createQueryBuilder('f')
       .select('SUM(CAST(f.sizeBytes AS BIGINT))', 'total')

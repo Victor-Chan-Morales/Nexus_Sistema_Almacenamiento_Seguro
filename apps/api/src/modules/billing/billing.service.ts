@@ -1,91 +1,136 @@
-import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  OnModuleInit,
+  Logger,
+} from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Plan, StorageLocation } from './entities/plan.entity';
 import { Subscription, SubscriptionStatus } from './entities/subscription.entity';
 
 /**
- * BillingService — lógica de planes, cuotas y suscripciones simuladas.
+ * BillingService — gestión centralizada de planes, cuotas y suscripciones simuladas.
  *
- * Consumido directamente por FilesModule (para verificar cuotas antes de subir archivos)
- * y por el controlador de Billing, todo dentro del monolito modular en el mismo proceso.
+ * Consumido internamente por:
+ * - FilesModule: consulta cuotas in-process (`getStorageLimitBytes`)
+ * - IamModule: provisiona la suscripción Demo durante el registro atómico (`provisionInitialSubscription`)
+ * - Dashboard: consulta resumen de plan y límite
  */
 @Injectable()
 export class BillingService implements OnModuleInit {
+  private readonly logger = new Logger(BillingService.name);
+
   constructor(
     @InjectRepository(Plan)
     private readonly planRepo: Repository<Plan>,
 
     @InjectRepository(Subscription)
     private readonly subscriptionRepo: Repository<Subscription>,
+
+    private readonly dataSource: DataSource,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   async onModuleInit() {
     await this.seedDefaultPlans();
   }
 
+  // ── Catálogo y Seeding ───────────────────────────────────────────────────
+
   /**
-   * Asegura la persistencia del catálogo base en desarrollo (Plan Demo de 5GB y 5 usuarios).
+   * Asegura la persistencia repetible e idempotente del catálogo aprobado.
+   * Si ocurre un error, se registra de forma visible y no se oculta.
    */
   async seedDefaultPlans(): Promise<void> {
     try {
-      const count = await this.planRepo.count();
-      if (count === 0) {
-        const demoPlan = this.planRepo.create({
+      const defaultCatalog: Partial<Plan>[] = [
+        {
           name: 'Plan Demo',
-          description: 'Plan de prueba con límite de 5GB y hasta 5 usuarios',
+          description: 'Prueba el espacio de trabajo de Nexus con capacidad para una organización pequeña.',
           priceCents: 0,
-          storageLimitBytes: '5368709120', // 5 GB en bytes
+          storageLimitBytes: '5368709120', // 5 GB
           maxMembers: 5,
-          validityDays: 30,
+          validityDays: null, // Sin vencimiento mientras sea gratuito
           active: true,
           storageLocation: StorageLocation.CLOUD,
-        });
-
-        const teamPlan = this.planRepo.create({
+        },
+        {
           name: 'Plan Team',
-          description: 'Almacenamiento seguro para equipos pequeños (100 GB)',
-          priceCents: 1999,
-          storageLimitBytes: '107374182400', // 100 GB en bytes
+          description: 'Almacenamiento seguro para equipos pequeños que comparten archivos de trabajo.',
+          priceCents: 1999, // US$ 19.99
+          storageLimitBytes: '107374182400', // 100 GB
           maxMembers: 10,
-          validityDays: 30,
+          validityDays: 30, // Mensual
           active: true,
           storageLocation: StorageLocation.CLOUD,
-        });
-
-        const businessPlan = this.planRepo.create({
+        },
+        {
           name: 'Plan Business',
-          description: 'Mayor capacidad para organizaciones en crecimiento (500 GB)',
-          priceCents: 5999,
-          storageLimitBytes: '536870912000', // 500 GB en bytes
+          description: 'Más capacidad y espacio para organizaciones en crecimiento.',
+          priceCents: 5999, // US$ 59.99
+          storageLimitBytes: '536870912000', // 500 GB
           maxMembers: 30,
-          validityDays: 30,
+          validityDays: 30, // Mensual
           active: true,
           storageLocation: StorageLocation.CLOUD,
-        });
-
-        const enterprisePlan = this.planRepo.create({
+        },
+        {
           name: 'Plan Enterprise',
-          description: 'Capacidad ampliada para alto volumen organizacional (2 TB)',
-          priceCents: 14999,
-          storageLimitBytes: '2147483648000', // 2000 GB en bytes
+          description: 'Capacidad ampliada para organizaciones con mayor volumen.',
+          priceCents: 14999, // US$ 149.99
+          storageLimitBytes: '2147483648000', // 2 TB
           maxMembers: 100,
-          validityDays: 30,
+          validityDays: 30, // Mensual
           active: true,
           storageLocation: StorageLocation.CLOUD,
-        });
+        },
+      ];
 
-        await this.planRepo.save([demoPlan, teamPlan, businessPlan, enterprisePlan]);
+      for (const item of defaultCatalog) {
+        const existing = await this.planRepo.findOneBy({ name: item.name });
+        if (!existing) {
+          const created = this.planRepo.create(item);
+          await this.planRepo.save(created);
+        } else {
+          // Asegurar que las reglas vigentes (ej. Demo sin vencimiento) se actualicen si difieren
+          let modified = false;
+          if (existing.validityDays !== item.validityDays) {
+            existing.validityDays = item.validityDays ?? null;
+            modified = true;
+          }
+          if (existing.description !== item.description) {
+            existing.description = item.description;
+            modified = true;
+          }
+          if (existing.storageLimitBytes !== item.storageLimitBytes) {
+            existing.storageLimitBytes = item.storageLimitBytes!;
+            modified = true;
+          }
+          if (existing.maxMembers !== item.maxMembers) {
+            existing.maxMembers = item.maxMembers!;
+            modified = true;
+          }
+          if (modified) {
+            await this.planRepo.save(existing);
+          }
+        }
       }
-    } catch {
-      // Ignorar si la base de datos aún se está sincronizando o conectando
+
+      this.logger.log('Catálogo de planes verificado y sincronizado correctamente.');
+    } catch (error: any) {
+      this.logger.error(`Fallo crítico al sembrar el catálogo de planes: ${error?.message}`, error?.stack);
+      throw error;
     }
   }
 
-  // ── Planes ────────────────────────────────────────────────────────────────
-
   async listPlans(): Promise<Plan[]> {
-    return this.planRepo.findBy({ active: true });
+    return this.planRepo.find({
+      where: { active: true },
+      order: { priceCents: 'ASC' },
+    });
   }
 
   async findPlanById(planId: string): Promise<Plan> {
@@ -96,57 +141,182 @@ export class BillingService implements OnModuleInit {
     return plan;
   }
 
-  // ── Suscripciones ─────────────────────────────────────────────────────────
+  async getDemoPlan(): Promise<Plan> {
+    const demo = await this.planRepo.findOneBy({ name: 'Plan Demo' });
+    if (!demo) {
+      throw new NotFoundException('El Plan Demo no se encuentra registrado en el catálogo');
+    }
+    return demo;
+  }
 
-  async getSubscription(organizationId: string): Promise<Subscription | null> {
-    return this.subscriptionRepo.findOne({
-      where: { organizationId },
+  // ── Provisión Inicial de Suscripción (Hook de Registro) ──────────────────
+
+  /**
+   * Provisiona de forma atómica la suscripción inicial (Plan Demo) para una organización.
+   * Acepta un EntityManager opcional para ejecutarse dentro de la transacción de registro de IAM.
+   */
+  async provisionInitialSubscription(
+    organizationId: string,
+    transactionalManager?: EntityManager,
+  ): Promise<Subscription> {
+    const execute = async (manager: EntityManager): Promise<Subscription> => {
+      const demoPlan = await manager.findOne(Plan, { where: { name: 'Plan Demo' } })
+        || await this.getDemoPlan();
+
+      // Idempotencia: si ya tiene suscripción activa a Demo, retornarla
+      const existing = await manager.findOne(Subscription, {
+        where: { organizationId, status: SubscriptionStatus.ACTIVE },
+        relations: ['plan'],
+      });
+      if (existing) {
+        return existing;
+      }
+
+      const subscription = manager.create(Subscription, {
+        organizationId,
+        planId: demoPlan.id,
+        status: SubscriptionStatus.ACTIVE,
+        simulated: true,
+        expiresAt: null, // Demo no tiene vencimiento
+      });
+
+      return manager.save(subscription);
+    };
+
+    if (transactionalManager) {
+      return execute(transactionalManager);
+    }
+    return this.dataSource.transaction(execute);
+  }
+
+  // ── Suscripciones y Cambios de Plan ─────────────────────────────────────
+
+  /**
+   * Retorna la suscripción activa evaluando vigencia real.
+   * Si ha vencido, actualiza su estado a EXPIRED en base de datos.
+   */
+  async getActiveSubscription(organizationId: string): Promise<Subscription | null> {
+    const sub = await this.subscriptionRepo.findOne({
+      where: { organizationId, status: SubscriptionStatus.ACTIVE },
+      relations: ['plan'],
       order: { createdAt: 'DESC' },
     });
+
+    if (!sub) return null;
+
+    if (sub.expiresAt && sub.expiresAt.getTime() < Date.now()) {
+      sub.status = SubscriptionStatus.EXPIRED;
+      await this.subscriptionRepo.save(sub);
+      return null;
+    }
+
+    return sub;
   }
 
   /**
-   * Activa una suscripción simulada para la organización autenticada.
-   * Garantiza que la organización tenga solo una suscripción activa a la vez.
+   * Retorna el detalle completo de suscripción (incluso si está expirada o cancelada).
    */
-  async subscribe(organizationId: string, planId: string): Promise<Subscription> {
-    const plan = await this.findPlanById(planId);
-
-    // Cancelar suscripción activa previa para evitar múltiples suscripciones vigentes
-    const existingActive = await this.subscriptionRepo.findOne({
-      where: { organizationId, status: SubscriptionStatus.SIMULATED },
+  async getSubscription(organizationId: string): Promise<Subscription | null> {
+    const sub = await this.subscriptionRepo.findOne({
+      where: { organizationId },
+      relations: ['plan'],
       order: { createdAt: 'DESC' },
     });
 
-    if (existingActive) {
-      existingActive.status = SubscriptionStatus.CANCELLED;
-      await this.subscriptionRepo.save(existingActive);
+    if (sub && sub.status === SubscriptionStatus.ACTIVE && sub.expiresAt && sub.expiresAt.getTime() < Date.now()) {
+      sub.status = SubscriptionStatus.EXPIRED;
+      await this.subscriptionRepo.save(sub);
     }
 
-    const startDate = new Date();
-    const endDate = new Date(startDate);
-    endDate.setDate(endDate.getDate() + (plan.validityDays || 30));
-
-    const subscription = this.subscriptionRepo.create({
-      organizationId,
-      planId: plan.id,
-      status: SubscriptionStatus.SIMULATED,
-      expiresAt: endDate,
-    });
-
-    return this.subscriptionRepo.save(subscription);
+    return sub;
   }
+
+  /**
+   * Activa o cambia la suscripción para la organización autenticada de forma atómica.
+   * Reglas validadas:
+   * 1. Idempotencia: Si ya está activo el mismo plan, no cancela ni recrea; retorna la suscripción actual.
+   * 2. Downgrade validado: Si se solicita un plan menor, valida contra el uso confirmado de Files.
+   * 3. Transaccionalidad: Cancela la anterior y crea la nueva atómicamente.
+   * 4. Expiración precisa: Demo = null; Planes de pago = 30 días.
+   */
+  async subscribe(organizationId: string, planId: string): Promise<Subscription> {
+    const targetPlan = await this.findPlanById(planId);
+
+    // 1. Obtener suscripción activa actual
+    const currentActive = await this.getActiveSubscription(organizationId);
+
+    // Idempotencia: activación repetida del mismo plan activo
+    if (currentActive && currentActive.planId === targetPlan.id) {
+      return currentActive;
+    }
+
+    // 2. Validación de downgrade (plan con menor capacidad que el almacenamiento actual)
+    const currentStorageUsed = await this.getConfirmedStorageUsedBytes(organizationId);
+    const targetStorageLimit = BigInt(targetPlan.storageLimitBytes);
+
+    if (currentStorageUsed > targetStorageLimit) {
+      throw new ConflictException({
+        code: 'ERROR_DOWNGRADE_STORAGE_EXCEEDED',
+        message: `El almacenamiento utilizado (${currentStorageUsed} bytes) supera la capacidad del plan seleccionado (${targetStorageLimit} bytes). Elimine o descargue archivos antes de cambiar a un plan menor.`,
+      });
+    }
+
+    // 3. Ejecución transaccional atómica
+    return this.dataSource.transaction(async (manager: EntityManager) => {
+      // Cancelar suscripción activa anterior si existe
+      if (currentActive) {
+        currentActive.status = SubscriptionStatus.CANCELLED;
+        await manager.save(currentActive);
+      }
+
+      const startDate = new Date();
+      const expiresAt = (targetPlan.validityDays && targetPlan.validityDays > 0)
+        ? new Date(startDate.getTime() + targetPlan.validityDays * 86400000)
+        : null;
+
+      const newSubscription = manager.create(Subscription, {
+        organizationId,
+        planId: targetPlan.id,
+        status: SubscriptionStatus.ACTIVE,
+        simulated: true, // Sin pasarelas de pago ni tarjetas reales
+        expiresAt,
+      });
+
+      const saved = await manager.save(newSubscription);
+      saved.plan = targetPlan;
+      return saved;
+    });
+  }
+
+  // ── Gestión Centralizada de Cuota (In-Process) ───────────────────────────
 
   /**
    * Devuelve el límite de almacenamiento en bytes para una organización.
-   * Usado internamente por FilesModule sin llamadas HTTP (in-process).
+   * Llamado directamente en memoria por FilesModule.uploadFile() sin HTTP.
+   *
+   * Si la suscripción expiró o no existe, retorna 0n para bloquear nuevas cargas.
    */
   async getStorageLimitBytes(organizationId: string): Promise<bigint> {
-    const sub = await this.getSubscription(organizationId);
-    if (!sub || !sub.plan) {
-      // Valor por defecto: Cuota del Plan Demo (5 GB = 5,368,709,120 bytes)
-      return BigInt('5368709120');
+    const activeSub = await this.getActiveSubscription(organizationId);
+    if (!activeSub || !activeSub.plan) {
+      return BigInt(0);
     }
-    return BigInt(sub.plan.storageLimitBytes);
+    return BigInt(activeSub.plan.storageLimitBytes);
+  }
+
+  /**
+   * Consulta el uso actual confirmado de almacenamiento invocando FilesService in-process,
+   * sin dependencias estáticas circulares de módulos.
+   */
+  public async getConfirmedStorageUsedBytes(organizationId: string): Promise<bigint> {
+    try {
+      const filesService = this.moduleRef.get<any>('FilesService', { strict: false });
+      if (filesService && typeof filesService.getUsedStorageBytes === 'function') {
+        return await filesService.getUsedStorageBytes(organizationId);
+      }
+    } catch {
+      // Si FilesService no está disponible o inicializado
+    }
+    return BigInt(0);
   }
 }

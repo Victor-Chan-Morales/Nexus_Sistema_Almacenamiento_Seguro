@@ -1,6 +1,6 @@
 import { Injectable, ConflictException, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { User, UserStatus } from './entities/user.entity';
@@ -8,13 +8,13 @@ import { Organization } from './entities/organization.entity';
 import { Membership, MemberRole } from './entities/membership.entity';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { BillingService } from '../billing/billing.service';
 
 /**
  * IamService — lógica de negocio de identidad y acceso.
  *
  * Este servicio es consumido directamente por otros módulos del monolito
- * (FilesModule, BillingModule) mediante inyección de dependencias.
- * No requiere llamadas HTTP entre servicios.
+ * mediante inyección de dependencias.
  */
 @Injectable()
 export class IamService {
@@ -29,10 +29,16 @@ export class IamService {
     private readonly membershipRepo: Repository<Membership>,
 
     private readonly jwtService: JwtService,
+    private readonly billingService: BillingService,
+    private readonly dataSource: DataSource,
   ) {}
 
-  // ── Registro ──────────────────────────────────────────────────────────────
+  // ── Registro Atómico ──────────────────────────────────────────────────────
 
+  /**
+   * Registro atómico: Crea el usuario, organización, membresía y
+   * provisiona la suscripción Demo inicial en una única transacción de BD.
+   */
   async register(dto: RegisterDto) {
     const existing = await this.userRepo.findOneBy({ email: dto.email });
     if (existing) {
@@ -41,35 +47,40 @@ export class IamService {
 
     const passwordHash = await argon2.hash(dto.password);
 
-    const user = this.userRepo.create({
-      email: dto.email,
-      fullName: dto.fullName,
-      passwordHash,
-      status: UserStatus.ACTIVE,
-      emailVerified: false,
+    return this.dataSource.transaction(async (manager: EntityManager) => {
+      const user = manager.create(User, {
+        email: dto.email,
+        fullName: dto.fullName,
+        passwordHash,
+        status: UserStatus.ACTIVE,
+        emailVerified: false,
+      });
+      await manager.save(user);
+
+      // Creamos u obtenemos organización y membresía
+      let org = await manager.findOne(Organization, { where: { name: dto.organizationName } });
+      if (!org) {
+        org = manager.create(Organization, { name: dto.organizationName });
+        await manager.save(org);
+      }
+
+      const membership = manager.create(Membership, {
+        userId: user.id,
+        organizationId: org.id,
+        role: MemberRole.OWNER,
+      });
+      await manager.save(membership);
+
+      // Provisión atómica de la suscripción Demo (5 GB, sin vencimiento, simulada)
+      await this.billingService.provisionInitialSubscription(org.id, manager);
+
+      return {
+        userId: user.id,
+        organizationId: org.id,
+        role: membership.role,
+        verificationRequired: true,
+      };
     });
-    await this.userRepo.save(user);
-
-    // Creamos u obtenemos organización y membresía
-    let org = await this.orgRepo.findOneBy({ name: dto.organizationName });
-    if (!org) {
-      org = this.orgRepo.create({ name: dto.organizationName });
-      await this.orgRepo.save(org);
-    }
-
-    const membership = this.membershipRepo.create({
-      userId: user.id,
-      organizationId: org.id,
-      role: MemberRole.OWNER,
-    });
-    await this.membershipRepo.save(membership);
-
-    return {
-      userId: user.id,
-      organizationId: org.id,
-      role: membership.role,
-      verificationRequired: true,
-    };
   }
 
   // ── Login ─────────────────────────────────────────────────────────────────
@@ -138,7 +149,7 @@ export class IamService {
     };
   }
 
-  // ── Consulta de usuario (usado por otros módulos internamente) ────────────
+  // ── Consulta de usuario ───────────────────────────────────────────────────
 
   async findUserById(userId: string): Promise<User> {
     const user = await this.userRepo.findOneBy({ id: userId });
@@ -160,16 +171,21 @@ export class IamService {
       throw new ConflictException('El nombre de organización ya existe');
     }
 
-    const org = this.orgRepo.create({ name });
-    await this.orgRepo.save(org);
+    return this.dataSource.transaction(async (manager: EntityManager) => {
+      const org = manager.create(Organization, { name });
+      await manager.save(org);
 
-    const membership = this.membershipRepo.create({
-      userId: ownerId,
-      organizationId: org.id,
-      role: MemberRole.OWNER,
+      const membership = manager.create(Membership, {
+        userId: ownerId,
+        organizationId: org.id,
+        role: MemberRole.OWNER,
+      });
+      await manager.save(membership);
+
+      // Provisionar Demo para la nueva organización
+      await this.billingService.provisionInitialSubscription(org.id, manager);
+
+      return org;
     });
-    await this.membershipRepo.save(membership);
-
-    return org;
   }
 }

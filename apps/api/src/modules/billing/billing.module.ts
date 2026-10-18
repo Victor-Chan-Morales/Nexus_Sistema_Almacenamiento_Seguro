@@ -4,20 +4,17 @@ import { BillingController } from './billing.controller';
 import { BillingService } from './billing.service';
 import { Plan } from './entities/plan.entity';
 import { Subscription } from './entities/subscription.entity';
-import { IamModule } from '../iam/iam.module';
 
 /**
  * Módulo BILLING
  * Responsable: Anthony
  *
- * Gestiona: planes disponibles y suscripciones (simuladas para el proyecto).
- * Importa IamModule para acceder a IamService y verificar usuarios
- * directamente — sin llamadas HTTP.
+ * Gestiona: catálogo de planes, suscripciones simuladas y cuotas.
+ * Exporta BillingService para consumo in-process por IamModule y FilesModule.
  */
 @Module({
   imports: [
     TypeOrmModule.forFeature([Plan, Subscription]),
-    IamModule, // Acceso directo a IamService en el mismo proceso
   ],
   controllers: [BillingController],
   providers: [BillingService],

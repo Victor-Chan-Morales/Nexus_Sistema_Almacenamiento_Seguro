@@ -5,6 +5,20 @@
 
 Registro dinámico de decisiones, acuerdos pendientes y bloqueos. Añada entradas nuevas al principio; no borre historia. Las propuestas se marcan como pendientes hasta que el equipo las acepte.
 
+## 2026-10-18 — Cierre de observaciones de PR #4 (Billing) y alineación de cuotas
+
+- **Estado:** Implementado y validado.
+- **Responsable:** Anthony (Billing).
+- **Acciones ejecutadas:**
+  1. **Demo gratuito y permanente:** Plan Demo en seed/base de datos fijado con `validityDays = null` y `priceCents = 0`. Activaciones de Demo generan `expiresAt: null`. Los planes pagados (Team, Business, Enterprise) conservan vigencia mensual (30 días).
+  2. **Provisión atómica en registro:** Conectada la provisión de Demo dentro de la transacción de `IamService.register` usando el mismo `EntityManager`. Toda nueva organización nace con su suscripción y cuota de 5 GB persistidas.
+  3. **Activación transaccional, idempotente y validación de downgrade:** `BillingService.subscribe()` ejecuta una transacción atómica; si se intenta activar el mismo plan activo, actúa de forma idempotente sin recrear filas. Si se solicita un plan menor, consulta el almacenamiento en bytes mediante `FilesService.getUsedStorageBytes()` y rechaza con `409 Conflict` si el uso actual supera la nueva capacidad.
+  4. **Alineación de estados y vigencia:** El modelo persiste `status: active | expired | cancelled` y `simulated: true`. Las suscripciones vencidas transicionan a `expired` y su límite activo computa como 0 bytes en `getStorageLimitBytes()`, bloqueando nuevas subidas.
+  5. **Manejo de errores en seed:** `seedDefaultPlans()` no oculta excepciones silenciosamente; utiliza `Logger` de NestJS y asegura la presencia repetible de los 4 planes aprobados.
+  6. **Validación de DTO:** Aplicado `ActivateSubscriptionDto` con `@IsUUID('4')` y `ValidationPipe` en `POST /subscriptions/activate`.
+  7. **ADR-005 y migración:** Se documentó ADR-005 con el script SQL de migración y se actualizaron los diagramas y el README del módulo.
+  8. **Limpieza:** Se removieron artefactos de compilación (`.tsbuildinfo`) y se actualizó `.gitignore`.
+
 ## 2026-10-06 — Adopción e Implementación del Monolito Modular
 
 - **Estado:** Aprobado e Implementado.

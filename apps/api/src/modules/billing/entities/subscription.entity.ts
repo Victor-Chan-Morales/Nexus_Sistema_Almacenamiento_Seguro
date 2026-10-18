@@ -6,6 +6,7 @@ import {
   JoinColumn,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 import { Plan } from './plan.entity';
 
@@ -13,10 +14,13 @@ export enum SubscriptionStatus {
   ACTIVE = 'active',
   EXPIRED = 'expired',
   CANCELLED = 'cancelled',
-  SIMULATED = 'simulated', // Para el prototipo universitario
 }
 
 @Entity('subscriptions')
+@Index('uq_active_org_subscription', ['organizationId'], {
+  unique: true,
+  where: "status = 'active'",
+})
 export class Subscription {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -32,11 +36,17 @@ export class Subscription {
   @Column({ name: 'plan_id' })
   planId: string;
 
-  @Column({ type: 'varchar', default: SubscriptionStatus.SIMULATED })
+  /** Estado de vigencia real de la suscripción (active, expired, cancelled) */
+  @Column({ type: 'varchar', default: SubscriptionStatus.ACTIVE })
   status: SubscriptionStatus;
 
+  /** Indicador de si la suscripción es simulada (sin procesamiento de pago real) */
+  @Column({ default: true })
+  simulated: boolean;
+
+  /** Fecha de vencimiento. null indica sin vencimiento (ej. Plan Demo) */
   @Column({ name: 'expires_at', nullable: true, type: 'timestamptz' })
-  expiresAt: Date;
+  expiresAt: Date | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

@@ -9,24 +9,19 @@ import { User } from './entities/user.entity';
 import { Organization } from './entities/organization.entity';
 import { Membership } from './entities/membership.entity';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { BillingModule } from '../billing/billing.module';
 
 /**
  * Módulo IAM (Identity & Access Management)
  * Responsable: Sebastián
  *
  * Gestiona: usuarios, organizaciones, membresías, roles y autenticación JWT.
- * Comunica sus servicios directamente con otros módulos del monolito
- * mediante inyección de dependencias — SIN llamadas HTTP entre servicios.
+ * Importa BillingModule para la provisión atómica de la suscripción Demo durante el registro.
  */
 @Module({
   imports: [
-    // Entidades de este módulo registradas en TypeORM
     TypeOrmModule.forFeature([User, Organization, Membership]),
-
-    // Autenticación con Passport
     PassportModule.register({ defaultStrategy: 'jwt' }),
-
-    // JWT configurado desde variables de entorno
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({
@@ -37,10 +32,10 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       }),
       inject: [ConfigService],
     }),
+    BillingModule, // Inyección directa de BillingService para registro atómico
   ],
   controllers: [IamController],
   providers: [IamService, JwtStrategy],
-  // Exportamos IamService para que FilesModule y BillingModule lo usen directamente
   exports: [IamService, JwtModule, PassportModule],
 })
 export class IamModule {}
