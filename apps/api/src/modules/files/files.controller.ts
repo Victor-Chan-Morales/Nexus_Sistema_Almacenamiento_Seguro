@@ -11,10 +11,7 @@ import {
   UseInterceptors,
   UploadedFile,
   Headers,
-  ParseFilePipe,
-  MaxFileSizeValidator,
   Res,
-  BadRequestException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -22,8 +19,8 @@ import { Response } from 'express';
 import { FilesService } from './files.service';
 
 /**
- * Rutas de Carpetas (/folders)
- * Cumple con los contratos acordados para navegación y explorador de archivos.
+ * FoldersController (/folders)
+ * Contrato oficial de carpetas según CONTRACTS.md
  */
 @Controller('folders')
 @UseGuards(AuthGuard('jwt'))
@@ -31,36 +28,72 @@ export class FoldersController {
   constructor(private readonly filesService: FilesService) {}
 
   @Get()
-  listFolders(@Request() req: any, @Query('parentId') parentId?: string) {
+  async listFolders(
+    @Request() req: any,
+    @Query('parentId') parentId?: string,
+    @Query('parentFolderId') parentFolderId?: string,
+  ) {
     const orgId = req.user.organizationId;
-    return this.filesService.listFolders(orgId, parentId);
+    const folders = await this.filesService.listFolders(orgId, parentId || parentFolderId);
+    return {
+      items: folders.map((f) => ({
+        id: f.id,
+        name: f.name,
+        parentFolderId: f.parentId,
+        driveId: null,
+      })),
+    };
   }
 
   @Post()
-  createFolder(
+  async createFolder(
     @Request() req: any,
     @Body() body: { name: string; parentId?: string; parentFolderId?: string },
   ) {
     const orgId = req.user.organizationId;
     const userId = req.user.userId || req.user.id;
-    return this.filesService.createFolder(
+    const folder = await this.filesService.createFolder(
       orgId,
       userId,
       body.name,
-      body.parentId || body.parentFolderId,
+      body.parentFolderId || body.parentId,
     );
+    return {
+      id: folder.id,
+      name: folder.name,
+      parentFolderId: folder.parentId,
+      driveId: null,
+      createdAt: folder.createdAt,
+    };
   }
 
   @Get(':id/items')
-  getFolderItems(@Request() req: any, @Param('id') folderId: string) {
+  async getFolderItems(@Request() req: any, @Param('id') folderId: string) {
     const orgId = req.user.organizationId;
-    return this.filesService.getFolderItems(orgId, folderId);
+    const { folders, files } = await this.filesService.getFolderItems(orgId, folderId);
+    return {
+      folders: folders.map((f) => ({
+        id: f.id,
+        name: f.name,
+        parentFolderId: f.parentId,
+        driveId: null,
+        createdAt: f.createdAt,
+      })),
+      files: files.map((f) => ({
+        id: f.id,
+        name: f.name,
+        mimeType: f.mimeType,
+        sizeBytes: f.sizeBytes,
+        createdAt: f.createdAt,
+        updatedAt: f.updatedAt,
+      })),
+    };
   }
 }
 
 /**
- * Rutas de Archivos (/files)
- * Manejo de subida multipart, descarga por stream, consulta y eliminación lógica.
+ * FilesController (/files)
+ * Contrato oficial de archivos según CONTRACTS.md
  */
 @Controller('files')
 @UseGuards(AuthGuard('jwt'))
@@ -68,9 +101,17 @@ export class FilesController {
   constructor(private readonly filesService: FilesService) {}
 
   @Get()
-  listFiles(@Request() req: any, @Query('folderId') folderId?: string) {
+  async listFiles(@Request() req: any, @Query('folderId') folderId?: string) {
     const orgId = req.user.organizationId;
-    return this.filesService.listFiles(orgId, folderId);
+    const files = await this.filesService.listFiles(orgId, folderId);
+    return files.map((f) => ({
+      id: f.id,
+      name: f.name,
+      mimeType: f.mimeType,
+      sizeBytes: f.sizeBytes,
+      createdAt: f.createdAt,
+      updatedAt: f.updatedAt,
+    }));
   }
 
   @Post('upload')
@@ -80,26 +121,11 @@ export class FilesController {
     }),
   )
   async uploadFile(
-    @UploadedFile(
-      new ParseFilePipe({
-        validators: [
-          new MaxFileSizeValidator({ maxSize: 100 * 1024 * 1024 }),
-        ],
-      }),
-    )
-    file: any,
+    @UploadedFile() file: any,
     @Body('folderId') folderId: string,
     @Headers('Idempotency-Key') idempotencyKey: string,
     @Request() req: any,
   ) {
-    // Validación de tipos según ADR-003 (PDF, DOCX, XLSX, PPTX, JPG, PNG, TXT, ZIP)
-    const allowedMimes = /(png|jpeg|jpg|pdf|text|plain|zip|officedocument|msword)/i;
-    if (!file || !allowedMimes.test(file.mimetype)) {
-      throw new BadRequestException(
-        `Tipo de archivo no permitido: ${file?.mimetype || 'desconocido'}`,
-      );
-    }
-
     const orgId = req.user.organizationId;
     const userId = req.user.userId || req.user.id;
 
@@ -124,37 +150,29 @@ export class FilesController {
       orgId,
     );
 
+    // Sanitización de nombre de archivo contra path traversal
+    const safeFilename = name.replace(/[/\\?%*:|"<>]/g, '_');
+    const rfc5987Filename = encodeURIComponent(safeFilename);
+
     res.set({
       'Content-Type': mimeType,
-      'Content-Disposition': `attachment; filename="${encodeURIComponent(name)}"`,
+      'Content-Disposition': `attachment; filename="${safeFilename}"; filename*=UTF-8''${rfc5987Filename}`,
+      'Access-Control-Expose-Headers': 'Content-Disposition',
+    });
+
+    stream.on('error', () => {
+      if (!res.headersSent) {
+        res.status(500).json({ statusCode: 500, message: 'Error en la transmisión del archivo' });
+      }
     });
 
     stream.pipe(res);
   }
 
   @Delete(':id')
-  softDelete(@Request() req: any, @Param('id') fileId: string) {
+  async softDelete(@Request() req: any, @Param('id') fileId: string) {
     const orgId = req.user.organizationId;
-    return this.filesService.softDelete(fileId, orgId);
-  }
-
-  // Compatibilidad hacia atrás
-  @Get('folders')
-  listFoldersLegacy(@Request() req: any, @Query('parentId') parentId?: string) {
-    return this.filesService.listFolders(req.user.organizationId, parentId);
-  }
-
-  @Post('folders')
-  createFolderLegacy(
-    @Request() req: any,
-    @Body() body: { name: string; parentId?: string; parentFolderId?: string },
-  ) {
-    const userId = req.user.userId || req.user.id;
-    return this.filesService.createFolder(
-      req.user.organizationId,
-      userId,
-      body.name,
-      body.parentId || body.parentFolderId,
-    );
+    await this.filesService.softDelete(fileId, orgId);
+    return { success: true, id: fileId };
   }
 }
