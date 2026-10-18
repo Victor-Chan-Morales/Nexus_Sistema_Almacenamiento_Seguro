@@ -2,7 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
-import { VERIFICATION_TOKEN_TTL_MINUTES } from '../constants';
+import { DEFAULT_VERIFY_EMAIL_PATH, VERIFICATION_TOKEN_TTL_MINUTES } from '../constants';
+import { buildVerificationLink } from '../iam.utils';
 import { VerificationMailer } from '../ports/verification-mailer';
 
 /**
@@ -26,7 +27,8 @@ export class EmailService implements VerificationMailer {
 
   async sendVerification(to: string, fullName: string, token: string): Promise<void> {
     const appUrl = this.config.get<string>('APP_URL') ?? 'http://localhost:3000';
-    const link = `${appUrl}/verify-email?token=${encodeURIComponent(token)}`;
+    const path = this.config.get<string>('IAM_VERIFY_EMAIL_PATH') ?? DEFAULT_VERIFY_EMAIL_PATH;
+    const link = buildVerificationLink(appUrl, path, token);
     const from = this.config.get<string>('MAIL_FROM') ?? 'Nexus <no-reply@nexus.local>';
 
     await this.transporter.sendMail({

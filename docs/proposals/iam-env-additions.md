@@ -9,7 +9,9 @@ IAM_REQUIRE_VERIFIED_EMAIL=true     # propuesta de contrato: el login exige corr
 COOKIE_SECURE=false                 # true en producción (HTTPS)
 COOKIE_SAMESITE=lax                 # lax | strict | none (none exige COOKIE_SECURE=true)
 APP_URL=http://localhost:3000       # base del enlace de verificación (frontend)
-WEB_ORIGIN=http://localhost:3000    # origen permitido por CORS con credenciales
+# IAM_VERIFY_EMAIL_PATH=/verificar-correo   # (opcional) página web que recibe el enlace; por defecto /verificar-correo
+# CORS usa WEB_URL (ya existente en main.ts); debe ser el origen exacto del frontend, no '*'
+DB_SYNCHRONIZE=false                # el esquema lo crean las migraciones; true solo a propósito
 
 # SMTP de desarrollo (ADR-003): Mailpit, UI en http://localhost:8025
 MAIL_HOST=localhost
