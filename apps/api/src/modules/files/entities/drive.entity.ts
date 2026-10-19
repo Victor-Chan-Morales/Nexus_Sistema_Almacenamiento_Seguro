@@ -1,27 +1,25 @@
-import {
-  Entity,
-  PrimaryGeneratedColumn,
-  Column,
-  CreateDateColumn,
-} from 'typeorm';
+import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
-@Entity('drives')
+@Entity({ schema: 'files', name: 'drive' })
 export class Drive {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+  @PrimaryGeneratedColumn('uuid', { name: 'drive_id' })
+  id!: string;
 
-  @Column({ name: 'organization_id' })
-  organizationId: string;
+  @Column({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string;
 
-  @Column({ name: 'owner_user_id', nullable: true })
-  ownerUserId: string;
+  @Column({ type: 'enum', enum: ['personal', 'team'], enumName: 'drive_type' })
+  type!: 'personal' | 'team';
 
-  @Column({ default: 'Mi espacio' })
-  name: string;
+  @Column({ name: 'owner_user_id', type: 'uuid', nullable: true })
+  ownerUserId!: string | null;
 
-  @Column({ default: 'personal' })
-  type: string;
+  @Column({ name: 'team_id', type: 'uuid', nullable: true })
+  teamId!: string | null;
 
-  @CreateDateColumn({ name: 'created_at' })
-  createdAt: Date;
+  @Column({ type: 'varchar', length: 150 })
+  name!: string;
+
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt!: Date;
 }

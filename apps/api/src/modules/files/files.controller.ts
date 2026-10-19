@@ -16,6 +16,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
+import { pipeline } from 'stream/promises';
 import { FilesService } from './files.service';
 
 /**
@@ -56,7 +57,8 @@ export class FoldersController {
   @Get(':id/items')
   async getFolderItems(@Request() req: any, @Param('id') folderId: string) {
     const orgId = req.user.organizationId;
-    return this.filesService.getFolderItems(orgId, folderId);
+    const userId = req.user.userId || req.user.id;
+    return this.filesService.getFolderItems(orgId, userId, folderId);
   }
 }
 
@@ -72,7 +74,8 @@ export class FilesController {
   @Get()
   async listFiles(@Request() req: any, @Query('folderId') folderId?: string) {
     const orgId = req.user.organizationId;
-    return this.filesService.listFiles(orgId, folderId);
+    const userId = req.user.userId || req.user.id;
+    return this.filesService.listFiles(orgId, userId, folderId);
   }
 
   @Post('upload')
@@ -109,6 +112,7 @@ export class FilesController {
     const { stream, mimeType, name } = await this.filesService.downloadFileStream(
       fileId,
       orgId,
+      req.user.userId || req.user.id,
     );
 
     const safeFilename = name.replace(/[/\\?%*:|"<>]/g, '_');
@@ -120,19 +124,20 @@ export class FilesController {
       'Access-Control-Expose-Headers': 'Content-Disposition',
     });
 
-    stream.on('error', () => {
+    try {
+      await pipeline(stream, res);
+    } catch {
       if (!res.headersSent) {
         res.status(500).json({ statusCode: 500, message: 'Error en la transmisión del archivo' });
       }
-    });
-
-    stream.pipe(res);
+    }
   }
 
   @Delete(':id')
   async softDelete(@Request() req: any, @Param('id') fileId: string) {
     const orgId = req.user.organizationId;
-    await this.filesService.softDelete(fileId, orgId);
+    const userId = req.user.userId || req.user.id;
+    await this.filesService.softDelete(fileId, orgId, userId);
     return { success: true, id: fileId };
   }
 }

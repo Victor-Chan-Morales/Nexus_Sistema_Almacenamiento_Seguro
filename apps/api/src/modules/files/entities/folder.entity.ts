@@ -1,38 +1,50 @@
 import {
-  Entity,
-  PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { Drive } from './drive.entity';
 
-@Entity('folders')
+@Entity({ schema: 'files', name: 'folder' })
 export class Folder {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+  @PrimaryGeneratedColumn('uuid', { name: 'folder_id' })
+  id!: string;
 
-  @Column()
-  name: string;
+  @Column({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string;
 
-  @Column({ name: 'organization_id' })
-  organizationId: string;
+  @Column({ name: 'drive_id', type: 'uuid' })
+  driveId!: string;
 
-  @Column({ name: 'owner_id' })
-  ownerId: string;
+  @ManyToOne(() => Drive, { nullable: false })
+  @JoinColumn({ name: 'drive_id', referencedColumnName: 'id' })
+  drive?: Drive;
 
-  @Column({ name: 'drive_id', nullable: true })
-  driveId: string;
+  @Column({ name: 'parent_folder_id', type: 'uuid', nullable: true })
+  parentId!: string | null;
 
-  /** Carpeta padre (null = raíz del drive) */
-  @Column({ name: 'parent_id', nullable: true })
-  parentId: string;
+  @Column({ name: 'destination_id', type: 'uuid', nullable: true })
+  destinationId!: string | null;
 
-  @Column({ name: 'is_deleted', default: false })
-  isDeleted: boolean;
+  @Column({ type: 'varchar', length: 255 })
+  name!: string;
 
-  @CreateDateColumn({ name: 'created_at' })
-  createdAt: Date;
+  @Column({ name: 'created_by', type: 'uuid' })
+  createdBy!: string;
 
-  @UpdateDateColumn({ name: 'updated_at' })
-  updatedAt: Date;
+  @Column({ name: 'is_deleted', type: 'boolean', default: false })
+  isDeleted!: boolean;
+
+  @Column({ name: 'deleted_at', type: 'timestamptz', nullable: true })
+  deletedAt!: Date | null;
+
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt!: Date;
+
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz', nullable: true })
+  updatedAt!: Date | null;
 }

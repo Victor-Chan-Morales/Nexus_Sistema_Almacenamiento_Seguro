@@ -5,22 +5,23 @@ import { BillingService } from './billing.service';
 import { Plan } from './entities/plan.entity';
 import { Subscription } from './entities/subscription.entity';
 import { IamModule } from '../iam/iam.module';
+import { DemoSubscriptionHook } from './registration/demo-subscription.hook';
 
 /**
  * Módulo BILLING
  * Responsable: Anthony
  *
  * Gestiona: planes disponibles y suscripciones (simuladas para el proyecto).
- * Importa IamModule para acceder a IamService y verificar usuarios
- * directamente — sin llamadas HTTP.
+ * Importa IamModule por el guard JWT y por RegistrationHooks: el alta de una organización
+ * contrata el plan Demo dentro de la misma transacción del registro (hook demo-subscription).
  */
 @Module({
   imports: [
     TypeOrmModule.forFeature([Plan, Subscription]),
-    IamModule, // Acceso directo a IamService en el mismo proceso
+    IamModule, // Guard JWT y RegistrationHooks, en el mismo proceso
   ],
   controllers: [BillingController],
-  providers: [BillingService],
+  providers: [BillingService, DemoSubscriptionHook],
   exports: [BillingService],
 })
 export class BillingModule {}

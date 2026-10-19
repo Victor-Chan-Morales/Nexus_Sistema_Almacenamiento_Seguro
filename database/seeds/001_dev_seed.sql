@@ -11,15 +11,11 @@ INSERT INTO admin.organization (organization_id, name, status, deployment_model)
 VALUES ('00000000-0000-0000-0000-000000000001', 'Organización de Prueba', 'active', 'cloud')
 ON CONFLICT (organization_id) DO NOTHING;
 
--- Planes (catálogo, no específicos de una organización)
-INSERT INTO billing.plan (plan_id, name, storage_limit_gb, user_limit, price_monthly) VALUES
-  ('00000000-0000-0000-0000-0000000000a1', 'Free',    5,  3, 0.00),
-  ('00000000-0000-0000-0000-0000000000a2', 'Pro',    100, 25, 19.99)
-ON CONFLICT (plan_id) DO NOTHING;
-
+-- El catálogo de planes (Demo, Team, Business, Enterprise) ya lo cargan las migraciones de datos
+-- de referencia: aquí solo se suscribe la organización de prueba a uno de ellos, resuelto por nombre.
 INSERT INTO billing.subscription (subscription_id, organization_id, plan_id, status, start_date)
 VALUES ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-000000000001',
-        '00000000-0000-0000-0000-0000000000a2', 'active', CURRENT_DATE)
+        (SELECT plan_id FROM billing.plan WHERE name = 'Team'), 'active', CURRENT_DATE)
 ON CONFLICT (subscription_id) DO NOTHING;
 
 -- Destino de almacenamiento (MinIO local, ya "conectado" para la demo) y cuota inicial

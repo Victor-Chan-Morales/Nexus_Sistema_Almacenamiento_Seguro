@@ -11,11 +11,17 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "incremental": true,
+    // La caché vive dentro de dist: nest build borra dist en cada compilación, y si la caché
+    // sobrevive fuera, tsc cree que ya emitió todo y deja un dist incompleto que no arranca.
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
     "skipLibCheck": true,
     "strictNullChecks": false,
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "forceConsistentCasingInFileNames": false,
     "noFallthroughCasesInSwitch": false
-  }
+  },
+  "include": [
+    "src/**/*"
+  ]
 }

@@ -5,6 +5,37 @@
 
 Registro dinámico de decisiones, acuerdos pendientes y bloqueos. Añada entradas nuevas al principio; no borre historia. Los contratos de integración v0.3 fueron aprobados por el integrador para implementación el 2026-10-18.
 
+## 2026-10-18 — Integración de la PR #6 (IAM) en main, cerrada por el integrador
+
+- **Estado:** integrada en `integration/pr6-iam` (merge de `main` + `Sebastian_S` sin devolución pendiente). Ya no hay bloqueantes abiertos de IAM.
+- **Conflicto resuelto:** `SESSION_LOG.md` era el único choque con `main` (ambas ramas escribieron entradas del 2026-10-18 y `main` reescribió el párrafo de intro). Se conservó el texto de `main` y la entrada de IAM completa.
+- **Decisión del integrador — hooks de alta:** Billing y Files ya registran los hooks que el registro exige. `DemoSubscriptionHook` (`modules/billing/registration`) contrata el plan `Demo` y `PersonalDriveHook` (`modules/files/registration`) crea el Drive `Mi espacio`, la carpeta raíz `Archivos` y la fila de `files.tenant_quota` en cero. Ambos escriben con el `EntityManager` de la transacción del registro y, por ahora, con SQL contra el esquema canónico: las entidades de esos módulos todavía apuntan al esquema plano anterior (`plans`, `folders`, `file_records`) y las reemplazarán sus propios PR.
+- **Decisión del integrador — catálogo de planes:** el catálogo aprobado (Demo, Team, Business, Enterprise) pasa a datos de referencia en `database/migrations/20261019090100`, con `name` único, porque sin el plan Demo el alta de cualquier organización falla. El seed de desarrollo ya no define planes propios: resuelve la suscripción de prueba por nombre.
+- **Aclaración de contrato (`CONTRACTS.md`):** si el token de verificación de 15 minutos vence mientras el SMTP está caído, el reintento de la outbox emite uno nuevo antes de enviar; los reintentos se abandonan a las 24 horas. Antes la cuenta quedaba creada, sin enlace utilizable, con el login bloqueado por `EMAIL_NOT_VERIFIED` y sin reenvío manual. No se agregó ninguna ruta: sigue sin existir endpoint de reenvío.
+- **Configuración unificada:** `WEB_URL` es la única variable de origen de la web (CORS y enlace del correo); se eliminó `APP_URL`. En `docker-compose.yml` se conservan los nombres `nexus-*` y el volumen `nexus-postgres-data`, para que nadie pierda su base local, y se mantienen los servicios nuevos `mailpit` y `migrate` (dbmate, perfil `tools`).
+- **Verificado el 2026-10-18 contra PostgreSQL 16 real:** 53 pruebas unitarias y 13 e2e en verde; `npm run build` de la API correcto; las 16 migraciones aplicadas en orden sobre una base sin el esquema canónico, y `down` + `up` de las tres últimas comprobados en una base desechable. El e2e ya corre con los hooks reales e incluye el rollback completo del alta cuando un hook falla y la renovación del token tras una caída de SMTP.
+- **Pendiente, fuera del alcance de esta PR:** Billing (PR #4) y Files (PR #5) siguen sirviendo sus endpoints contra las tablas planas del esquema anterior, que ninguna migración crea; con `DB_SYNCHRONIZE=false` (ahora el valor por defecto) `GET /plans`, `/folders` y la carga de archivos no funcionan hasta que cada módulo se alinee con `database/migrations`. El registro sí funciona completo.
+
+## 2026-10-18 — Correcciones IAM según la devolución de la PR #6
+
+- **Estado:** Implementado en `Sebastian_S`; pendiente de verificación con PostgreSQL real.
+- **Decisiones:** se mantiene la v0.4 de `CONTRACTS.md` (incluye `EMAIL_NOT_VERIFIED`). Outbox completa de correo. La consolidación de migraciones la hace el integrador (Víctor).
+- **Implementado:**
+  - Cookie `nexus_refresh` (antes `nexus_rt`).
+  - `iam.session.organization_id`: el refresh conserva la organización y revalida su membresía; si ya no está activa, rechaza la sesión.
+  - Hooks obligatorios `demo-subscription` (Billing) y `personal-drive` (Files): si falta alguno, el registro falla y se revierte. **Hasta que Billing y Files los registren, el registro falla en la aplicación integrada.**
+  - Outbox `iam.email_outbox`: el mensaje se escribe en la transacción del registro, se envía después del commit y se reintenta con espera creciente hasta que el token venza. El token va cifrado y el payload se borra al enviar o vencer. Si cambia `JWT_SECRET`, los mensajes pendientes vencen sin enviarse.
+  - Configuración: `WEB_URL` como único origen; `exposedHeaders: Content-Disposition`; un solo `JWT_SECRET`; sin `WEB_ORIGIN` ni `JWT_EXPIRES_IN`; volcado de consultas de TypeORM desactivado salvo `DB_LOGGING=true`.
+  - Documentación: eliminados los `.Rhistory` y las propuestas v0.2 de `docs/proposals`; `revision_pr6_iam_resultado.md` rotulado como análisis preliminar.
+- **Verificado:** jest unitario 52/52; e2e IAM 11/11 contra PostgreSQL 16 limpio con todas las migraciones aplicadas en orden (incluido el escenario de SMTP caído y reintento de la outbox). La migración `down` de `20261019090000` no se ha probado.
+- **Pendiente:** Billing (`demo-subscription`) y Files (`personal-drive`) deben registrar sus hooks; hasta entonces el registro falla en la aplicación integrada. Miguel debe mover sus migraciones de `apps/db/` a `database/migrations/` al integrar su PR (consolidación del integrador).
+
+## 2026-10-18 — Contrato IAM v0.4: bloquear login sin correo verificado
+
+- **Decisión del integrador:** `POST /auth/login` valida primero las credenciales. Si son correctas pero el correo no está verificado, responde HTTP `403` con `code: "EMAIL_NOT_VERIFIED"` y no emite tokens ni cookie de refresh.
+- **Motivo:** el frontend ya muestra un mensaje específico para este código; el contrato v0.3 definía el envío y consumo del enlace, pero no fijaba el comportamiento del login antes de verificarlo.
+- **Alcance:** aclaración de contrato para implementación de IAM por Sebastián. No se agregan rutas nuevas; no se ofrece reenvío manual del correo en este corte.
+
 ## 2026-10-18 — Correcciones documentales para PR #4, #5 y #6
 
 - Se actualizaron las devoluciones individuales de Anthony (Billing), Miguel (Files/Storage) y Sebastián (IAM) para que cada responsable implemente directamente contra `CONTRACTS.md` v0.3 aprobado.
