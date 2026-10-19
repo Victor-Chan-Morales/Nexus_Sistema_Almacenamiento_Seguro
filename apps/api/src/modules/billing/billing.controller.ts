@@ -1,44 +1,37 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Request } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import {
+  Controller,
+  Get,
+  UseFilters,
+} from '@nestjs/common';
 import { BillingService } from './billing.service';
+import { PlanCatalogResponse } from './billing.dto';
+import { ApiExceptionFilter } from '../../common/filters/api-exception.filter';
 
 /**
  * BillingController
  *
- * GET  /api/plans                   → Lista catálogo de planes (público / auth)
- * POST /api/subscriptions/activate  → Activar suscripción simulada (requiere JWT)
- * GET  /api/billing/subscription    → Suscripción activa de la organización (requiere JWT)
+ * GET /api/plans → Lista catálogo de planes aprobado oficial (público / autenticado)
+ *
+ * Aplica ApiExceptionFilter para garantizar el formato canónico:
+ * { code, message, requestId }
  */
 @Controller()
+@UseFilters(ApiExceptionFilter)
 export class BillingController {
   constructor(private readonly billingService: BillingService) {}
 
   @Get('plans')
-  async listPlans() {
-    const items = await this.billingService.listPlans();
+  async listPlans(): Promise<PlanCatalogResponse> {
+    const plans = await this.billingService.listPlans();
+    const items = plans.map((p) => ({
+      id: p.id,
+      name: p.name,
+      description: p.description || 'Plan de almacenamiento seguro Nexus',
+      priceMonthly: (p.priceCents || 0) / 100,
+      storageLimitBytes: Number(p.storageLimitBytes),
+      userLimit: p.maxMembers,
+      validityDays: p.validityDays ?? null,
+    }));
     return { items };
-  }
-
-  @UseGuards(AuthGuard('jwt'))
-  @Post('subscriptions/activate')
-  async activate(
-    @Request() req,
-    @Body() body: { planId: string },
-  ) {
-    const orgId = req.user.organizationId;
-    const subscription = await this.billingService.subscribe(orgId, body.planId);
-    return {
-      subscriptionId: subscription.id,
-      status: 'active',
-      simulated: true,
-      startDate: subscription.createdAt.toISOString(),
-      endDate: subscription.expiresAt ? subscription.expiresAt.toISOString() : null,
-    };
-  }
-
-  @UseGuards(AuthGuard('jwt'))
-  @Get('billing/subscription')
-  getSubscription(@Request() req) {
-    return this.billingService.getSubscription(req.user.organizationId);
   }
 }
