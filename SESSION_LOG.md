@@ -5,6 +5,20 @@
 
 Registro dinámico de decisiones, acuerdos pendientes y bloqueos. Añada entradas nuevas al principio; no borre historia. Los contratos de integración v0.3 fueron aprobados por el integrador para implementación el 2026-10-18.
 
+## 2026-10-18 — Correcciones IAM según la devolución de la PR #6
+
+- **Estado:** Implementado en `Sebastian_S`; pendiente de verificación con PostgreSQL real.
+- **Decisiones:** se mantiene la v0.4 de `CONTRACTS.md` (incluye `EMAIL_NOT_VERIFIED`). Outbox completa de correo. La consolidación de migraciones la hace el integrador (Víctor).
+- **Implementado:**
+  - Cookie `nexus_refresh` (antes `nexus_rt`).
+  - `iam.session.organization_id`: el refresh conserva la organización y revalida su membresía; si ya no está activa, rechaza la sesión.
+  - Hooks obligatorios `demo-subscription` (Billing) y `personal-drive` (Files): si falta alguno, el registro falla y se revierte. **Hasta que Billing y Files los registren, el registro falla en la aplicación integrada.**
+  - Outbox `iam.email_outbox`: el mensaje se escribe en la transacción del registro, se envía después del commit y se reintenta con espera creciente hasta que el token venza. El token va cifrado y el payload se borra al enviar o vencer. Si cambia `JWT_SECRET`, los mensajes pendientes vencen sin enviarse.
+  - Configuración: `WEB_URL` como único origen; `exposedHeaders: Content-Disposition`; un solo `JWT_SECRET`; sin `WEB_ORIGIN` ni `JWT_EXPIRES_IN`; volcado de consultas de TypeORM desactivado salvo `DB_LOGGING=true`.
+  - Documentación: eliminados los `.Rhistory` y las propuestas v0.2 de `docs/proposals`; `revision_pr6_iam_resultado.md` rotulado como análisis preliminar.
+- **Verificado:** jest unitario 52/52; e2e IAM 11/11 contra PostgreSQL 16 limpio con todas las migraciones aplicadas en orden (incluido el escenario de SMTP caído y reintento de la outbox). La migración `down` de `20261019090000` no se ha probado.
+- **Pendiente:** Billing (`demo-subscription`) y Files (`personal-drive`) deben registrar sus hooks; hasta entonces el registro falla en la aplicación integrada. Miguel debe mover sus migraciones de `apps/db/` a `database/migrations/` al integrar su PR (consolidación del integrador).
+
 ## 2026-10-18 — Contrato IAM v0.4: bloquear login sin correo verificado
 
 - **Decisión del integrador:** `POST /auth/login` valida primero las credenciales. Si son correctas pero el correo no está verificado, responde HTTP `403` con `code: "EMAIL_NOT_VERIFIED"` y no emite tokens ni cookie de refresh.

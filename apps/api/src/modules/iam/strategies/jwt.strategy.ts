@@ -1,30 +1,43 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
-import { ConfigService } from '@nestjs/config';
+import { IamErrors } from '../iam.errors';
+import { AuthUser, JwtPayload } from '../interfaces/auth-user.interface';
+import { MembershipRepository } from '../ports/repositories';
 
-/**
- * Estrategia JWT para Passport.
- * Lee el token del header Authorization: Bearer <token>
- * y lo valida automáticamente en todos los endpoints protegidos.
- */
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    config: ConfigService,
+    private readonly memberships: MembershipRepository,
+  ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: config.get<string>('JWT_SECRET', 'dev-secret-cambia-esto'),
+      secretOrKey: config.getOrThrow<string>('JWT_SECRET'),
+      algorithms: ['HS256'],
     });
   }
 
-  /** El payload ya fue verificado por Passport; devolvemos el usuario del request */
-  async validate(payload: { sub: string; email: string; organizationId?: string; role?: string }) {
+  /**
+   * Se ejecuta con un token ya verificado (firma y expiración). Revalida membresía y organización
+   * activas en cada request y toma el rol de la BD: si la cuenta se suspende o cambia de rol, el efecto
+   * es inmediato. El resultado es el único tenant que usa el resto de la API.
+   */
+  async validate(payload: JwtPayload): Promise<AuthUser> {
+    if (!payload?.sub || !payload?.org) throw IamErrors.unauthorized();
+
+    const membership = await this.memberships.findActive(payload.sub, payload.org);
+    if (!membership) throw IamErrors.unauthorized();
+
     return {
-      userId: payload.sub,
-      email: payload.email,
-      organizationId: payload.organizationId,
-      role: payload.role,
+      userId: membership.userId,
+      organizationId: membership.organizationId,
+      role: membership.role,
+      email: membership.user.email,
+      fullName: membership.user.fullName,
+      organizationName: membership.organization.name,
     };
   }
 }
