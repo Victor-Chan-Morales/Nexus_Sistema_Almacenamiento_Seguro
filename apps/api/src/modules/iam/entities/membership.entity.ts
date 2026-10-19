@@ -1,43 +1,55 @@
 import {
-  Entity,
-  PrimaryGeneratedColumn,
   Column,
-  ManyToOne,
-  JoinColumn,
   CreateDateColumn,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
 } from 'typeorm';
-import { User } from './user.entity';
+import { Role } from '../domain/enums';
 import { Organization } from './organization.entity';
+import { IamRole } from './role.entity';
+import { User } from './user.entity';
 
-export enum MemberRole {
-  OWNER = 'owner',
-  ADMIN = 'admin',
-  MEMBER = 'member',
-  VIEWER = 'viewer',
-}
-
-@Entity('memberships')
+/**
+ * Tabla iam.membership (usuario ↔ organización, N:M, único por par).
+ * El rol vive en la tabla iam.role: `roleRef` debe cargarse para leer `role`.
+ */
+@Entity({ schema: 'iam', name: 'membership' })
 export class Membership {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+  @PrimaryGeneratedColumn('uuid', { name: 'membership_id' })
+  id!: string;
 
-  @ManyToOne(() => User, (user) => user.memberships, { onDelete: 'CASCADE' })
+  @Column({ name: 'user_id', type: 'uuid' })
+  userId!: string;
+
+  @Column({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string;
+
+  @Column({ name: 'role_id', type: 'smallint' })
+  roleId!: number;
+
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
-  user: User;
+  user!: User;
 
-  @Column({ name: 'user_id' })
-  userId: string;
-
-  @ManyToOne(() => Organization, (org) => org.memberships, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Organization)
   @JoinColumn({ name: 'organization_id' })
-  organization: Organization;
+  organization!: Organization;
 
-  @Column({ name: 'organization_id' })
-  organizationId: string;
+  @ManyToOne(() => IamRole)
+  @JoinColumn({ name: 'role_id' })
+  roleRef!: IamRole;
 
-  @Column({ type: 'varchar', default: MemberRole.MEMBER })
-  role: MemberRole;
+  /** ENUM iam.membership_status (active | suspended). */
+  @Column({ type: 'varchar' })
+  status!: string;
 
-  @CreateDateColumn({ name: 'joined_at' })
-  joinedAt: Date;
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt!: Date;
+
+  /** Nombre del rol (tenant_admin | colaborador). Requiere `roleRef` cargado. */
+  get role(): Role {
+    return this.roleRef?.name as Role;
+  }
 }
