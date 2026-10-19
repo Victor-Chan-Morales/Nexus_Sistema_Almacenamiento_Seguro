@@ -45,10 +45,12 @@ export class SubscriptionCoordinator {
 
     return this.dataSource.transaction(async (manager: EntityManager) => {
       // 1. Lectura de estado vigente con bloqueo pesimista para prevenir carreras concurrentes
+      // Sin cargar el plan: PostgreSQL rechaza FOR UPDATE sobre el lado nulo de un LEFT JOIN,
+      // y aquí solo hacen falta planId y el estado para cancelar la suscripción vigente.
       const currentActive = await manager.findOne(Subscription, {
         where: { organizationId, status: SubscriptionStatus.ACTIVE },
         lock: { mode: 'pessimistic_write' },
-        relations: ['plan'],
+        loadEagerRelations: false,
       });
 
       // 2. Idempotencia: Si ya está activo el mismo plan, retornar la suscripción vigente sin recrear
