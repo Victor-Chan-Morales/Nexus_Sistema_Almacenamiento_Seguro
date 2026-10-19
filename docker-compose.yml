@@ -1,3 +1,23 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Nexus / PaaS — Docker Compose de desarrollo (unificado)
+#
+#   docker compose up -d                  → postgres + seaweedfs + mailpit
+#   docker compose run --rm migrate       → aplica las migraciones (dbmate)
+#   docker compose --profile containerized-api up -d --build   → además, la API en contenedor
+#
+# La API normalmente corre en el host (npm run dev:api) y se conecta a los puertos publicados.
+# Todos los servicios comparten la red nexus_backend: entre contenedores se llaman por nombre de servicio
+# (postgres, seaweedfs, mailpit), no por localhost.
+# ─────────────────────────────────────────────────────────────────────────────
+
+networks:
+  nexus_backend:
+    name: nexus_backend
+
+volumes:
+  nexus-postgres-data:
+  nexus-seaweedfs-data:
+
 services:
   # ── Base de datos ─────────────────────────────────────────────────────────
   postgres:
@@ -9,14 +29,37 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-nexus_dev}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local_only_change_me}
     ports:
-      - "5433:5432"
+      # Solo para desarrollo.
+      # Quitar este mapeo de puerto en producción; los servicios se conectan por la red interna.
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - nexus-postgres-data:/var/lib/postgresql/data
+    networks:
+      - nexus_backend
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nexus_dev} -d ${POSTGRES_DB:-nexus_dev}"]
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 10s
+
+  # ── Migraciones (se ejecutan a mano: docker compose run --rm migrate) ─────
+  migrate:
+    image: ghcr.io/amacneil/dbmate:latest
+    container_name: nexus-migrate-dev
+    profiles: ["tools"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-nexus_dev}:${POSTGRES_PASSWORD:-local_only_change_me}@postgres:5432/${POSTGRES_DB:-nexus_dev}?sslmode=disable
+      DBMATE_MIGRATIONS_DIR: /db/migrations
+      DBMATE_NO_DUMP_SCHEMA: "true"
+    volumes:
+      - ./database/migrations:/db/migrations:ro
+    networks:
+      - nexus_backend
+    command: ["--no-dump-schema", "--wait", "up"]
 
   # ── Almacenamiento de objetos ──────────────────────────────────────────────
   seaweedfs:
@@ -29,11 +72,26 @@ services:
       AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-local_only_change_me_please}
       WEED_JWT_FILER_SIGNING_KEY: ${S3_FILER_SIGNING_KEY:-local_dev_filer_signing_key_change_before_deploy}
     ports:
+      # Solo para desarrollo
       - "8333:8333"
       - "9333:9333"
       - "8888:8888"
     volumes:
       - nexus-seaweedfs-data:/data
+    networks:
+      - nexus_backend
+
+  # ── Correo de desarrollo (NUEVO, para IAM: verificación de correo) ─────────
+  # Recibe los correos de la API y los muestra en http://localhost:8025 (no envía nada a nadie).
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: nexus-mailpit-dev
+    restart: unless-stopped
+    ports:
+      - "1025:1025" # SMTP → MAIL_PORT
+      - "8025:8025" # Interfaz web
+    networks:
+      - nexus_backend
 
   # ── API (monolito modular NestJS) ─────────────────────────────────────────
   # Un único contenedor con todos los módulos: IAM, Billing, Files, Storage, Health.
@@ -51,14 +109,18 @@ services:
       NODE_ENV: development
       API_PORT: 3001
       POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
+      POSTGRES_PORT: 5432 # puerto interno; POSTGRES_PORT del .env es solo el del host
       S3_ENDPOINT: seaweedfs
       S3_PORT: 8333
       S3_PUBLIC_ENDPOINT: http://localhost:8333
       S3_REGION: us-east-1
       S3_USE_SSL: "false"
+      MAIL_HOST: mailpit # dentro de Docker, localhost no es Mailpit
+      MAIL_PORT: 1025
     ports:
       - "3001:3001"
+    networks:
+      - nexus_backend
     depends_on:
       postgres:
         condition: service_healthy
@@ -69,7 +131,3 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
-volumes:
-  nexus-postgres-data:
-  nexus-seaweedfs-data:

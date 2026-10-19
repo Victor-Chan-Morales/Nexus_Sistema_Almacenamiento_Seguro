@@ -1,4 +1,4 @@
-import { Injectable, Inject, InternalServerErrorException, OnModuleInit } from '@nestjs/common';
+import { Injectable, Inject, InternalServerErrorException, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Readable } from 'stream';
 import {
@@ -20,6 +20,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 @Injectable()
 export class StorageService implements OnModuleInit {
   private readonly bucket: string;
+  private readonly logger = new Logger(StorageService.name);
 
   constructor(
     @Inject('S3_CLIENT') private readonly s3Client: any,
@@ -27,6 +28,10 @@ export class StorageService implements OnModuleInit {
     private readonly config: ConfigService,
   ) {
     this.bucket = this.config.get<string>('S3_BUCKET', 'nexus-dev');
+  }
+
+  get bucketName(): string {
+    return this.bucket;
   }
 
   /**
@@ -53,9 +58,8 @@ export class StorageService implements OnModuleInit {
         }),
       );
     } catch (err: any) {
-      throw new InternalServerErrorException(
-        `Error al guardar el objeto: ${err?.message || err}`,
-      );
+      this.logger.error(`No se pudo guardar el objeto en Storage: ${err?.message || err}`);
+      throw new InternalServerErrorException('Error al guardar el objeto en Storage');
     }
   }
 
@@ -72,9 +76,8 @@ export class StorageService implements OnModuleInit {
       );
       return result.Body as Readable;
     } catch (err: any) {
-      throw new InternalServerErrorException(
-        `Error al obtener el objeto: ${err?.message || err}`,
-      );
+      this.logger.error(`No se pudo recuperar el objeto de Storage: ${err?.message || err}`);
+      throw new InternalServerErrorException('Error al recuperar el objeto de Storage');
     }
   }
 
@@ -90,9 +93,8 @@ export class StorageService implements OnModuleInit {
         }),
       );
     } catch (err: any) {
-      throw new InternalServerErrorException(
-        `Error al eliminar el objeto: ${err?.message || err}`,
-      );
+      this.logger.error(`No se pudo eliminar el objeto de Storage: ${err?.message || err}`);
+      throw new InternalServerErrorException('Error al eliminar el objeto de Storage');
     }
   }
 
