@@ -1,13 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { VERIFICATION_TOKEN_TTL_MINUTES } from '../constants';
 import { TokenPurpose } from '../domain/enums';
 import { User } from '../entities/user.entity';
 import { IamErrors } from '../iam.errors';
-import { addMinutes } from '../iam.utils';
 import { OneTimeTokenRepository, UserRepository } from '../ports/repositories';
 import { OpaqueTokens } from '../ports/security';
 import { TransactionContext, UnitOfWork } from '../ports/transaction';
 import { EmailOutboxService } from './email-outbox.service';
+import { VerificationTokenService } from './verification-token.service';
 
 /** Todo lo relativo al token de verificación: emitir, entregar por correo y consumir (un solo uso, 15 min). */
 @Injectable()
@@ -17,6 +16,7 @@ export class EmailVerificationService {
     private readonly tokensRepo: OneTimeTokenRepository,
     private readonly users: UserRepository,
     private readonly opaque: OpaqueTokens,
+    private readonly tokens: VerificationTokenService,
     private readonly outbox: EmailOutboxService,
   ) {}
 
@@ -25,15 +25,9 @@ export class EmailVerificationService {
    * Devuelve el id del mensaje para enviarlo después del commit.
    */
   async issue(tx: TransactionContext, user: Pick<User, 'id' | 'email' | 'fullName'>): Promise<string> {
-    const rawToken = this.opaque.generate();
-    const expiresAt = addMinutes(VERIFICATION_TOKEN_TTL_MINUTES);
-    await this.tokensRepo.create(tx, {
-      userId: user.id,
-      purpose: TokenPurpose.EMAIL_VERIFICATION,
-      tokenHash: this.opaque.hash(rawToken),
-      expiresAt,
-    });
+    const { rawToken, expiresAt } = await this.tokens.issue(tx, user.id);
     return this.outbox.enqueueVerification(tx, {
+      userId: user.id,
       recipientEmail: user.email,
       recipientName: user.fullName,
       rawToken,

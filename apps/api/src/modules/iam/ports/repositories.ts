@@ -78,24 +78,35 @@ export abstract class OneTimeTokenRepository {
 /** Mensaje reclamado para envío: el token sigue cifrado hasta el momento de enviarlo. */
 export interface OutboxMessage {
   id: string;
+  userId: string;
   recipientEmail: string;
   recipientName: string;
   encryptedPayload: string;
   attempts: number;
   expiresAt: Date;
+  createdAt: Date;
 }
 
 /** Outbox de correo. El servicio decide cuándo reclamar, enviar y marcar; aquí solo hay persistencia. */
 export abstract class EmailOutboxRepository {
   abstract create(
     tx: TransactionContext,
-    data: { kind: string; recipientEmail: string; recipientName: string; encryptedPayload: string; expiresAt: Date },
+    data: {
+      kind: string;
+      userId: string;
+      recipientEmail: string;
+      recipientName: string;
+      encryptedPayload: string;
+      expiresAt: Date;
+    },
   ): Promise<string>;
   /** Reclama mensajes pendientes y vencidos para reintento con bloqueo (SKIP LOCKED) hasta `leaseUntil`. */
   abstract claimDue(
     tx: TransactionContext,
     data: { ids?: string[]; now: Date; leaseUntil: Date; limit: number },
   ): Promise<OutboxMessage[]>;
+  /** Reemplaza el token cifrado y su vencimiento cuando el reintento emite un token nuevo. */
+  abstract updatePayload(id: string, data: { encryptedPayload: string; expiresAt: Date }): Promise<void>;
   abstract markSent(id: string): Promise<void>;
   abstract markFailed(
     id: string,

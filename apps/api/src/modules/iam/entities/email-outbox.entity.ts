@@ -18,6 +18,10 @@ export class EmailOutbox {
   @Column({ type: 'varchar', length: 40 })
   kind!: string;
 
+  /** Destinatario del mensaje: permite emitir un token nuevo si el anterior vence esperando al proveedor. */
+  @Column({ name: 'user_id', type: 'uuid' })
+  userId!: string;
+
   @Column({ name: 'recipient_email', type: 'varchar', length: 255 })
   recipientEmail!: string;
 
@@ -37,7 +41,7 @@ export class EmailOutbox {
   @Column({ name: 'next_attempt_at', type: 'timestamptz', default: () => 'now()' })
   nextAttemptAt!: Date;
 
-  /** Vencimiento del token: después de esta hora el enlace ya no sirve y no se envía. */
+  /** Vencimiento del token vigente. Al reintentar, si ya venció, se emite otro y esta fecha se actualiza. */
   @Column({ name: 'expires_at', type: 'timestamptz' })
   expiresAt!: Date;
 

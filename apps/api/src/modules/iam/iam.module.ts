@@ -45,6 +45,7 @@ import { EmailOutboxService } from './services/email-outbox.service';
 import { EmailVerificationService } from './services/email-verification.service';
 import { RegistrationService } from './services/registration.service';
 import { SessionService } from './services/session.service';
+import { VerificationTokenService } from './services/verification-token.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 function resolveJwtSecret(config: ConfigService): string {
@@ -78,6 +79,7 @@ function resolveJwtSecret(config: ConfigService): string {
     SessionService,
     EmailVerificationService,
     EmailOutboxService,
+    VerificationTokenService,
     OutboxCipher,
     IamSettings,
     RegistrationHooks,

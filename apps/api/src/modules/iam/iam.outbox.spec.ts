@@ -3,7 +3,9 @@ import { OutboxCipher } from './infrastructure/outbox-cipher';
 import { EmailOutboxService } from './services/email-outbox.service';
 
 const MIN = 60_000;
+const HOUR = 60 * MIN;
 const TOKEN = 'TOKEN-SECRETO-123';
+const TOKEN_NUEVO = 'TOKEN-RENOVADO-456';
 const EMAIL = 'ana@test.com';
 
 const cipher = new OutboxCipher({
@@ -12,11 +14,13 @@ const cipher = new OutboxCipher({
 
 const message = (overrides: Record<string, unknown> = {}) => ({
   id: 'out-1',
+  userId: 'u1',
   recipientEmail: EMAIL,
   recipientName: 'Ana',
   encryptedPayload: cipher.encrypt(TOKEN),
   attempts: 0,
   expiresAt: new Date(Date.now() + 15 * MIN),
+  createdAt: new Date(),
   ...overrides,
 });
 
@@ -24,27 +28,33 @@ const build = (claimed: unknown[] = []) => {
   const outbox = {
     create: jest.fn().mockResolvedValue('out-1'),
     claimDue: jest.fn().mockResolvedValue(claimed),
+    updatePayload: jest.fn().mockResolvedValue(undefined),
     markSent: jest.fn().mockResolvedValue(undefined),
     markFailed: jest.fn().mockResolvedValue(undefined),
     markExpired: jest.fn().mockResolvedValue(undefined),
   };
   const mailer = { sendVerification: jest.fn().mockResolvedValue(undefined) };
   const uow = { run: jest.fn((work: (tx: unknown) => unknown) => work('tx')) };
-  const service = new EmailOutboxService(uow as never, outbox as never, cipher, mailer as never);
-  return { service, outbox, mailer, uow };
+  const tokens = {
+    issue: jest.fn().mockResolvedValue({ rawToken: TOKEN_NUEVO, expiresAt: new Date(Date.now() + 15 * MIN) }),
+  };
+  const service = new EmailOutboxService(uow as never, outbox as never, cipher, mailer as never, tokens as never);
+  return { service, outbox, mailer, uow, tokens };
 };
 
 describe('EmailOutboxService (outbox persistente de correo)', () => {
   it('al encolar guarda el token cifrado, nunca en claro', async () => {
     const t = build();
     await t.service.enqueueVerification('tx' as never, {
+      userId: 'u1',
       recipientEmail: EMAIL,
       recipientName: 'Ana',
       rawToken: TOKEN,
       expiresAt: new Date(),
     });
 
-    const stored = t.outbox.create.mock.calls[0][1] as { encryptedPayload: string };
+    const stored = t.outbox.create.mock.calls[0][1] as { encryptedPayload: string; userId: string };
+    expect(stored.userId).toBe('u1'); // permite emitir un token nuevo al reintentar
     expect(stored.encryptedPayload).not.toContain(TOKEN);
     expect(cipher.decrypt(stored.encryptedPayload)).toBe(TOKEN);
   });
@@ -56,6 +66,7 @@ describe('EmailOutboxService (outbox persistente de correo)', () => {
 
     expect(t.outbox.claimDue).toHaveBeenCalledWith('tx', expect.objectContaining({ ids: ['out-1'] }));
     expect(t.mailer.sendVerification).toHaveBeenCalledWith(EMAIL, 'Ana', TOKEN);
+    expect(t.tokens.issue).not.toHaveBeenCalled(); // el token vigente no se toca
     expect(t.outbox.markSent).toHaveBeenCalledWith('out-1');
     expect(t.outbox.markFailed).not.toHaveBeenCalled();
   });
@@ -81,20 +92,39 @@ describe('EmailOutboxService (outbox persistente de correo)', () => {
     spy.mockRestore();
   });
 
-  it('un mensaje ya vencido no se envía: se marca como vencido', async () => {
-    const t = build([message({ expiresAt: new Date(Date.now() - MIN) })]);
+  it('si el token venció esperando al proveedor, el reintento emite uno nuevo y entrega ese enlace', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const t = build([message({ expiresAt: new Date(Date.now() - MIN), createdAt: new Date(Date.now() - HOUR) })]);
+
+    await t.service.dispatch('out-1');
+
+    expect(t.tokens.issue).toHaveBeenCalledWith('tx', 'u1');
+    const renewed = t.outbox.updatePayload.mock.calls[0][1] as { encryptedPayload: string; expiresAt: Date };
+    expect(cipher.decrypt(renewed.encryptedPayload)).toBe(TOKEN_NUEVO);
+    expect(renewed.expiresAt.getTime()).toBeGreaterThan(Date.now());
+    expect(t.mailer.sendVerification).toHaveBeenCalledWith(EMAIL, 'Ana', TOKEN_NUEVO);
+    expect(t.outbox.markSent).toHaveBeenCalledWith('out-1');
+    expect(t.outbox.markExpired).not.toHaveBeenCalled(); // la cuenta no queda sin enlace utilizable
+    log.mockRestore();
+  });
+
+  it('pasadas 24 h desde el registro el mensaje se abandona y no se envía', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const t = build([message({ createdAt: new Date(Date.now() - 25 * HOUR) })]);
 
     await t.service.dispatch('out-1');
 
     expect(t.mailer.sendVerification).not.toHaveBeenCalled();
+    expect(t.tokens.issue).not.toHaveBeenCalled();
     expect(t.outbox.markExpired).toHaveBeenCalledWith('out-1');
+    warn.mockRestore();
   });
 
-  it('si el siguiente reintento llegaría después del vencimiento del token, el mensaje vence en lugar de reintentarse', async () => {
+  it('si el siguiente reintento caería después de las 24 h, el mensaje se abandona en lugar de reprogramarse', async () => {
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     const error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-    // El primer reintento espera 120 s; si solo quedan 60 s de vigencia, ya no tiene sentido reintentar.
-    const t = build([message({ expiresAt: new Date(Date.now() + MIN) })]);
+    // Quedan 60 s de horizonte y el primer reintento espera 120 s: ya no tiene sentido reprogramar.
+    const t = build([message({ createdAt: new Date(Date.now() - 24 * HOUR + MIN) })]);
     t.mailer.sendVerification.mockRejectedValue(new Error('SMTP caído'));
 
     await t.service.dispatch('out-1');

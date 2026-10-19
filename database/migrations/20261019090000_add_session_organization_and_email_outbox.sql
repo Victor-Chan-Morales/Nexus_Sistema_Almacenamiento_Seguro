@@ -19,8 +19,9 @@ COMMENT ON COLUMN iam.session.organization_id IS 'Organización activa con la qu
 CREATE TABLE iam.email_outbox (
   outbox_id          uuid          NOT NULL DEFAULT gen_random_uuid(),
   kind               varchar(40)   NOT NULL,
+  user_id            uuid          NOT NULL,
   recipient_email    varchar(255)  NOT NULL,
-  recipient_name    varchar(255)  NOT NULL,
+  recipient_name     varchar(255)  NOT NULL,
   encrypted_payload  text          NOT NULL,
   status             varchar(20)   NOT NULL DEFAULT 'pending',
   attempts           integer       NOT NULL DEFAULT 0,
@@ -30,13 +31,17 @@ CREATE TABLE iam.email_outbox (
   created_at         timestamptz   NOT NULL DEFAULT now(),
   sent_at            timestamptz,
   CONSTRAINT pk_email_outbox PRIMARY KEY (outbox_id),
+  CONSTRAINT fk_email_outbox_user FOREIGN KEY (user_id)
+    REFERENCES iam."user" (user_id) ON DELETE CASCADE,
   CONSTRAINT ck_email_outbox_kind CHECK (kind IN ('email_verification')),
   CONSTRAINT ck_email_outbox_status CHECK (status IN ('pending', 'sent', 'expired'))
 );
 CREATE INDEX ix_email_outbox_due ON iam.email_outbox (status, next_attempt_at);
 
 COMMENT ON TABLE iam.email_outbox IS 'Mensajes de correo pendientes de enviar; reintenta fallos temporales del proveedor.';
+COMMENT ON COLUMN iam.email_outbox.user_id IS 'Usuario destinatario; permite emitir un token nuevo si el anterior vence esperando al proveedor.';
 COMMENT ON COLUMN iam.email_outbox.encrypted_payload IS 'Token en claro cifrado (AES-256-GCM). Se vacía al enviar o vencer.';
+COMMENT ON COLUMN iam.email_outbox.expires_at IS 'Vencimiento del token vigente; se actualiza si el reintento emite otro.';
 
 -- migrate:down
 DROP TABLE IF EXISTS iam.email_outbox;

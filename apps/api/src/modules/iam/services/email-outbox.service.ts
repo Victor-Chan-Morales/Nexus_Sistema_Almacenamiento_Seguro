@@ -3,16 +3,22 @@ import { OutboxCipher } from '../infrastructure/outbox-cipher';
 import { EmailOutboxRepository, OutboxMessage } from '../ports/repositories';
 import { TransactionContext, UnitOfWork } from '../ports/transaction';
 import { VerificationMailer } from '../ports/verification-mailer';
+import { VerificationTokenService } from './verification-token.service';
 
 const POLL_INTERVAL_MS = 30_000;
 const LEASE_SECONDS = 120;
 const BATCH_SIZE = 20;
 const MAX_BACKOFF_SECONDS = 30 * 60;
+/** Tiempo máximo que se insiste con un mensaje; después se abandona. */
+const RETRY_HORIZON_MS = 24 * 60 * 60 * 1000;
+/** Si al token le queda menos que esto, se emite uno nuevo antes de enviar. */
+const TOKEN_RENEWAL_MARGIN_MS = 60_000;
 
 /**
  * Outbox de correo. El mensaje se escribe dentro de la transacción del registro y se envía después del commit.
- * Si el proveedor falla, el mensaje queda pendiente y el worker lo reintenta con espera creciente hasta que
- * el token venza. Nunca lanza hacia el registro: la cuenta ya existe aunque el correo no salga todavía.
+ * Si el proveedor falla, el mensaje queda pendiente y el worker lo reintenta con espera creciente durante 24 horas;
+ * cuando el token de 15 minutos venció esperando, el reintento emite uno nuevo para que el enlace sirva al llegar.
+ * Nunca lanza hacia el registro: la cuenta ya existe aunque el correo no salga todavía.
  */
 @Injectable()
 export class EmailOutboxService implements OnModuleInit, OnModuleDestroy {
@@ -24,6 +30,7 @@ export class EmailOutboxService implements OnModuleInit, OnModuleDestroy {
     private readonly outbox: EmailOutboxRepository,
     private readonly cipher: OutboxCipher,
     private readonly mailer: VerificationMailer,
+    private readonly tokens: VerificationTokenService,
   ) {}
 
   onModuleInit(): void {
@@ -38,10 +45,11 @@ export class EmailOutboxService implements OnModuleInit, OnModuleDestroy {
   /** Dentro de la transacción del registro: el mensaje se confirma o revierte junto con la cuenta. */
   enqueueVerification(
     tx: TransactionContext,
-    data: { recipientEmail: string; recipientName: string; rawToken: string; expiresAt: Date },
+    data: { userId: string; recipientEmail: string; recipientName: string; rawToken: string; expiresAt: Date },
   ): Promise<string> {
     return this.outbox.create(tx, {
       kind: 'email_verification',
+      userId: data.userId,
       recipientEmail: data.recipientEmail,
       recipientName: data.recipientName,
       encryptedPayload: this.cipher.encrypt(data.rawToken),
@@ -86,15 +94,15 @@ export class EmailOutboxService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async send(message: OutboxMessage): Promise<void> {
-    if (message.expiresAt.getTime() <= Date.now()) {
+    if (this.horizonPassed(message, Date.now())) {
       await this.outbox.markExpired(message.id);
-      this.logger.warn(`Mensaje ${message.id} vencido antes de enviarse`);
+      this.logger.warn(`Mensaje ${message.id} abandonado: 24 h sin poder enviarse`);
       return;
     }
 
     try {
-      const token = this.cipher.decrypt(message.encryptedPayload);
-      await this.mailer.sendVerification(message.recipientEmail, message.recipientName, token);
+      const payload = await this.freshPayload(message);
+      await this.mailer.sendVerification(message.recipientEmail, message.recipientName, this.cipher.decrypt(payload));
     } catch (err) {
       await this.scheduleRetry(message, (err as Error).name);
       return;
@@ -102,17 +110,39 @@ export class EmailOutboxService implements OnModuleInit, OnModuleDestroy {
     await this.outbox.markSent(message.id);
   }
 
+  /**
+   * Payload a enviar. Si el token venció (o está por vencer) mientras el proveedor estaba caído, se emite
+   * uno nuevo y se guarda cifrado: así la cuenta nunca queda creada con un enlace inservible y sin reenvío.
+   */
+  private async freshPayload(message: OutboxMessage): Promise<string> {
+    if (message.expiresAt.getTime() > Date.now() + TOKEN_RENEWAL_MARGIN_MS) {
+      return message.encryptedPayload;
+    }
+
+    const { rawToken, expiresAt } = await this.uow.run((tx) => this.tokens.issue(tx, message.userId));
+    const encryptedPayload = this.cipher.encrypt(rawToken);
+    await this.outbox.updatePayload(message.id, { encryptedPayload, expiresAt });
+    message.encryptedPayload = encryptedPayload;
+    message.expiresAt = expiresAt;
+    this.logger.log(`Mensaje ${message.id}: token renovado antes de reintentar el envío`);
+    return encryptedPayload;
+  }
+
   private async scheduleRetry(message: OutboxMessage, errorName: string): Promise<void> {
     const attempts = message.attempts + 1;
     const backoffSeconds = Math.min(60 * 2 ** attempts, MAX_BACKOFF_SECONDS);
     const nextAttemptAt = new Date(Date.now() + backoffSeconds * 1000);
 
-    if (nextAttemptAt >= message.expiresAt) {
+    if (this.horizonPassed(message, nextAttemptAt.getTime())) {
       await this.outbox.markExpired(message.id);
-      this.logger.warn(`Mensaje ${message.id} vencido tras ${attempts} intentos fallidos`);
+      this.logger.warn(`Mensaje ${message.id} abandonado tras ${attempts} intentos fallidos en 24 h`);
       return;
     }
     await this.outbox.markFailed(message.id, { attempts, nextAttemptAt, lastError: errorName });
     this.logger.error(`Fallo al enviar el mensaje ${message.id} (intento ${attempts}): ${errorName}`);
+  }
+
+  private horizonPassed(message: OutboxMessage, at: number): boolean {
+    return message.createdAt.getTime() + RETRY_HORIZON_MS <= at;
   }
 }

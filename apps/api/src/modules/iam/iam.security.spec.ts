@@ -2,6 +2,7 @@ import { HttpException } from '@nestjs/common';
 import { MembershipStatus, OrgStatus, Role, TokenPurpose, UserStatus } from './domain/enums';
 import { TypeOrmMembershipRepository } from './infrastructure/typeorm-repositories';
 import { EmailVerificationService } from './services/email-verification.service';
+import { VerificationTokenService } from './services/verification-token.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 const codeOf = async (promise: Promise<unknown>): Promise<string> => {
@@ -146,7 +147,16 @@ describe('EmailVerificationService (token de un solo uso, 15 minutos, propósito
     const opaque = { hash: jest.fn((t: string) => `h(${t})`), generate: jest.fn().mockReturnValue('raw') };
     const uow = { run: jest.fn((work: (tx: unknown) => unknown) => work('tx')) };
     const outbox = { enqueueVerification: jest.fn().mockResolvedValue('out-1') };
-    const service = new EmailVerificationService(uow as never, tokensRepo as never, users as never, opaque as never, outbox as never);
+    // VerificationTokenService real: emitir el token es parte del comportamiento que se verifica aquí.
+    const tokens = new VerificationTokenService(tokensRepo as never, opaque as never);
+    const service = new EmailVerificationService(
+      uow as never,
+      tokensRepo as never,
+      users as never,
+      opaque as never,
+      tokens,
+      outbox as never,
+    );
     return { service, tokensRepo, users, outbox };
   };
   const MIN = 60_000;
@@ -196,9 +206,5 @@ describe('EmailVerificationService (token de un solo uso, 15 minutos, propósito
   });
 });
 
-describe('Renovación de sesión con varias organizaciones', () => {
-  // BLOQUEADO — requiere decisión del integrador y de Víctor (ver docs/proposals/iam-decisiones-pendientes.md):
-  // iam.session no guarda organization_id, así que refresh() vuelve a derivar la organización.
-  it.todo('refresh conserva y revalida la organización activa de la sesión (bloqueado: iam.session no tiene organization_id)');
-  it.todo('refresh rechaza la renovación si la membresía de la organización original dejó de estar activa, sin pasar a otra organización');
-});
+// La renovación de sesión con varias organizaciones se verifica en iam.session.spec.ts:
+// iam.session ya guarda organization_id y refresh la conserva y revalida.

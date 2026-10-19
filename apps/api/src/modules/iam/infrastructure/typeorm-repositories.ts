@@ -185,7 +185,14 @@ export class TypeOrmEmailOutboxRepository implements EmailOutboxRepository {
 
   async create(
     tx: TransactionContext,
-    data: { kind: string; recipientEmail: string; recipientName: string; encryptedPayload: string; expiresAt: Date },
+    data: {
+      kind: string;
+      userId: string;
+      recipientEmail: string;
+      recipientName: string;
+      encryptedPayload: string;
+      expiresAt: Date;
+    },
   ): Promise<string> {
     const row = await tx.save(
       tx.create(EmailOutbox, {
@@ -221,12 +228,18 @@ export class TypeOrmEmailOutboxRepository implements EmailOutboxRepository {
 
     return rows.map((row) => ({
       id: row.id,
+      userId: row.userId,
       recipientEmail: row.recipientEmail,
       recipientName: row.recipientName,
       encryptedPayload: row.encryptedPayload,
       attempts: row.attempts,
       expiresAt: row.expiresAt,
+      createdAt: row.createdAt,
     }));
+  }
+
+  async updatePayload(id: string, data: { encryptedPayload: string; expiresAt: Date }): Promise<void> {
+    await this.dataSource.manager.update(EmailOutbox, { id }, data);
   }
 
   async markSent(id: string): Promise<void> {
