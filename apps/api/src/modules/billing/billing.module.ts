@@ -11,9 +11,10 @@ import { DemoSubscriptionHook } from './registration/demo-subscription.hook';
  * Módulo BILLING
  * Responsable: Anthony
  *
- * Gestiona: planes disponibles y suscripciones (simuladas para el proyecto).
- * Importa IamModule por el guard JWT y por RegistrationHooks: el alta de una organización
- * contrata el plan Demo dentro de la misma transacción del registro (hook demo-subscription).
+ * Catálogo de planes y persistencia de suscripciones, desacoplado de FilesModule
+ * (sin dependencia cíclica ni ModuleRef). Importa IamModule por el guard JWT y por
+ * RegistrationHooks: el alta de una organización contrata el plan Demo dentro de la
+ * misma transacción del registro (hook demo-subscription).
  */
 @Module({
   imports: [

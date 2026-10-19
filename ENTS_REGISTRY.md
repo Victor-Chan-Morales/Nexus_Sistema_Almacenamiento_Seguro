@@ -18,6 +18,8 @@ Este registro es operativo. Actualícelo cuando cambie un responsable, ruta, int
 | Files + Storage | Miguel | Víctor | Carpetas, metadatos, primera carga/descarga, interfaz `StorageProvider`, SeaweedFS | UI paralela, login, cobro |
 | Integración | Víctor | Víctor | Contratos compartidos, estructura web, Compose/migraciones consolidadas y validación del recorrido | Reescritura silenciosa de la lógica de un dueño |
 
+**Cambio de propiedad registrado el 2026-10-19:** `SubscriptionCoordinator` y `SubscriptionsController` (`apps/api/src/modules/integration/`) los implementó **Anthony** en la PR #4, aunque `CONTRACTS.md` asigna el coordinador de activación al integrador. El equipo acepta esa implementación y Víctor no la reescribe; el mantenimiento queda con Anthony y la revisión de integración con Víctor. Registrado en `SESSION_LOG.md`, según `CONTRIBUTING.md`.
+
 ## Rutas y archivos de web
 
 | Ruta Next.js | Pantalla | Propietario de código | Dependencias de dominio | Figma |
