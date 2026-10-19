@@ -5,6 +5,9 @@ import {
   ConflictException,
   PayloadTooLargeException,
   UnsupportedMediaTypeException,
+  BadRequestException,
+  HttpException,
+  HttpStatus,
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -14,40 +17,41 @@ import * as path from 'path';
 import { FileRecord } from './entities/file-record.entity';
 import { Folder } from './entities/folder.entity';
 import { FileVersion } from './entities/file-version.entity';
+import { Drive } from './entities/drive.entity';
 import { StorageService } from '../storage/storage.service';
 import { BillingService } from '../billing/billing.service';
 
-// Tipos permitidos según ADR-003: PDF, DOCX, XLSX, PPTX, JPG, PNG, TXT, ZIP
-const ALLOWED_MIME_TYPES = new Set([
-  'application/pdf',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'application/vnd.ms-powerpoint',
-  'image/jpeg',
-  'image/png',
-  'text/plain',
-  'application/zip',
-  'application/x-zip-compressed',
-]);
+// Exactamente 100,000,000 bytes según CONTRACTS.md
+const MAX_FILE_SIZE_BYTES = 100000000;
 
-const ALLOWED_EXTENSIONS = new Set([
-  '.pdf', '.docx', '.doc', '.xlsx', '.xls', '.pptx', '.ppt', '.jpg', '.jpeg', '.png', '.txt', '.zip',
-]);
-
-const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB
+// Lista canónica de tipos admitidos con validación cruzada de extensión y MIME
+const ALLOWED_MIME_BY_EXT: Record<string, string[]> = {
+  '.pdf': ['application/pdf'],
+  '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+  '.doc': ['application/msword'],
+  '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+  '.xls': ['application/vnd.ms-excel'],
+  '.pptx': ['application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+  '.ppt': ['application/vnd.ms-powerpoint'],
+  '.jpg': ['image/jpeg'],
+  '.jpeg': ['image/jpeg'],
+  '.png': ['image/png'],
+  '.txt': ['text/plain'],
+  '.zip': ['application/zip', 'application/x-zip-compressed'],
+};
 
 @Injectable()
 export class FilesService {
   private readonly logger = new Logger(FilesService.name);
 
-  // Registro de idempotencia en memoria: clave -> estado / respuesta
+  // Registro de idempotencia en memoria
   private readonly idempotencyCache = new Map<
     string,
     { status: 'processing' | 'completed'; response?: any; timestamp: number }
   >();
+
+  // Control de concurrencia: máx 3 cargas simultáneas por usuario (ADR-003)
+  private readonly activeUploadsByUser = new Map<string, number>();
 
   constructor(
     @InjectRepository(FileRecord)
@@ -56,10 +60,11 @@ export class FilesService {
     private readonly folderRepository: Repository<Folder>,
     @InjectRepository(FileVersion)
     private readonly versionRepository: Repository<FileVersion>,
+    @InjectRepository(Drive)
+    private readonly driveRepository: Repository<Drive>,
     private readonly storageService: StorageService,
     private readonly billingService: BillingService,
   ) {
-    // Limpieza periódica de claves de idempotencia cada 30 minutos
     setInterval(() => {
       const oneHourAgo = Date.now() - 60 * 60 * 1000;
       for (const [key, value] of this.idempotencyCache.entries()) {
@@ -71,10 +76,68 @@ export class FilesService {
   }
 
   /**
-   * Listar carpetas de una organización con soporte de navegación jerárquica
+   * Obtiene o inicializa el Drive personal y la carpeta raíz de la organización
    */
-  async listFolders(organizationId: string, parentId?: string): Promise<Folder[]> {
-    return this.folderRepository.find({
+  async getOrCreateUserDrive(
+    organizationId: string,
+    userId: string,
+  ): Promise<{ id: string; name: string; rootFolderId: string }> {
+    let drive = await this.driveRepository.findOne({
+      where: { organizationId, ownerUserId: userId },
+    });
+
+    if (!drive) {
+      drive = this.driveRepository.create({
+        organizationId,
+        ownerUserId: userId,
+        name: 'Mi espacio',
+        type: 'personal',
+      });
+      drive = await this.driveRepository.save(drive);
+    }
+
+    let rootFolder = await this.folderRepository.findOne({
+      where: {
+        organizationId,
+        driveId: drive.id,
+        parentId: IsNull(),
+        isDeleted: false,
+      },
+    });
+
+    if (!rootFolder) {
+      rootFolder = this.folderRepository.create({
+        organizationId,
+        ownerId: userId,
+        driveId: drive.id,
+        name: 'Archivos',
+        parentId: null,
+        isDeleted: false,
+      });
+      rootFolder = await this.folderRepository.save(rootFolder);
+    }
+
+    return {
+      id: drive.id,
+      name: drive.name,
+      rootFolderId: rootFolder.id,
+    };
+  }
+
+  /**
+   * Listar carpetas devolviendo el Drive y la lista de elementos
+   */
+  async listFolders(
+    organizationId: string,
+    userId: string,
+    parentId?: string,
+  ): Promise<{
+    drive: { id: string; name: string; rootFolderId: string };
+    items: Array<{ id: string; name: string; parentFolderId: string | null; driveId: string }>;
+  }> {
+    const driveInfo = await this.getOrCreateUserDrive(organizationId, userId);
+
+    const folders = await this.folderRepository.find({
       where: {
         organizationId,
         parentId: parentId ? parentId : IsNull(),
@@ -82,17 +145,29 @@ export class FilesService {
       },
       order: { name: 'ASC' },
     });
+
+    return {
+      drive: driveInfo,
+      items: folders.map((f) => ({
+        id: f.id,
+        name: f.name,
+        parentFolderId: f.parentId,
+        driveId: f.driveId || driveInfo.id,
+      })),
+    };
   }
 
   /**
-   * Crear una carpeta asociada a la organización activa
+   * Crear carpeta garantizando driveId y aislamiento de organización
    */
   async createFolder(
     organizationId: string,
     ownerId: string,
     name: string,
     parentId?: string,
-  ): Promise<Folder> {
+  ): Promise<{ id: string; name: string; parentFolderId: string | null; driveId: string; createdAt: Date }> {
+    const driveInfo = await this.getOrCreateUserDrive(organizationId, ownerId);
+
     if (parentId) {
       const parent = await this.folderRepository.findOne({
         where: { id: parentId, organizationId, isDeleted: false },
@@ -107,21 +182,34 @@ export class FilesService {
     const folder = this.folderRepository.create({
       organizationId,
       ownerId,
+      driveId: driveInfo.id,
       name: name.trim(),
       parentId: parentId || null,
       isDeleted: false,
     });
 
-    return this.folderRepository.save(folder);
+    const saved = await this.folderRepository.save(folder);
+
+    return {
+      id: saved.id,
+      name: saved.name,
+      parentFolderId: saved.parentId,
+      driveId: saved.driveId,
+      createdAt: saved.createdAt,
+    };
   }
 
   /**
-   * Explorar el contenido de una carpeta (subcarpetas y archivos)
+   * Obtener items de carpeta con el contenedor 'folder' y metadatos de versión de archivos
    */
   async getFolderItems(
     organizationId: string,
     folderId: string,
-  ): Promise<{ folders: Folder[]; files: FileRecord[] }> {
+  ): Promise<{
+    folder: { id: string; name: string; parentFolderId: string | null; driveId: string; createdAt: Date };
+    folders: Array<{ id: string; name: string; parentFolderId: string | null; driveId: string; createdAt: Date }>;
+    files: Array<{ id: string; name: string; mimeType: string; sizeBytes: string; versionId: string; uploadedAt: Date }>;
+  }> {
     const folder = await this.folderRepository.findOne({
       where: { id: folderId, organizationId, isDeleted: false },
     });
@@ -136,31 +224,82 @@ export class FilesService {
       }),
       this.fileRepository.find({
         where: { organizationId, folderId, isDeleted: false },
+        relations: ['versions'],
         order: { name: 'ASC' },
       }),
     ]);
 
-    return { folders, files };
+    const formattedFiles = files.map((file) => {
+      const sortedVersions = (file.versions || []).sort(
+        (a, b) => b.versionNumber - a.versionNumber,
+      );
+      const latest = sortedVersions[0];
+
+      return {
+        id: file.id,
+        name: file.name,
+        mimeType: file.mimeType || 'application/octet-stream',
+        sizeBytes: latest ? String(latest.sizeBytes) : String(file.sizeBytes),
+        versionId: latest ? latest.id : file.id,
+        uploadedAt: latest ? latest.uploadedAt : file.createdAt,
+      };
+    });
+
+    return {
+      folder: {
+        id: folder.id,
+        name: folder.name,
+        parentFolderId: folder.parentId,
+        driveId: folder.driveId,
+        createdAt: folder.createdAt,
+      },
+      folders: folders.map((f) => ({
+        id: f.id,
+        name: f.name,
+        parentFolderId: f.parentId,
+        driveId: f.driveId,
+        createdAt: f.createdAt,
+      })),
+      files: formattedFiles,
+    };
   }
 
   /**
-   * Listar archivos de la organización (en raíz o dentro de una carpeta)
+   * Listar archivos de la organización con metadatos de versión
    */
-  async listFiles(organizationId: string, folderId?: string): Promise<FileRecord[]> {
-    return this.fileRepository.find({
+  async listFiles(
+    organizationId: string,
+    folderId?: string,
+  ): Promise<Array<{ id: string; name: string; mimeType: string; sizeBytes: string; versionId: string; uploadedAt: Date }>> {
+    const files = await this.fileRepository.find({
       where: {
         organizationId,
         folderId: folderId ? folderId : IsNull(),
         isDeleted: false,
       },
+      relations: ['versions'],
       order: { createdAt: 'DESC' },
+    });
+
+    return files.map((file) => {
+      const sortedVersions = (file.versions || []).sort(
+        (a, b) => b.versionNumber - a.versionNumber,
+      );
+      const latest = sortedVersions[0];
+
+      return {
+        id: file.id,
+        name: file.name,
+        mimeType: file.mimeType,
+        sizeBytes: latest ? String(latest.sizeBytes) : String(file.sizeBytes),
+        versionId: latest ? latest.id : file.id,
+        uploadedAt: latest ? latest.uploadedAt : file.createdAt,
+      };
     });
   }
 
   /**
-   * Cálculo real de almacenamiento según ADR-003:
-   * Suma todas las versiones físicas (file_versions), incluyendo archivos en papelera,
-   * sin duplicar conteos.
+   * Cálculo real de cuota (ADR-003): todas las versiones incluyendo papelera
    */
   async getUsedStorageBytes(organizationId: string): Promise<bigint> {
     const result = await this.versionRepository
@@ -174,13 +313,13 @@ export class FilesService {
   }
 
   /**
-   * Subida de archivo con idempotencia, versionado incremental, claves opacas
-   * y compensación atómica ante fallos.
+   * Subida de archivo validando cuota (422), tamaño (413), MIME (415),
+   * concurrencia (3 máx) e idempotencia.
    */
   async uploadMultipartFile(params: {
     organizationId: string;
     ownerId: string;
-    folderId?: string;
+    folderId: string;
     file: any;
     idempotencyKey?: string;
   }): Promise<{
@@ -193,14 +332,29 @@ export class FilesService {
   }> {
     const { organizationId, ownerId, folderId, file, idempotencyKey } = params;
 
-    // 1. Manejo de Idempotencia
+    // folderId es obligatorio según contrato
+    if (!folderId) {
+      throw new BadRequestException('El parámetro folderId es obligatorio');
+    }
+
+    // Límite de 3 cargas concurrentes por usuario (ADR-003)
+    const currentActive = this.activeUploadsByUser.get(ownerId) || 0;
+    if (currentActive >= 3) {
+      throw new HttpException(
+        'Límite de tres cargas simultáneas alcanzado para este usuario',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    this.activeUploadsByUser.set(ownerId, currentActive + 1);
+
     const cacheKey = idempotencyKey ? `${organizationId}:${idempotencyKey}` : null;
     if (cacheKey) {
       const cached = this.idempotencyCache.get(cacheKey);
       if (cached) {
+        this.decrementActiveUploads(ownerId);
         if (cached.status === 'processing') {
           throw new ConflictException(
-            'Operación en procesamiento con la misma Idempotency-Key. Reintente en unos momentos.',
+            'Operación en procesamiento con la misma Idempotency-Key. Reintente en breve.',
           );
         }
         return cached.response;
@@ -216,47 +370,50 @@ export class FilesService {
       const fileSize = Number(file.size || (file.buffer ? file.buffer.length : 0));
       const originalName = file.originalname || 'archivo';
       const fileExt = path.extname(originalName).toLowerCase();
-      const mimeType = file.mimetype || 'application/octet-stream';
+      const declaredMime = (file.mimetype || '').toLowerCase();
 
-      // 2. Validación de tamaño (HTTP 413)
+      // Validación exacta de tamaño: 100,000,000 bytes (HTTP 413)
       if (fileSize > MAX_FILE_SIZE_BYTES) {
-        throw new PayloadTooLargeException('El archivo excede el tamaño máximo permitido de 100 MB');
+        throw new PayloadTooLargeException('El archivo excede el tamaño máximo permitido de 100000000 bytes');
       }
 
-      // 3. Validación de tipo MIME y extensión (HTTP 415)
-      const isMimeAllowed = ALLOWED_MIME_TYPES.has(mimeType);
-      const isExtAllowed = ALLOWED_EXTENSIONS.has(fileExt);
-      if (!isMimeAllowed && !isExtAllowed) {
+      // Validación estricta y coherente de extensión + MIME (HTTP 415)
+      const allowedMimes = ALLOWED_MIME_BY_EXT[fileExt];
+      if (!allowedMimes || !allowedMimes.includes(declaredMime)) {
         throw new UnsupportedMediaTypeException(
-          `Tipo de archivo no permitido: ${mimeType} (${fileExt}). Formatos admitidos: PDF, DOCX, XLSX, PPTX, JPG, PNG, TXT y ZIP.`,
+          `Formato de archivo no admitido: ${declaredMime} (${fileExt}). Permitidos: PDF, DOCX, XLSX, PPTX, JPG, PNG, TXT y ZIP`,
         );
       }
 
-      // 4. Verificación de cuota disponible (HTTP 413)
+      // Verificación de carpeta de destino en el tenant
+      const folder = await this.folderRepository.findOne({
+        where: { id: folderId, organizationId, isDeleted: false },
+      });
+      if (!folder) {
+        throw new NotFoundException(`Carpeta ${folderId} no encontrada`);
+      }
+
+      // Verificación de cuota de almacenamiento: debe responder 422 con STORAGE_QUOTA_EXCEEDED
       const storageLimit = await this.billingService.getStorageLimitBytes(organizationId);
       const usedBytes = await this.getUsedStorageBytes(organizationId);
 
       if (usedBytes + BigInt(fileSize) > storageLimit) {
-        throw new PayloadTooLargeException(
-          'La carga excede la cuota de almacenamiento disponible para su plan',
+        throw new HttpException(
+          {
+            statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+            error: 'Unprocessable Entity',
+            code: 'STORAGE_QUOTA_EXCEEDED',
+            message: 'La carga excede la cuota de almacenamiento disponible para su plan',
+          },
+          HttpStatus.UNPROCESSABLE_ENTITY,
         );
       }
 
-      // 5. Validación de carpeta destino
-      if (folderId) {
-        const folder = await this.folderRepository.findOne({
-          where: { id: folderId, organizationId, isDeleted: false },
-        });
-        if (!folder) {
-          throw new NotFoundException(`Carpeta ${folderId} no encontrada`);
-        }
-      }
-
-      // 6. Versionado según ADR-003: buscar si el archivo ya existe en la misma carpeta
+      // Versionado secuencial (ADR-003)
       let fileRecord = await this.fileRepository.findOne({
         where: {
           organizationId,
-          folderId: folderId ? folderId : IsNull(),
+          folderId,
           name: originalName,
           isDeleted: false,
         },
@@ -266,20 +423,18 @@ export class FilesService {
       let nextVersionNumber = 1;
 
       if (!fileRecord) {
-        // Crear nuevo registro maestro
         fileRecord = this.fileRepository.create({
           name: originalName,
           organizationId,
           ownerId,
-          folderId: folderId || null,
-          mimeType,
+          folderId,
+          mimeType: declaredMime,
           sizeBytes: String(fileSize),
           isDeleted: false,
         });
         fileRecord = await this.fileRepository.save(fileRecord);
         isNewRecord = true;
       } else {
-        // Obtener última versión existente para incrementar
         const latestVersion = await this.versionRepository.findOne({
           where: { fileId: fileRecord.id },
           order: { versionNumber: 'DESC' },
@@ -287,7 +442,7 @@ export class FilesService {
         nextVersionNumber = (latestVersion?.versionNumber || 1) + 1;
       }
 
-      // 7. Generación de clave S3 interna y opaca (sin incrustar originalname)
+      // Clave opaca en SeaweedFS: <tenant>/<fileId>/v<num>
       const objectKey = `${organizationId}/${fileRecord.id}/v${nextVersionNumber}`;
 
       const fileVersion = this.versionRepository.create({
@@ -298,20 +453,18 @@ export class FilesService {
         uploadedBy: ownerId,
       });
 
-      // 8. Envío a SeaweedFS con rollback compensatorio ante fallos
       try {
         await this.storageService.put(
           objectKey,
           file.buffer || file.stream,
           fileSize,
-          mimeType,
+          declaredMime,
         );
 
         const savedVersion = await this.versionRepository.save(fileVersion);
 
-        // Actualizar el FileRecord con el tamaño de su última versión
         fileRecord.sizeBytes = String(fileSize);
-        fileRecord.mimeType = mimeType;
+        fileRecord.mimeType = declaredMime;
         await this.fileRepository.save(fileRecord);
 
         const responseDto = {
@@ -333,8 +486,7 @@ export class FilesService {
 
         return responseDto;
       } catch (storageError: any) {
-        this.logger.error(`Fallo en SeaweedFS: ${storageError?.message || storageError}`);
-        // Compensación: eliminar objeto en storage y registro si era nuevo
+        this.logger.error(`Error persistiendo en SeaweedFS: ${storageError?.message || storageError}`);
         await this.storageService.delete(objectKey).catch(() => null);
         if (isNewRecord && fileRecord?.id) {
           await this.fileRepository.delete(fileRecord.id).catch(() => null);
@@ -346,6 +498,17 @@ export class FilesService {
         this.idempotencyCache.delete(cacheKey);
       }
       throw err;
+    } finally {
+      this.decrementActiveUploads(ownerId);
+    }
+  }
+
+  private decrementActiveUploads(userId: string): void {
+    const current = this.activeUploadsByUser.get(userId) || 1;
+    if (current <= 1) {
+      this.activeUploadsByUser.delete(userId);
+    } else {
+      this.activeUploadsByUser.set(userId, current - 1);
     }
   }
 

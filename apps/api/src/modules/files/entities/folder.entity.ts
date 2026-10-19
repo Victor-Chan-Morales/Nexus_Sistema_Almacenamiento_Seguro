@@ -1,6 +1,9 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column,
-  CreateDateColumn, UpdateDateColumn,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 
 @Entity('folders')
@@ -17,7 +20,10 @@ export class Folder {
   @Column({ name: 'owner_id' })
   ownerId: string;
 
-  /** Carpeta padre (null = raíz) */
+  @Column({ name: 'drive_id', nullable: true })
+  driveId: string;
+
+  /** Carpeta padre (null = raíz del drive) */
   @Column({ name: 'parent_id', nullable: true })
   parentId: string;
 

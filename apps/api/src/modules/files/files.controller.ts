@@ -20,7 +20,7 @@ import { FilesService } from './files.service';
 
 /**
  * FoldersController (/folders)
- * Contrato oficial de carpetas según CONTRACTS.md
+ * Contrato canónico de navegación de carpetas según CONTRACTS.md v0.3
  */
 @Controller('folders')
 @UseGuards(AuthGuard('jwt'))
@@ -34,15 +34,8 @@ export class FoldersController {
     @Query('parentFolderId') parentFolderId?: string,
   ) {
     const orgId = req.user.organizationId;
-    const folders = await this.filesService.listFolders(orgId, parentId || parentFolderId);
-    return {
-      items: folders.map((f) => ({
-        id: f.id,
-        name: f.name,
-        parentFolderId: f.parentId,
-        driveId: null,
-      })),
-    };
+    const userId = req.user.userId || req.user.id;
+    return this.filesService.listFolders(orgId, userId, parentId || parentFolderId);
   }
 
   @Post()
@@ -52,48 +45,24 @@ export class FoldersController {
   ) {
     const orgId = req.user.organizationId;
     const userId = req.user.userId || req.user.id;
-    const folder = await this.filesService.createFolder(
+    return this.filesService.createFolder(
       orgId,
       userId,
       body.name,
       body.parentFolderId || body.parentId,
     );
-    return {
-      id: folder.id,
-      name: folder.name,
-      parentFolderId: folder.parentId,
-      driveId: null,
-      createdAt: folder.createdAt,
-    };
   }
 
   @Get(':id/items')
   async getFolderItems(@Request() req: any, @Param('id') folderId: string) {
     const orgId = req.user.organizationId;
-    const { folders, files } = await this.filesService.getFolderItems(orgId, folderId);
-    return {
-      folders: folders.map((f) => ({
-        id: f.id,
-        name: f.name,
-        parentFolderId: f.parentId,
-        driveId: null,
-        createdAt: f.createdAt,
-      })),
-      files: files.map((f) => ({
-        id: f.id,
-        name: f.name,
-        mimeType: f.mimeType,
-        sizeBytes: f.sizeBytes,
-        createdAt: f.createdAt,
-        updatedAt: f.updatedAt,
-      })),
-    };
+    return this.filesService.getFolderItems(orgId, folderId);
   }
 }
 
 /**
  * FilesController (/files)
- * Contrato oficial de archivos según CONTRACTS.md
+ * Contrato canónico de archivos según CONTRACTS.md v0.3
  */
 @Controller('files')
 @UseGuards(AuthGuard('jwt'))
@@ -103,21 +72,13 @@ export class FilesController {
   @Get()
   async listFiles(@Request() req: any, @Query('folderId') folderId?: string) {
     const orgId = req.user.organizationId;
-    const files = await this.filesService.listFiles(orgId, folderId);
-    return files.map((f) => ({
-      id: f.id,
-      name: f.name,
-      mimeType: f.mimeType,
-      sizeBytes: f.sizeBytes,
-      createdAt: f.createdAt,
-      updatedAt: f.updatedAt,
-    }));
+    return this.filesService.listFiles(orgId, folderId);
   }
 
   @Post('upload')
   @UseInterceptors(
     FileInterceptor('file', {
-      limits: { fileSize: 100 * 1024 * 1024 }, // 100 MB máximo
+      limits: { fileSize: 100000000 }, // 100,000,000 bytes exactos
     }),
   )
   async uploadFile(
@@ -150,7 +111,6 @@ export class FilesController {
       orgId,
     );
 
-    // Sanitización de nombre de archivo contra path traversal
     const safeFilename = name.replace(/[/\\?%*:|"<>]/g, '_');
     const rfc5987Filename = encodeURIComponent(safeFilename);
 
