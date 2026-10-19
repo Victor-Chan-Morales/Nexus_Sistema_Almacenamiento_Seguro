@@ -14,3 +14,8 @@ coverage/
 
 npm-debug.log*
 database/schema.sql
+
+# TypeScript build cache
+*.tsbuildinfo
+apps/api/*.tsbuildinfo
+dist/
