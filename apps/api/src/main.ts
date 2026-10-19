@@ -12,6 +12,7 @@ async function bootstrap() {
   app.enableCors({
     origin: process.env.WEB_URL ?? 'http://localhost:3000',
     credentials: true,
+    exposedHeaders: ['Content-Disposition'],
   });
 
   // Validación automática de DTOs con class-validator

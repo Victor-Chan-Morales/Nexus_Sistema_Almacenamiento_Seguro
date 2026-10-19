@@ -56,6 +56,10 @@ export type LoginResponse = {
   role: UserRole;
 };
 
+export type VerifyEmailResponse = {
+  verified: true;
+};
+
 export type CurrentUserResponse = {
   user: UserIdentity;
   organization: OrganizationReference;
@@ -69,7 +73,7 @@ export type Plan = {
   priceMonthly: number;
   storageLimitBytes: number;
   userLimit: number;
-  validityDays: number;
+  validityDays: number | null;
 };
 
 export type PlanCatalogResponse = {
@@ -84,7 +88,16 @@ export type ActivateSubscriptionResponse = {
   endDate: ISODateTime | null;
 };
 
-export type DashboardResponse<TPlan = unknown, TActivity = unknown> = {
+export type DashboardPlan = {
+  id: UUID;
+  name: string;
+  storageLimitBytes: number;
+  userLimit: number;
+  expiresAt: ISODateTime | null;
+  simulated: boolean;
+};
+
+export type DashboardResponse<TPlan = DashboardPlan | null, TActivity = never> = {
   organizationName: string;
   plan: TPlan;
   storageUsedBytes: number;
@@ -99,7 +112,14 @@ export type Folder = {
   driveId: UUID;
 };
 
+export type PersonalDrive = {
+  id: UUID;
+  name: string;
+  rootFolderId: UUID;
+};
+
 export type FolderListResponse = {
+  drive: PersonalDrive;
   items: Folder[];
 };
 
@@ -112,7 +132,17 @@ export type CreateFolderResponse = Folder & {
   createdAt: ISODateTime;
 };
 
-export type FolderItemsResponse<TFile = unknown> = {
+export type FileMetadata = {
+  id: UUID;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  versionId: UUID;
+  uploadedAt: ISODateTime;
+};
+
+export type FolderItemsResponse<TFile = FileMetadata> = {
+  folder: Folder;
   folders: Folder[];
   files: TFile[];
 };

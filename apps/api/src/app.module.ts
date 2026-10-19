@@ -8,6 +8,7 @@ import { BillingModule } from './modules/billing/billing.module';
 import { FilesModule } from './modules/files/files.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { HealthModule } from './modules/health/health.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { HealthModule } from './modules/health/health.module';
     FilesModule,     // Archivos: carpetas, metadatos, versiones, cuotas
     StorageModule,   // Almacenamiento: contrato con SeaweedFS (S3)
     HealthModule,    // Salud: endpoint /api/health para verificar el sistema
+    DashboardModule, // Integración: GET /api/dashboard (plan + uso + organización)
   ],
 })
 export class AppModule {}

@@ -310,7 +310,7 @@ h1, h2, h3 { font-family: "Inter", Arial, sans-serif; }
 .drive-logo { display: flex; width: 92px; height: 64px; align-items: center; justify-content: center; margin: 0 auto 22px; overflow: hidden; }
 .drive-logo .nexus-mark-frame { flex-basis: 58px; width: 58px; height: 48px; }
 .drive-logo .nexus-mark-image { top: -7px; left: -34px; width: 135px; }
-.drive-upload-main { display: flex; min-height: 48px; align-items: center; justify-content: center; gap: 12px; margin: 0 4px 28px; border-radius: 10px; background: var(--brand); color: #fff; font-size: 14.7px; font-weight: 700; }
+.drive-upload-main { display: flex; width: calc(100% - 8px); min-height: 48px; align-items: center; justify-content: center; gap: 12px; margin: 0 4px 28px; border: 0; border-radius: 10px; background: var(--brand); color: #fff; font-family: inherit; font-size: 14.7px; font-weight: 700; cursor: pointer; }
 .drive-upload-main:hover, .drive-upgrade:hover, .drive-primary-button:hover { background: var(--brand-deep); }
 .drive-upload-main:first-letter { font-size: 19.95px; }
 .drive-nav { display: grid; gap: 5px; }
