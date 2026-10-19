@@ -5,6 +5,7 @@ import * as request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
 import { ApiExceptionFilter } from '../src/common/filters/api-exception.filter';
+import { DemoSubscriptionHook } from '../src/modules/billing/registration/demo-subscription.hook';
 import { REFRESH_COOKIE_NAME } from '../src/modules/iam/constants';
 import { Organization } from '../src/modules/iam/entities/organization.entity';
 import { User } from '../src/modules/iam/entities/user.entity';
@@ -30,7 +31,7 @@ class FakeEmailService {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-describe('IAM (e2e) — contrato CONTRACTS.md v0.2', () => {
+describe('IAM (e2e) — contrato CONTRACTS.md v0.4', () => {
   let app: INestApplication;
   let dataSource: DataSource;
   let jwt: JwtService;
@@ -50,11 +51,6 @@ describe('IAM (e2e) — contrato CONTRACTS.md v0.2', () => {
       .overrideProvider(VerificationMailer)
       .useValue(mailer)
       .compile();
-
-    // Billing y Files aún no registran sus hooks en esta rama; el registro los exige, así que aquí se simulan.
-    const hooks = moduleRef.get(RegistrationHooks);
-    hooks.register('demo-subscription', async () => undefined);
-    hooks.register('personal-drive', async () => undefined);
 
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api');
@@ -112,6 +108,60 @@ describe('IAM (e2e) — contrato CONTRACTS.md v0.2', () => {
     const user = await dataSource.getRepository(User).findOneByOrFail({ email });
     expect(user.passwordHash.startsWith('$argon2id$')).toBe(true);
     expect(await dataSource.getRepository(Organization).count({ where: { name: `Org ${email}` } })).toBe(1);
+
+    // Hooks reales de Billing y Files dentro de la misma transacción (CONTRACTS.md, alta transaccional).
+    const [subscription] = await dataSource.query(
+      `SELECT plan.name, sub.status, sub.end_date
+         FROM billing.subscription AS sub
+         JOIN billing.plan AS plan ON plan.plan_id = sub.plan_id
+        WHERE sub.organization_id = $1`,
+      [res.body.organizationId],
+    );
+    expect(subscription).toMatchObject({ name: 'Demo', status: 'active', end_date: null });
+
+    const [drive] = await dataSource.query(
+      `SELECT drive_id, type, owner_user_id, name FROM files.drive WHERE organization_id = $1`,
+      [res.body.organizationId],
+    );
+    expect(drive).toMatchObject({ type: 'personal', owner_user_id: res.body.userId, name: 'Mi espacio' });
+
+    const folders = await dataSource.query(
+      `SELECT name, parent_folder_id FROM files.folder WHERE drive_id = $1`,
+      [drive.drive_id],
+    );
+    expect(folders).toEqual([{ name: 'Archivos', parent_folder_id: null }]);
+
+    const [quota] = await dataSource.query(
+      `SELECT confirmed_usage_bytes, active_reservations_bytes FROM files.tenant_quota WHERE organization_id = $1`,
+      [res.body.organizationId],
+    );
+    expect(quota).toMatchObject({ confirmed_usage_bytes: '0', active_reservations_bytes: '0' });
+  });
+
+  it('si un hook requerido falla, el alta completa se revierte: no queda usuario ni organización', async () => {
+    const email = emailOf('rollback');
+    const org = `Org rollback ${stamp}`;
+    const hooks = app.get(RegistrationHooks);
+    hooks.register('demo-subscription', async () => {
+      throw new Error('Billing no pudo contratar el plan Demo');
+    });
+
+    try {
+      await request(server()).post('/api/auth/register').send(body(email, org)).expect(500);
+    } finally {
+      app.get(DemoSubscriptionHook).onModuleInit(); // restaura el hook real (registrar reemplaza por nombre)
+    }
+
+    expect(await dataSource.getRepository(User).count({ where: { email } })).toBe(0);
+    expect(await dataSource.getRepository(Organization).count({ where: { name: org } })).toBe(0);
+    const [{ count }] = await dataSource.query(
+      `SELECT count(*)::int AS count FROM iam.email_outbox WHERE recipient_email = $1`,
+      [email],
+    );
+    expect(count).toBe(0);
+
+    // El hook real volvió a quedar registrado: el alta siguiente funciona.
+    await request(server()).post('/api/auth/register').send(body(emailOf('rollback-ok'))).expect(201);
   });
 
   it('correo duplicado (sin distinguir mayúsculas): 409 con error común y sin registros parciales', async () => {
@@ -298,5 +348,38 @@ describe('IAM (e2e) — contrato CONTRACTS.md v0.2', () => {
       .post('/api/auth/verify-email')
       .send({ token: mailer.tokenFor(email) })
       .expect(200);
+  });
+
+  it('si el token venció mientras el SMTP estaba caído, el reintento emite uno nuevo y ese enlace verifica', async () => {
+    const email = emailOf('outbox-vencido');
+    mailer.failing = true;
+    try {
+      await request(server()).post('/api/auth/register').send(body(email)).expect(201);
+    } finally {
+      mailer.failing = false;
+    }
+
+    // El proveedor estuvo caído más de 15 minutos: el token del mensaje ya no sirve.
+    await dataSource.query(
+      `UPDATE iam.email_outbox
+          SET expires_at = now() - interval '1 minute', next_attempt_at = now() - interval '1 second'
+        WHERE recipient_email = $1`,
+      [email],
+    );
+    await app.get(EmailOutboxService).dispatchDue();
+
+    const [renewed] = await dataSource.query(
+      `SELECT status, expires_at FROM iam.email_outbox WHERE recipient_email = $1`,
+      [email],
+    );
+    expect(renewed.status).toBe('sent');
+    expect(new Date(renewed.expires_at).getTime()).toBeGreaterThan(Date.now());
+
+    // El enlace recibido es el del token nuevo y verifica la cuenta: no queda sin forma de verificarse.
+    await request(server())
+      .post('/api/auth/verify-email')
+      .send({ token: mailer.tokenFor(email) })
+      .expect(200);
+    await login(email).expect(200);
   });
 });
