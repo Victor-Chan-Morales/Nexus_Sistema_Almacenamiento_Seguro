@@ -16,16 +16,16 @@ export enum SubscriptionStatus {
   SIMULATED = 'simulated', // Para el prototipo universitario
 }
 
-@Entity('subscriptions')
+@Entity({ name: 'subscription', schema: 'billing' })
 export class Subscription {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn('uuid', { name: 'subscription_id' })
   id: string;
 
   /** ID de la organización propietaria de esta suscripción */
   @Column({ name: 'organization_id' })
   organizationId: string;
 
-  @ManyToOne(() => Plan, { eager: true })
+  @ManyToOne(() => Plan, { eager: true, nullable: true })
   @JoinColumn({ name: 'plan_id' })
   plan: Plan;
 
@@ -41,6 +41,6 @@ export class Subscription {
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
+  @UpdateDateColumn({ name: 'updated_at', nullable: true })
   updatedAt: Date;
 }

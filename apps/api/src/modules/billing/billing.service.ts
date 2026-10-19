@@ -35,10 +35,15 @@ export class BillingService {
   // ── Suscripciones ─────────────────────────────────────────────────────────
 
   async getSubscription(organizationId: string): Promise<Subscription | null> {
-    return this.subscriptionRepo.findOne({
-      where: { organizationId },
-      order: { createdAt: 'DESC' },
-    });
+    try {
+      return await this.subscriptionRepo.findOne({
+        where: { organizationId },
+        relations: ['plan'],
+        order: { createdAt: 'DESC' },
+      });
+    } catch {
+      return null;
+    }
   }
 
   async subscribe(organizationId: string, planId: string): Promise<Subscription> {
@@ -56,10 +61,18 @@ export class BillingService {
   /**
    * Devuelve el límite de almacenamiento en bytes para una organización.
    * Usado internamente por FilesModule sin llamadas HTTP.
+   * Fallback: 5 GB según decisión operativa 3 de CONTRACTS.md.
    */
   async getStorageLimitBytes(organizationId: string): Promise<bigint> {
-    const sub = await this.getSubscription(organizationId);
-    if (!sub) return BigInt(1073741824); // 1 GB por defecto
-    return BigInt(sub.plan.storageLimitBytes);
+    try {
+      const sub = await this.getSubscription(organizationId);
+      if (sub?.plan?.storageLimitBytes) {
+        return BigInt(sub.plan.storageLimitBytes);
+      }
+    } catch {
+      // Ignorar fallo de consulta si el esquema está en migración
+    }
+    // 5 GB por defecto (5 * 1024 * 1024 * 1024 bytes)
+    return BigInt(5368709120);
   }
 }
