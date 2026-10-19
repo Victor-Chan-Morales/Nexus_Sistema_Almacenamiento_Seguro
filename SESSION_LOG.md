@@ -3,7 +3,7 @@
 > Las entradas previas a 2026-10-08 documentan el proveedor histórico MinIO; ADR-004 establece SeaweedFS como configuración local vigente.
 
 
-Registro dinámico de decisiones, acuerdos pendientes y bloqueos. Añada entradas nuevas al principio; no borre historia. Las propuestas se marcan como pendientes hasta que el equipo las acepte.
+Registro dinámico de decisiones, acuerdos pendientes y bloqueos. Añada entradas nuevas al principio; no borre historia. Los contratos de integración v0.3 fueron aprobados por el integrador para implementación el 2026-10-18.
 
 ## 2026-10-18 — Cierre de observaciones de PR #4 (Billing) y alineación de cuotas
 
@@ -19,6 +19,39 @@ Registro dinámico de decisiones, acuerdos pendientes y bloqueos. Añada entrada
   7. **ADR-005 y migración:** Se documentó ADR-005 con el script SQL de migración y se actualizaron los diagramas y el README del módulo.
   8. **Limpieza:** Se removieron artefactos de compilación (`.tsbuildinfo`) y se actualizó `.gitignore`.
 
+## 2026-10-18 — Contrato IAM v0.4: bloquear login sin correo verificado
+
+- **Decisión del integrador:** `POST /auth/login` valida primero las credenciales. Si son correctas pero el correo no está verificado, responde HTTP `403` con `code: "EMAIL_NOT_VERIFIED"` y no emite tokens ni cookie de refresh.
+- **Motivo:** el frontend ya muestra un mensaje específico para este código; el contrato v0.3 definía el envío y consumo del enlace, pero no fijaba el comportamiento del login antes de verificarlo.
+- **Alcance:** aclaración de contrato para implementación de IAM por Sebastián. No se agregan rutas nuevas; no se ofrece reenvío manual del correo en este corte.
+
+## 2026-10-18 — Correcciones documentales para PR #4, #5 y #6
+
+- Se actualizaron las devoluciones individuales de Anthony (Billing), Miguel (Files/Storage) y Sebastián (IAM) para que cada responsable implemente directamente contra `CONTRACTS.md` v0.3 aprobado.
+- Se dejaron explícitos el uso del mismo `EntityManager` en los hooks de registro, las rutas y respuestas canónicas de Files, y la ubicación única de migraciones en `database/migrations/` en la raíz.
+- Se cerró el comportamiento de correo: el registro persiste el mensaje en una outbox dentro de su transacción; SMTP se procesa después del commit y los fallos temporales se reintentan. También se aclaró qué debe probarse respecto del rollback de hooks y los reintentos de correo.
+- **Alcance:** cambios solo de documentación. No se modificó código ni se ejecutaron pruebas.
+
+## 2026-10-18 — Contratos v0.3 y comienzo de correcciones de integración
+
+- **Decisión:** `CONTRACTS.md` v0.3 y el anexo de ADR-003 fijan los contratos de sesión IAM, catálogo/cuota, Files, Dashboard y alta transaccional. Aprobados por Víctor como integrador para que cada PR implemente la misma interfaz.
+- **Reglas aclaradas:** unidades decimales en bytes; Demo de 5 GB/5 usuarios sin vencimiento; cuota cero si falta una suscripción; el uso cuenta todas las versiones retenidas y papelera durante 30 días; reducción de plan considera carga confirmada y reservas.
+- **Arquitectura acordada:** Dashboard toma organización del principal JWT validado. Un `SubscriptionCoordinator` de integración consulta Files y delega persistencia a Billing, evitando dependencia circular entre Billing y Files.
+- **Código iniciado:** Dashboard dejó de inyectar `IamService`; Files calcula uso a partir de `FileVersion` e incluye archivos en papelera; web implementa sesión en memoria, Dashboard y explorador conectados a clientes API, y usa bytes decimales.
+- **Pendiente de módulo:** IAM debe publicar `organizationName` y el contexto de membresía en `req.user`, más las rutas/cookie de v0.3. Billing debe implementar límites/ciclo de plan y Demo. Files debe alinear rutas/DTO, carga y descarga, y agregar reservas atómicas; por ello el explorador ya consume el contrato pero aún no completa el flujo con la API local.
+- **Verificación:** `npm run build:web` y `npm run build:api` terminaron correctamente el 2026-10-18. No se ejecutaron pruebas automatizadas ni se afirma validación funcional.
+
+## 2026-10-17 — Revisión del avance de integración de Víctor
+
+- **Punto actual:** integración frontend/API sobre `feature/victor/frontend-integration-50`. Se conservaron los cambios locales sin commit.
+- **Avance presente en el árbol de trabajo:** sesión web en memoria, guardas bajo `AppShell`, login/registro conectados, planes y suscripción consultando Billing, Dashboard conectado a `GET /api/dashboard`, módulo Dashboard que agrega IAM/Billing/Files in-process usando el tenant del JWT y `recentActivity: []`. CORS expone `Content-Disposition`.
+- **Pendiente de verificación:** no se ejecutó el flujo navegador → API → SeaweedFS ni se comparó el archivo descargado con el original. Tampoco se verificaron visualmente las pantallas ni el aislamiento entre organizaciones. La presencia de código no cuenta como evidencia de ejecución.
+- **Bloqueos de contrato/API:**
+  - La web invoca `POST /auth/verify-email`, `POST /auth/refresh` y `POST /auth/logout`; IAM solo implementa registro, login y `GET /auth/me`. La sesión no se restaura tras recargar y login no establece cookie HttpOnly.
+  - El cliente Files sigue el contrato documentado (`/folders`, `/folders/:id/items`, `/files/upload`, descarga binaria), pero el controlador expone listado bajo `/files`, carpetas bajo `/files/folders` y descarga como URL JSON prefirmada. No hay endpoint de carga multipart.
+  - Billing sí ofrece `GET /plans` y `POST /subscriptions/activate`; Dashboard consume servicios de módulos directamente.
+- **Siguiente paso:** acordar con los responsables de IAM y Files las rutas, campos y respuestas; luego alinear `CONTRACTS.md`, controladores y clientes web. Verificación de correo, persistencia de sesión tras recarga y flujo real de Files siguen pendientes. Recuperación de contraseña y varias vistas de archivos continúan usando datos locales y deben identificarse como prototipo.
+- **Ejecución registrada:** revisión estática de planes, contratos, árbol de trabajo, clientes web y controladores/servicios backend. No se ejecutaron pruebas ni se afirma validación funcional.
 ## 2026-10-06 — Adopción e Implementación del Monolito Modular
 
 - **Estado:** Aprobado e Implementado.

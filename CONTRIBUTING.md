@@ -33,7 +33,7 @@ Coordinen antes de cambiar:
 - Esquema/migraciones compartidas y componentes compartidos de `apps/web/src/components`.
 - `docs/IDENTIDAD_VISUAL.md` y `apps/web/src/app/globals.css`: Víctor mantiene los tokens compartidos; propongan cambios en PR y registren cualquier actualización de la identidad visual.
 
-Un solo PR debe cambiar una misma migración. Los módulos envían una propuesta de migración al integrador; no editen la misma tabla/esquema concurrentemente.
+La ubicación canónica de migraciones compartidas es `database/migrations/` en la raíz del repositorio. Los módulos envían sus cambios de esquema al integrador; Víctor los consolida en un solo PR y una sola migración por cambio coordinado. No creen una segunda fuente bajo `apps/db/database/migrations/` ni editen la misma tabla/esquema en paralelo.
 
 ## Reglas técnicas
 
