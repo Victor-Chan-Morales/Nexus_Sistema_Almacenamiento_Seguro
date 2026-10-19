@@ -15,7 +15,7 @@ import { HealthModule } from './modules/health/health.module';
     // IAM necesita JWT_SECRET (>= 32 caracteres) en este mismo .env; sin él la API no arranca.
     ConfigModule.forRoot({
       isGlobal: true, // Disponible en todos los módulos sin reimportar
-      envFilePath: '../../.env', // Apunta al .env raíz del monorepo
+      envFilePath: ['.env', '../../.env'], // Apunta al .env raíz del monorepo
     }),
 
     // ── Base de datos PostgreSQL ─────────────────────────────────────────────
@@ -24,7 +24,7 @@ import { HealthModule } from './modules/health/health.module';
       useFactory: (config: ConfigService) => ({
         type: 'postgres',
         host: config.get('POSTGRES_HOST', 'localhost'),
-        port: config.get<number>('POSTGRES_PORT', 5432),
+        port: config.get<number>('POSTGRES_PORT', 5433),
         username: config.get('POSTGRES_USER', 'nexus_dev'),
         password: config.get('POSTGRES_PASSWORD', 'local_only_change_me'),
         database: config.get('POSTGRES_DB', 'nexus_dev'),
