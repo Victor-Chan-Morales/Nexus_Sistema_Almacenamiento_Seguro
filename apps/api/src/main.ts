@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { ApiExceptionFilter } from './shared/filters/api-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -12,7 +13,11 @@ async function bootstrap() {
   app.enableCors({
     origin: process.env.WEB_URL ?? 'http://localhost:3000',
     credentials: true,
+    exposedHeaders: ['Content-Disposition'],
   });
+
+  // Filtro canónico de excepciones { code, message, requestId }
+  app.useGlobalFilters(new ApiExceptionFilter());
 
   // Validación automática de DTOs con class-validator
   app.useGlobalPipes(

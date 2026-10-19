@@ -152,15 +152,81 @@ export class FilesService {
     await this.fileRepo.save(file);
   }
 
-  // ── Cuota ─────────────────────────────────────────────────────────────────
+  // ── Cuota y Reservas de Almacenamiento ─────────────────────────────────
 
+  // Mapa en memoria para reservas atómicas activas: organizationId -> Map<reservationId, bigint>
+  private readonly activeReservations = new Map<string, Map<string, bigint>>();
+
+  /**
+   * Registra una reserva atómica de subida en curso para evitar condiciones de carrera.
+   */
+  public reserveUpload(organizationId: string, reservationId: string, sizeBytes: bigint): void {
+    if (!this.activeReservations.has(organizationId)) {
+      this.activeReservations.set(organizationId, new Map());
+    }
+    this.activeReservations.get(organizationId)!.set(reservationId, sizeBytes);
+  }
+
+  /**
+   * Libera una reserva de subida una vez confirmada o fallada la operación.
+   */
+  public releaseReservation(organizationId: string, reservationId: string): void {
+    const orgReservations = this.activeReservations.get(organizationId);
+    if (orgReservations) {
+      orgReservations.delete(reservationId);
+      if (orgReservations.size === 0) {
+        this.activeReservations.delete(organizationId);
+      }
+    }
+  }
+
+  /**
+   * Retorna la suma total de bytes actualmente reservados para cargas activas.
+   */
+  public async getReservedStorageBytes(organizationId: string): Promise<bigint> {
+    const orgReservations = this.activeReservations.get(organizationId);
+    if (!orgReservations || orgReservations.size === 0) {
+      return BigInt(0);
+    }
+    let totalReserved = BigInt(0);
+    for (const bytes of orgReservations.values()) {
+      totalReserved += bytes;
+    }
+    return totalReserved;
+  }
+
+  /**
+   * Calcula el almacenamiento total confirmado sumando el tamaño real de cada versión
+   * almacenada (FileVersion) para la organización.
+   * Incluye todas las versiones retenidas y archivos en papelera dentro de los 30 días de retención.
+   * No suma FileRecord.sizeBytes para no duplicar la versión actual.
+   */
   public async getUsedStorageBytes(organizationId: string): Promise<bigint> {
-    const result = await this.fileRepo
-      .createQueryBuilder('f')
-      .select('SUM(CAST(f.sizeBytes AS BIGINT))', 'total')
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const result = await this.versionRepo
+      .createQueryBuilder('v')
+      .innerJoin('v.fileRecord', 'f')
+      .select('COALESCE(SUM(CAST(v.sizeBytes AS BIGINT)), 0)', 'total')
       .where('f.organizationId = :organizationId', { organizationId })
-      .andWhere('f.isDeleted = false')
+      .andWhere('(f.isDeleted = false OR f.updatedAt >= :thirtyDaysAgo)', { thirtyDaysAgo })
       .getRawOne();
     return BigInt(result?.total ?? 0);
+  }
+
+  /**
+   * Retorna el resumen consolidado de almacenamiento: utilizado confirmado, reservas y total.
+   */
+  public async getTotalStorageUsage(organizationId: string): Promise<{
+    usedBytes: bigint;
+    reservedBytes: bigint;
+    totalBytes: bigint;
+  }> {
+    const usedBytes = await this.getUsedStorageBytes(organizationId);
+    const reservedBytes = await this.getReservedStorageBytes(organizationId);
+    return {
+      usedBytes,
+      reservedBytes,
+      totalBytes: usedBytes + reservedBytes,
+    };
   }
 }

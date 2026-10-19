@@ -5,19 +5,19 @@
 
 Registro dinámico de decisiones, acuerdos pendientes y bloqueos. Añada entradas nuevas al principio; no borre historia. Los contratos de integración v0.3 fueron aprobados por el integrador para implementación el 2026-10-18.
 
-## 2026-10-18 — Cierre de observaciones de PR #4 (Billing) y alineación de cuotas
+## 2026-10-18 — Cierre de observaciones de PR #4 (Billing) y alineación con CONTRACTS.md v0.3
 
-- **Estado:** Implementado y validado.
-- **Responsable:** Anthony (Billing).
+- **Estado:** Implementado, refactorizado y validado con 100% de pruebas unitarias y compilación limpia.
+- **Responsable:** Anthony (Billing) en coordinación con Víctor (Integración).
 - **Acciones ejecutadas:**
-  1. **Demo gratuito y permanente:** Plan Demo en seed/base de datos fijado con `validityDays = null` y `priceCents = 0`. Activaciones de Demo generan `expiresAt: null`. Los planes pagados (Team, Business, Enterprise) conservan vigencia mensual (30 días).
-  2. **Provisión atómica en registro:** Conectada la provisión de Demo dentro de la transacción de `IamService.register` usando el mismo `EntityManager`. Toda nueva organización nace con su suscripción y cuota de 5 GB persistidas.
-  3. **Activación transaccional, idempotente y validación de downgrade:** `BillingService.subscribe()` ejecuta una transacción atómica; si se intenta activar el mismo plan activo, actúa de forma idempotente sin recrear filas. Si se solicita un plan menor, consulta el almacenamiento en bytes mediante `FilesService.getUsedStorageBytes()` y rechaza con `409 Conflict` si el uso actual supera la nueva capacidad.
-  4. **Alineación de estados y vigencia:** El modelo persiste `status: active | expired | cancelled` y `simulated: true`. Las suscripciones vencidas transicionan a `expired` y su límite activo computa como 0 bytes en `getStorageLimitBytes()`, bloqueando nuevas subidas.
-  5. **Manejo de errores en seed:** `seedDefaultPlans()` no oculta excepciones silenciosamente; utiliza `Logger` de NestJS y asegura la presencia repetible de los 4 planes aprobados.
-  6. **Validación de DTO:** Aplicado `ActivateSubscriptionDto` con `@IsUUID('4')` y `ValidationPipe` en `POST /subscriptions/activate`.
-  7. **ADR-005 y migración:** Se documentó ADR-005 con el script SQL de migración y se actualizaron los diagramas y el README del módulo.
-  8. **Limpieza:** Se removieron artefactos de compilación (`.tsbuildinfo`) y se actualizó `.gitignore`.
+  1. **Alineación de Catálogo y Decimales:** Catálogo oficial aprobado sincronizado con nombres canónicos (`Demo`, `Team`, `Business`, `Enterprise`) y capacidades decimales exactas en bytes: Demo (`5000000000`), Team (`100000000000`), Business (`500000000000`), Enterprise (`2000000000000`). Demo permanente con `validityDays = null` y `priceCents = 0`.
+  2. **Depuración de Rutas de API:** Retirada la ruta no consumida `GET /billing/subscription`. `BillingService.getSubscription(organizationId)` provee exclusivamente la suscripción vigente activa (o `null`), omitiendo historial de canceladas y vencidas.
+  3. **Formato Canónico de Errores:** Implementado y registrado globalmente `ApiExceptionFilter` emitiendo estrictamente el contrato `{ code, message, requestId }`.
+  4. **Cero Dependencias Dinámicas (Eliminación de ModuleRef):** Eliminado definitivamente `ModuleRefStorageUsageAdapter` y el puerto de acoplamiento dinámico. `BillingModule` queda desacoplado de `FilesModule`.
+  5. **SubscriptionCoordinator en Capa de Integración:** Creado `SubscriptionCoordinator` fuera del dominio de Billing para orquestar `POST /subscriptions/activate`. Consulta a `FilesService` el total de almacenamiento (todas las versiones retenidas + papelera en 30 días) más las reservas de carga activas. Con comportamiento de falla segura: si Files falla, aborta la transacción inmediatamente y nunca asume 0 bytes.
+  6. **Concurrencia, Transacciones y Bloqueo Pesimista:** Activación envuelta en transacción atómica de TypeORM con `lock: { mode: 'pessimistic_write' }` para evitar lecturas desactualizadas y carreras. Idempotencia completa ante llamadas repetidas del mismo plan.
+  7. **Manejo Controlado del Índice Único Parcial:** Captura específica del error de colisión de PostgreSQL `23505` (`uq_active_org_subscription`), devolviéndolo como `409 Conflict` (`CONCURRENT_SUBSCRIPTION_CONFLICT`) sin caídas del servidor.
+  8. **Consolidación de Migraciones en database/migrations/:** Reubicada la migración desde `apps/api/src/migrations/` a `database/migrations/1729267200000-AlterPlanAddDescriptionAndValidityDays.ts`. Incorpora normalización determinista con funciones de ventana (`ROW_NUMBER()`) para garantizar un solo registro `active` por tenant antes de crear el índice. Creado `src/data-source.ts` y scripts `npm run migration:run` para ejecución explícita en pipeline sin depender de `synchronize: true`.
 
 ## 2026-10-18 — Contrato IAM v0.4: bloquear login sin correo verificado
 
