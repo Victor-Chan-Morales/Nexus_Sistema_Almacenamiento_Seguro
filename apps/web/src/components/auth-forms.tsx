@@ -3,8 +3,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState, useSyncExternalStore } from "react";
-import { DEMO_EVENT, initialDemo, readDemo, writeDemo, DEMO_SESSION } from "@/lib/demo";
+import { FormEvent, useEffect, useState } from "react";
+import { ApiError } from "@/lib/api/client";
+import { login, register, verifyEmail } from "@/lib/api/iam";
+import { useSession } from "@/lib/session";
 import { Brand } from "@/components/brand";
 import { UiIcon } from "@/components/ui-icon";
 
@@ -12,46 +14,49 @@ function AuthLogo() {
   return <Link className="auth-logo-link" href="/" aria-label="Nexus, página principal"><Brand /></Link>;
 }
 
-function AuthFrame({ eyebrow, title, lead, children, className = "" }: { eyebrow?: string; title: string; lead: string; children: React.ReactNode; className?: string }) {
-  return <main className="auth-layout"><section className={`auth-card auth-form-card ${className}`}><AuthLogo />{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h1 className="title">{title}</h1><p className="lead">{lead}</p>{children}<p className="auth-demo-caption">Prototipo de interfaz · La información no se envía a un servidor.</p></section></main>;
+function AuthFrame({ eyebrow, title, lead, children, className = "", simulated = false }: { eyebrow?: string; title: string; lead: string; children: React.ReactNode; className?: string; simulated?: boolean }) {
+  return <main className="auth-layout"><section className={`auth-card auth-form-card ${className}`}><AuthLogo />{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h1 className="title">{title}</h1><p className="lead">{lead}</p>{children}{simulated && <p className="auth-demo-caption">Prototipo de interfaz · Esta pantalla aún no está conectada a la API; la información no se envía a un servidor.</p>}</section></main>;
 }
 
 function passwordIsStrong(password: string) {
   return password.length >= 8 && /[A-Z]/.test(password) && /[a-z]/.test(password) && /\d/.test(password);
 }
 
-function subscribeToDemo(onChange: () => void) {
-  window.addEventListener(DEMO_EVENT, onChange);
-  window.addEventListener("storage", onChange);
-  return () => {
-    window.removeEventListener(DEMO_EVENT, onChange);
-    window.removeEventListener("storage", onChange);
-  };
+function messageFor(error: unknown, fallback: string) {
+  if (error instanceof ApiError) {
+    if (error.code === "EMAIL_NOT_VERIFIED") return "Tu correo aún no está verificado. Revisa tu bandeja y abre el enlace que te enviamos.";
+    if (error.status === 0) return error.message;
+    if (error.status === 401) return "Correo o contraseña incorrectos. Verifica tus datos e inténtalo de nuevo.";
+    if (error.status === 409) return "Este correo ya está registrado.";
+    if (error.status === 429) return "Demasiados intentos. Inténtalo de nuevo más tarde.";
+    if (error.status >= 500) return "Ocurrió un problema en el servidor. Inténtalo de nuevo en unos minutos.";
+    return error.message || fallback;
+  }
+  return fallback;
 }
-
-function getDemoEmail() { return readDemo().user.email; }
-function getServerDemoEmail() { return initialDemo.user.email; }
 
 export function LoginForm() {
   const router = useRouter();
+  const { signIn } = useSession();
   const [error, setError] = useState("");
-  function submit(e: FormEvent<HTMLFormElement>) {
+  const [busy, setBusy] = useState(false);
+  async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
     const email = String(form.get("email") ?? "").trim().toLowerCase();
     const password = String(form.get("password") ?? "");
-    const state = readDemo();
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError("Ingresa un correo electrónico válido."); return; }
-    if (email === "bloqueada@nexus.demo") { setError("Esta cuenta está bloqueada. Contacta al administrador de tu organización."); return; }
-    if (email === "pendiente@nexus.demo" || (email === state.user.email.toLowerCase() && !state.verified)) { setError("Tu correo aún no está verificado. Revisa tu bandeja o solicita otro código."); return; }
-    if (email !== state.user.email.toLowerCase() && email !== "ana@nexus.demo") { setError("No encontramos una cuenta asociada a este correo."); return; }
-    if (password.length < 8 || password.toLowerCase() === "incorrecta") { setError("La contraseña no es correcta. Verifica tus datos e inténtalo de nuevo."); return; }
+    if (!password) { setError("Ingresa tu contraseña."); return; }
 
-    state.user.email = email;
-    writeDemo(state);
-    sessionStorage.setItem(DEMO_SESSION, "demo");
-    router.push("/dashboard");
+    setBusy(true); setError("");
+    try {
+      signIn(await login({ email, password }));
+      router.push("/dashboard");
+    } catch (err) {
+      setError(messageFor(err, "No fue posible iniciar sesión."));
+      setBusy(false);
+    }
   }
 
   return <main className="login-screen">
@@ -65,11 +70,10 @@ export function LoginForm() {
         <div className="field login-field"><label htmlFor="login-password">Contraseña</label><input id="login-password" name="password" type="password" autoComplete="current-password" placeholder="Ingresa tu contraseña" required /></div>
         <div className="login-options"><label><input type="checkbox" name="remember" /> <span>Recuérdame</span></label><Link href="/recuperar-contrasena">¿Olvidaste tu contraseña?</Link></div>
         {error && <div className="auth-alert" role="alert">{error}</div>}
-        <button className="workspace-submit" type="submit">Iniciar sesión</button>
+        <button className="workspace-submit" type="submit" disabled={busy}>{busy ? "Ingresando…" : "Iniciar sesión"}</button>
       </form>
       <p className="workspace-register">¿No tienes una cuenta? <Link href="/registro">Registrarse</Link></p>
-      <p className="workspace-security"><UiIcon name="shield" size={16} /> Acceso de demostración · No uses una contraseña real</p>
-      <div className="login-demo-cases">Para probar estados: <code>bloqueada@nexus.demo</code>, <code>pendiente@nexus.demo</code>, un correo inexistente o la contraseña <code>incorrecta</code>.</div>
+      <p className="workspace-security"><UiIcon name="shield" size={16} /> Tu sesión se valida en el servidor de Nexus</p>
     </div></section>
   </main>;
 }
@@ -77,7 +81,8 @@ export function LoginForm() {
 export function RegisterForm() {
   const router = useRouter();
   const [error, setError] = useState("");
-  function submit(e: FormEvent<HTMLFormElement>) {
+  const [busy, setBusy] = useState(false);
+  async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
     const name = String(form.get("name") ?? "").trim();
@@ -85,12 +90,19 @@ export function RegisterForm() {
     const organization = String(form.get("organization") ?? "").trim();
     const password = String(form.get("password") ?? "");
     const confirmation = String(form.get("confirmation") ?? "");
+    if (name.length < 2) { setError("Escribe tu nombre completo."); return; }
+    if (organization.length < 2) { setError("Escribe el nombre de tu organización."); return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError("Ingresa un correo electrónico válido."); return; }
     if (!passwordIsStrong(password)) { setError("La contraseña es demasiado débil. Usa al menos 8 caracteres, una mayúscula y un número."); return; }
     if (password !== confirmation) { setError("Las contraseñas no coinciden."); return; }
-    if (email === readDemo().user.email.toLowerCase()) { setError("Este correo ya está registrado."); return; }
-    writeDemo({ ...initialDemo, user: { name, email, organization }, verified: false });
-    router.push(`/registro/completado?email=${encodeURIComponent(email)}`);
+    setBusy(true); setError("");
+    try {
+      await register({ fullName: name, email, password, organizationName: organization });
+      router.push(`/registro/completado?email=${encodeURIComponent(email)}`);
+    } catch (err) {
+      setError(messageFor(err, "No fue posible crear la cuenta."));
+      setBusy(false);
+    }
   }
   return <AuthFrame className="register-card" title="Crea tu cuenta" lead="Comienza a guardar tus archivos de forma segura.">
     <form className="auth-form" onSubmit={submit} noValidate>
@@ -100,7 +112,7 @@ export function RegisterForm() {
       <div className="field"><label htmlFor="register-password">Contraseña</label><input id="register-password" name="password" type="password" autoComplete="new-password" placeholder="Mínimo 8 caracteres" required /><small>Incluye una mayúscula y un número.</small></div>
       <div className="field"><label htmlFor="register-confirmation">Confirmar contraseña</label><input id="register-confirmation" name="confirmation" type="password" autoComplete="new-password" placeholder="Repite tu contraseña" required /></div>
       {error && <div className="auth-alert" role="alert">{error}</div>}
-      <button className="button button-primary button-wide auth-submit" type="submit">Crear cuenta</button>
+      <button className="button button-primary button-wide auth-submit" type="submit" disabled={busy}>{busy ? "Creando cuenta…" : "Crear cuenta"}</button>
     </form>
     <p className="auth-switch">¿Ya tienes una cuenta? <Link href="/login">Iniciar sesión</Link></p>
   </AuthFrame>;
@@ -109,34 +121,47 @@ export function RegisterForm() {
 export function RegistrationComplete() {
   return <AuthFrame className="auth-result-card" title="Cuenta creada" lead="Tu registro se completó correctamente.">
     <div className="auth-result-icon" aria-hidden="true"><UiIcon name="envelope" size={25} /></div>
-    <div className="auth-result-notice"><strong>Tu cuenta está pendiente de verificar</strong><span>Revisa tu correo electrónico y abre el enlace o ingresa el código que te enviamos.</span></div>
-    <Link className="button button-primary button-wide auth-submit" href="/verificar-correo">Continuar a la verificación</Link>
+    <div className="auth-result-notice"><strong>Tu cuenta está pendiente de verificar</strong><span>Revisa tu correo electrónico y abre el enlace que te enviamos. Vence en 15 minutos y solo sirve una vez.</span></div>
+    <Link className="button button-primary button-wide auth-submit" href="/verificar-correo">Ya tengo mi enlace o código</Link>
     <p className="auth-switch"><Link href="/login">Volver al inicio de sesión</Link></p>
   </AuthFrame>;
 }
 
 export function VerifyForm() {
-  const router = useRouter();
   const [status, setStatus] = useState("");
   const [done, setDone] = useState(false);
-  const email = useSyncExternalStore(subscribeToDemo, getDemoEmail, getServerDemoEmail);
+  const [busy, setBusy] = useState(false);
+  const [token, setToken] = useState("");
+
+  async function confirm(value: string) {
+    const clean = value.trim();
+    if (clean.length < 20) { setStatus("El enlace o código no es válido. Copia el enlace completo del correo."); return; }
+    setBusy(true); setStatus("");
+    try {
+      await verifyEmail(clean);
+      setDone(true);
+    } catch (err) {
+      setStatus(err instanceof ApiError && err.status === 0 ? err.message : "El enlace venció o ya fue usado. Inicia sesión para revisar el estado de tu cuenta o crea una cuenta nueva.");
+    } finally { setBusy(false); }
+  }
+
+  useEffect(() => {
+    const fromLink = new URLSearchParams(window.location.search).get("token");
+    if (fromLink) { setToken(fromLink); void confirm(fromLink); }
+  }, []);
+
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const code = String(new FormData(e.currentTarget).get("code") ?? "").trim();
-    if (code !== "123456") { setStatus("El código venció o no es válido. Solicita uno nuevo y vuelve a intentarlo."); return; }
-    const state = readDemo(); state.verified = true; writeDemo(state); setDone(true); setStatus("");
+    void confirm(token);
   }
-  return <AuthFrame className="auth-result-card" title={done ? "Correo verificado" : "Verifica tu correo"} lead={done ? "Tu cuenta está lista. Ya puedes iniciar sesión." : "Ingresa el código de verificación que enviamos a tu correo electrónico."}>
+  return <AuthFrame className="auth-result-card" title={done ? "Correo verificado" : "Verifica tu correo"} lead={done ? "Tu cuenta está lista. Ya puedes iniciar sesión." : "Abre el enlace que enviamos a tu correo o pega aquí el código del enlace."}>
     <div className="auth-result-icon" aria-hidden="true"><UiIcon name={done ? "check" : "envelope"} size={25} /></div>
     {done ? <Link className="button button-primary button-wide auth-submit" href="/login">Iniciar sesión</Link> : <form className="auth-form" onSubmit={submit} noValidate>
-      <div className="field"><label htmlFor="verify-email">Correo electrónico</label><input id="verify-email" type="email" autoComplete="email" value={email} readOnly required /><small>Usa otra cuenta desde el enlace inferior para verificar un correo distinto.</small></div>
-      <div className="field"><label htmlFor="verify-code">Código de verificación</label><input id="verify-code" name="code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="Ingresa tu código" required /></div>
+      <div className="field"><label htmlFor="verify-code">Código de verificación</label><input id="verify-code" name="code" autoComplete="one-time-code" placeholder="Pega el código del enlace" value={token} onChange={(event) => setToken(event.target.value)} required /></div>
       {status && <div className="auth-alert" role="alert">{status}</div>}
-      <button className="button button-primary button-wide auth-submit" type="submit">Verificar correo</button>
-      <p className="auth-resend">¿No recibiste el código? <button type="button" onClick={() => setStatus("Código reenviado (simulación). Usa 123456 para completar la verificación.")}>Reenviar código</button></p>
-      <p className="auth-demo-hint">Demo: código válido <code>123456</code>. Otro código simula un token inválido o vencido.</p>
+      <button className="button button-primary button-wide auth-submit" type="submit" disabled={busy}>{busy ? "Verificando…" : "Verificar correo"}</button>
+      <p className="auth-demo-hint">El reenvío del enlace aún no forma parte del contrato de la API.</p>
     </form>}
-    {done && <p className="auth-switch"><button className="text-button" onClick={() => router.push("/dashboard")}>Ir al espacio de trabajo</button></p>}
     <p className="auth-switch"><Link href="/registro">Usar otra cuenta</Link></p>
   </AuthFrame>;
 }
@@ -145,7 +170,7 @@ export function RecoverForm() {
   const [sent, setSent] = useState(false);
   const [email, setEmail] = useState("");
   function submit(e: FormEvent<HTMLFormElement>) { e.preventDefault(); setEmail(String(new FormData(e.currentTarget).get("email") ?? "")); setSent(true); }
-  return <AuthFrame className="auth-result-card" title={sent ? "Revisa tu correo" : "Recupera tu contraseña"} lead={sent ? `Si existe una cuenta para ${email}, recibirás instrucciones para restablecer tu contraseña.` : "Ingresa el correo asociado a tu cuenta y te enviaremos instrucciones para restablecerla."}>
+  return <AuthFrame className="auth-result-card" title={sent ? "Revisa tu correo" : "Recupera tu contraseña"} simulated lead={sent ? `Si existe una cuenta para ${email}, recibirás instrucciones para restablecer tu contraseña.` : "Ingresa el correo asociado a tu cuenta y te enviaremos instrucciones para restablecerla."}>
     {sent ? <><div className="auth-result-icon" aria-hidden="true"><UiIcon name="envelope" size={25} /></div><div className="auth-result-notice"><strong>Solicitud registrada</strong><span>Esta confirmación es simulada; no se envió ningún correo.</span></div><Link className="button button-primary button-wide auth-submit" href="/nueva-contrasena">Abrir nueva contraseña (demo)</Link><button className="text-button auth-resend-button" onClick={() => setSent(false)}>Usar otro correo</button></> : <form className="auth-form" onSubmit={submit}>
       <div className="field"><label htmlFor="recover-email">Correo electrónico</label><input id="recover-email" name="email" type="email" autoComplete="email" placeholder="tu@correo.com" required /></div>
       <button className="button button-primary button-wide auth-submit" type="submit">Enviar instrucciones</button>
@@ -168,7 +193,7 @@ export function NewPasswordForm() {
     if (password !== confirmation) { setError("Las contraseñas no coinciden."); return; }
     setDone(true); setError("");
   }
-  return <AuthFrame className="auth-result-card" title={expired ? "Enlace vencido" : done ? "Contraseña actualizada" : "Crea una nueva contraseña"} lead={expired ? "El enlace ya no es válido. Solicita uno nuevo para proteger tu cuenta." : done ? "Tu contraseña se cambió correctamente." : "Elige una contraseña segura para volver a acceder a tu cuenta."}>
+  return <AuthFrame simulated className="auth-result-card" title={expired ? "Enlace vencido" : done ? "Contraseña actualizada" : "Crea una nueva contraseña"} lead={expired ? "El enlace ya no es válido. Solicita uno nuevo para proteger tu cuenta." : done ? "Tu contraseña se cambió correctamente." : "Elige una contraseña segura para volver a acceder a tu cuenta."}>
     {expired ? <><div className="auth-alert" role="alert">El enlace de recuperación venció.</div><Link className="button button-primary button-wide auth-submit" href="/recuperar-contrasena">Solicitar otro enlace</Link></> : done ? <><div className="auth-result-icon" aria-hidden="true"><UiIcon name="check" size={25} /></div><Link className="button button-primary button-wide auth-submit" href="/login">Ir al inicio de sesión</Link></> : <form className="auth-form" onSubmit={submit} noValidate>
       <div className="field"><label htmlFor="new-password">Contraseña nueva</label><input id="new-password" name="password" type="password" autoComplete="new-password" placeholder="Mínimo 8 caracteres" required /><small>Incluye una mayúscula y un número.</small></div>
       <div className="field"><label htmlFor="new-password-confirm">Confirmar contraseña</label><input id="new-password-confirm" name="confirmation" type="password" autoComplete="new-password" placeholder="Repite tu contraseña" required /></div>

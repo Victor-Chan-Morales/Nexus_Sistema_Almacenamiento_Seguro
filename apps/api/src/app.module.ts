@@ -9,6 +9,7 @@ import { FilesModule } from './modules/files/files.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { HealthModule } from './modules/health/health.module';
 import { IntegrationModule } from './modules/integration/integration.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -29,25 +30,26 @@ import { IntegrationModule } from './modules/integration/integration.module';
         username: config.get('POSTGRES_USER', 'nexus_dev'),
         password: config.get('POSTGRES_PASSWORD', 'local_only_change_me'),
         database: config.get('POSTGRES_DB', 'nexus_dev'),
+
         // Carga automáticamente las entidades registradas con TypeOrmModule.forFeature (IAM, etc.)
         autoLoadEntities: true,
         // El esquema (iam, admin, ...) lo crean las migraciones versionadas, NO TypeORM.
         // Con `synchronize: true` TypeORM intentaría alterar tablas ya migradas (columnas, tipos,
         // restricciones) y podría borrar datos. Solo se activa a propósito con DB_SYNCHRONIZE=true.
         synchronize: config.get('DB_SYNCHRONIZE') === 'true',
-        // Sin volcado de consultas por defecto: los parámetros pueden incluir hashes o tokens.
         logging: config.get('DB_LOGGING') === 'true' ? ['error', 'warn'] : false,
       }),
       inject: [ConfigService],
     }),
 
     // ── Módulos de dominio ───────────────────────────────────────────────────
-    IamModule,       // Identidad: usuarios, organizaciones, roles, sesiones
-    BillingModule,   // Facturación: planes, suscripciones (simuladas)
-    FilesModule,     // Archivos: carpetas, metadatos, versiones, cuotas
-    StorageModule,   // Almacenamiento: contrato con SeaweedFS (S3)
-    HealthModule,    // Salud: endpoint /api/health para verificar el sistema
+    IamModule,         // Identidad: usuarios, organizaciones, roles, sesiones
+    BillingModule,     // Facturación: planes, catálogo, suscripciones
+    FilesModule,       // Archivos: carpetas, metadatos, versiones, cuotas
+    StorageModule,     // Almacenamiento: contrato con SeaweedFS (S3)
+    HealthModule,      // Salud: endpoint /api/health para verificar el sistema
     IntegrationModule, // Integración: SubscriptionCoordinator entre Billing y Files
+    DashboardModule,   // Integración: GET /api/dashboard (plan + uso + organización)
   ],
 })
 export class AppModule {}

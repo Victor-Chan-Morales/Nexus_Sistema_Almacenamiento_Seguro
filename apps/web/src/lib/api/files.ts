@@ -1,5 +1,5 @@
 import { apiRequest, apiRequestBlob, filenameFromContentDisposition } from "./client";
-import type { ApiRequestOptions, CreateFolderInput, CreateFolderResponse, FolderItemsResponse, FolderListResponse, UUID, UploadFileResponse } from "./types";
+import type { ApiRequestOptions, CreateFolderInput, CreateFolderResponse, FileMetadata, FolderItemsResponse, FolderListResponse, UUID, UploadFileResponse } from "./types";
 
 export function listFolders(accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
   return apiRequest<FolderListResponse>("/folders", { method: "GET" }, { ...options, accessToken });
@@ -13,7 +13,7 @@ export function createFolder(input: CreateFolderInput, accessToken: string, opti
   }, { ...options, accessToken });
 }
 
-export function getFolderItems<TFile = unknown>(folderId: UUID, accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
+export function getFolderItems<TFile = FileMetadata>(folderId: UUID, accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
   return apiRequest<FolderItemsResponse<TFile>>(`/folders/${encodeURIComponent(folderId)}/items`, { method: "GET" }, { ...options, accessToken });
 }
 

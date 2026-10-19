@@ -1,7 +1,7 @@
 export const DEMO_EVENT = "nexus-demo-change";
 export const DEMO_KEY = "nexus-demo-state";
 export const DEMO_SESSION = "nexus-demo-session";
-export const DEMO_PLAN_BYTES = 5 * 1024 ** 3;
+export const DEMO_PLAN_BYTES = 5_000_000_000;
 
 export type DemoFolder = { id: string; name: string; parentId: string | null; deleted?: boolean };
 export type DemoVersion = { number: number; size: number; type: string; uploadedAt: string };
