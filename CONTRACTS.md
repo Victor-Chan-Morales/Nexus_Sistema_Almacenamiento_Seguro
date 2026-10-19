@@ -1,6 +1,6 @@
 # Contratos compartidos de API e integración
 
-> **Versión 0.3 — aprobada para implementación por Víctor, integrador, el 2026-10-18.** Esta versión fija las interfaces que deben seguir las PR de IAM, Billing, Files y frontend. Si una implementación necesita cambiar una ruta, campo o regla, primero se actualiza este documento y `SESSION_LOG.md`.
+> **Versión 0.4 — aprobada para implementación por Víctor, integrador, el 2026-10-18.** Esta versión fija las interfaces que deben seguir las PR de IAM, Billing, Files y frontend. Si una implementación necesita cambiar una ruta, campo o regla, primero se actualiza este documento y `SESSION_LOG.md`.
 
 Los tipos del frontend viven en `apps/web/src/lib/api/types.ts`. Son tipos de compilación; la API también debe validar los datos en tiempo de ejecución.
 
@@ -39,6 +39,7 @@ Los tipos del frontend viven en `apps/web/src/lib/api/types.ts`. Son tipos de co
 - El refresh token dura **7 días**, se persiste en servidor únicamente como hash y se entrega en una cookie llamada `nexus_refresh` con `HttpOnly`, `SameSite=Lax`, `Path=/api/auth` y `Secure` en producción.
 - Cada refresh rota la cookie. Logout revoca la sesión asociada a esa cookie y responde `204`.
 - Login y refresh devuelven el mismo formato de sesión: access token, expiración, usuario, organización activa y rol.
+- Después de validar correo y contraseña, si la cuenta aún no verificó su correo, `POST /auth/login` responde HTTP `403` con el error común y `code: "EMAIL_NOT_VERIFIED"`. No emite access token ni cookie de refresh en ese caso.
 - `POST /auth/verify-email` recibe `{ token }`. El enlace del correo debe abrir `/verificar-correo?token=...`; el token vence en 15 minutos y solo se usa una vez.
 - El registro agrega en la misma transacción un mensaje de salida para enviar el correo de verificación. El envío SMTP ocurre después del commit y se reintenta desde una cola/outbox persistente si el proveedor falla; no se revierte una cuenta ya creada por una falla temporal de correo ni se devuelve el token al navegador. No hay endpoint de reenvío manual en este corte.
 - El guard JWT valida usuario y membresía, y entrega a controladores `req.user = { userId, email, organizationId, organizationName, role }`. `organizationName` corresponde a la membresía activa validada. Refresh conserva esa organización y comprueba que la membresía siga activa; nunca selecciona otra silenciosamente.
