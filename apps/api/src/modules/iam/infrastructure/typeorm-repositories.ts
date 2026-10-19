@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, IsNull } from 'typeorm';
+import { DataSource, In, IsNull } from 'typeorm';
 import {
   DeploymentModel,
   MembershipStatus,
@@ -8,6 +8,7 @@ import {
   TokenPurpose,
   UserStatus,
 } from '../domain/enums';
+import { EmailOutbox, OutboxStatus } from '../entities/email-outbox.entity';
 import { Membership } from '../entities/membership.entity';
 import { OneTimeToken } from '../entities/one-time-token.entity';
 import { Organization } from '../entities/organization.entity';
@@ -15,9 +16,11 @@ import { IamRole } from '../entities/role.entity';
 import { Session } from '../entities/session.entity';
 import { User } from '../entities/user.entity';
 import {
+  EmailOutboxRepository,
   MembershipRepository,
   OneTimeTokenRepository,
   OrganizationRepository,
+  OutboxMessage,
   SessionRepository,
   UserRepository,
 } from '../ports/repositories';
@@ -123,7 +126,7 @@ export class TypeOrmSessionRepository implements SessionRepository {
 
   create(
     tx: TransactionContext,
-    data: { userId: string; refreshTokenHash: string; expiresAt: Date },
+    data: { userId: string; organizationId: string; refreshTokenHash: string; expiresAt: Date },
   ): Promise<Session> {
     return tx.save(tx.create(Session, { ...data, revokedAt: null }));
   }
@@ -173,5 +176,77 @@ export class TypeOrmOneTimeTokenRepository implements OneTimeTokenRepository {
   async markUsed(tx: TransactionContext, token: OneTimeToken): Promise<void> {
     await tx.update(OneTimeToken, { id: token.id }, { usedAt: () => 'now()' });
     token.usedAt = new Date();
+  }
+}
+
+@Injectable()
+export class TypeOrmEmailOutboxRepository implements EmailOutboxRepository {
+  constructor(private readonly dataSource: DataSource) {}
+
+  async create(
+    tx: TransactionContext,
+    data: { kind: string; recipientEmail: string; recipientName: string; encryptedPayload: string; expiresAt: Date },
+  ): Promise<string> {
+    const row = await tx.save(
+      tx.create(EmailOutbox, {
+        ...data,
+        status: OutboxStatus.PENDING,
+        attempts: 0,
+        nextAttemptAt: new Date(),
+        lastError: null,
+        sentAt: null,
+      }),
+    );
+    return row.id;
+  }
+
+  async claimDue(
+    tx: TransactionContext,
+    data: { ids?: string[]; now: Date; leaseUntil: Date; limit: number },
+  ): Promise<OutboxMessage[]> {
+    const query = tx
+      .createQueryBuilder(EmailOutbox, 'o')
+      .where('o.status = :pending', { pending: OutboxStatus.PENDING })
+      .andWhere('o.nextAttemptAt <= :now', { now: data.now })
+      .orderBy('o.nextAttemptAt', 'ASC')
+      .limit(data.limit)
+      .setLock('pessimistic_write')
+      .setOnLocked('skip_locked');
+    if (data.ids) query.andWhere('o.id IN (:...ids)', { ids: data.ids });
+
+    const rows = await query.getMany();
+    if (rows.length === 0) return [];
+    // El arrendamiento evita que otra instancia tome el mismo mensaje mientras se envía.
+    await tx.update(EmailOutbox, { id: In(rows.map((row) => row.id)) }, { nextAttemptAt: data.leaseUntil });
+
+    return rows.map((row) => ({
+      id: row.id,
+      recipientEmail: row.recipientEmail,
+      recipientName: row.recipientName,
+      encryptedPayload: row.encryptedPayload,
+      attempts: row.attempts,
+      expiresAt: row.expiresAt,
+    }));
+  }
+
+  async markSent(id: string): Promise<void> {
+    // Se vacía el payload: el token en claro no debe quedar en la base después del envío.
+    await this.dataSource.manager.update(
+      EmailOutbox,
+      { id },
+      { status: OutboxStatus.SENT, sentAt: () => 'now()', encryptedPayload: '', lastError: null },
+    );
+  }
+
+  async markFailed(id: string, data: { attempts: number; nextAttemptAt: Date; lastError: string }): Promise<void> {
+    await this.dataSource.manager.update(EmailOutbox, { id }, {
+      attempts: data.attempts,
+      nextAttemptAt: data.nextAttemptAt,
+      lastError: data.lastError,
+    });
+  }
+
+  async markExpired(id: string): Promise<void> {
+    await this.dataSource.manager.update(EmailOutbox, { id }, { status: OutboxStatus.EXPIRED, encryptedPayload: '' });
   }
 }

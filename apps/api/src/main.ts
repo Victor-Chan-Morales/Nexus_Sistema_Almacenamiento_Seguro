@@ -12,9 +12,11 @@ async function bootstrap() {
   // Habilitamos CORS para que el frontend Next.js pueda consumir el API.
   // `credentials: true` es obligatorio para que el navegador guarde y envíe la cookie
   // HttpOnly del refresh token (IAM); por eso `origin` debe ser explícito, nunca '*'.
+  // `exposedHeaders` permite a la web leer el nombre de archivo de Content-Disposition en las descargas.
   app.enableCors({
     origin: process.env.WEB_URL ?? 'http://localhost:3000',
     credentials: true,
+    exposedHeaders: ['Content-Disposition'],
   });
 
   // Validación automática de DTOs con class-validator.

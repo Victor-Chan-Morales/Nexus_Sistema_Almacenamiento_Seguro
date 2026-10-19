@@ -2,6 +2,8 @@
 
 **Fecha:** 2026-10-18 · **Módulo:** IAM · **Revisión de:** `revision_pr6_iam.md`
 
+> **Análisis preliminar con alcance limitado.** No es la revisión actual de la PR #6. Los puntos vigentes están en `docs/DEVOLUCION_SEBASTIAN_PR_6_IAM.md` y en `SESSION_LOG.md`.
+
 ## Alcance y límites de esta revisión (leer primero)
 - **Disponible:** el código entregado en `iam-module.zip` (verificado idéntico a la carpeta de trabajo), los cinco documentos del equipo (`BUSINESS_RULES.md`, `CONTRACTS.md`, `CONTRIBUTING.md`, `SESSION_LOG.md`, `ARCHITECTURE.md`; se citan con número de línea) y lo compartido en la conversación (compose, `main.ts`, `app.module.ts`, salida de `psql`, ejecuciones del script de humo).
 - **No disponible:** el repositorio y su estado de Git, la PR #6, `ENTS_REGISTRY.md`, ADR-002/003/004, `docs/modelo-minimo.md`, las migraciones y `apps/web`. Lo que depende de ellos queda **No verificado**. **La PR puede diferir de este código.**

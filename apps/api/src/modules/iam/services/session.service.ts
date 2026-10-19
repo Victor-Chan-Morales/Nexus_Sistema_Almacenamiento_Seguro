@@ -35,6 +35,7 @@ export class SessionService {
     const refreshToken = this.opaque.generate();
     const session = await this.sessions.create(tx, {
       userId: user.id,
+      organizationId: membership.organizationId,
       refreshTokenHash: this.opaque.hash(refreshToken),
       expiresAt: addDays(REFRESH_TOKEN_TTL_DAYS),
     });
@@ -52,7 +53,7 @@ export class SessionService {
 
   /**
    * Rota el refresh token. Reutilizar uno ya revocado revoca todas las sesiones del usuario.
-   * iam.session no guarda la organización: se vuelve a derivar de la primera membresía activa.
+   * La organización es la de la sesión: si su membresía ya no está activa, la sesión se rechaza.
    */
   async refresh(rawToken: string | undefined): Promise<AuthResult> {
     if (!rawToken) throw IamErrors.invalidSession();
@@ -70,7 +71,7 @@ export class SessionService {
       if (session.isExpired()) return null;
 
       const user = await this.users.findById(session.userId, tx);
-      const membership = user ? await this.memberships.findActive(user.id, undefined, tx) : null;
+      const membership = user ? await this.memberships.findActive(user.id, session.organizationId, tx) : null;
       const verifiedOk = !this.settings.requireVerifiedEmail || !!user?.emailVerified;
 
       await this.sessions.revoke(tx, session); // el token usado nunca vuelve a servir

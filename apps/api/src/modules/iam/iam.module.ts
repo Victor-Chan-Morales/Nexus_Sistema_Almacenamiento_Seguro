@@ -4,6 +4,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ACCESS_TOKEN_TTL_SECONDS } from './constants';
+import { EmailOutbox } from './entities/email-outbox.entity';
 import { Membership } from './entities/membership.entity';
 import { OneTimeToken } from './entities/one-time-token.entity';
 import { Organization } from './entities/organization.entity';
@@ -17,7 +18,9 @@ import { Argon2PasswordHasher } from './infrastructure/argon2-password-hasher';
 import { CryptoOpaqueTokens } from './infrastructure/crypto-opaque-tokens';
 import { EmailService } from './infrastructure/email.service';
 import { JwtAccessTokenIssuer } from './infrastructure/jwt-access-token-issuer';
+import { OutboxCipher } from './infrastructure/outbox-cipher';
 import {
+  TypeOrmEmailOutboxRepository,
   TypeOrmMembershipRepository,
   TypeOrmOneTimeTokenRepository,
   TypeOrmOrganizationRepository,
@@ -26,6 +29,7 @@ import {
 } from './infrastructure/typeorm-repositories';
 import { TypeOrmUnitOfWork } from './infrastructure/typeorm-unit-of-work';
 import {
+  EmailOutboxRepository,
   MembershipRepository,
   OneTimeTokenRepository,
   OrganizationRepository,
@@ -37,6 +41,7 @@ import { UnitOfWork } from './ports/transaction';
 import { VerificationMailer } from './ports/verification-mailer';
 import { RegistrationHooks } from './registration-hooks';
 import { AuthService } from './services/auth.service';
+import { EmailOutboxService } from './services/email-outbox.service';
 import { EmailVerificationService } from './services/email-verification.service';
 import { RegistrationService } from './services/registration.service';
 import { SessionService } from './services/session.service';
@@ -55,7 +60,7 @@ function resolveJwtSecret(config: ConfigService): string {
   imports: [
     ConfigModule,
     // Registra las entidades del módulo (requiere autoLoadEntities en la configuración TypeORM).
-    TypeOrmModule.forFeature([User, Organization, Membership, IamRole, Session, OneTimeToken]),
+    TypeOrmModule.forFeature([User, Organization, Membership, IamRole, Session, OneTimeToken, EmailOutbox]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -72,6 +77,8 @@ function resolveJwtSecret(config: ConfigService): string {
     RegistrationService,
     SessionService,
     EmailVerificationService,
+    EmailOutboxService,
+    OutboxCipher,
     IamSettings,
     RegistrationHooks,
     JwtStrategy,
@@ -83,6 +90,7 @@ function resolveJwtSecret(config: ConfigService): string {
     { provide: MembershipRepository, useClass: TypeOrmMembershipRepository },
     { provide: SessionRepository, useClass: TypeOrmSessionRepository },
     { provide: OneTimeTokenRepository, useClass: TypeOrmOneTimeTokenRepository },
+    { provide: EmailOutboxRepository, useClass: TypeOrmEmailOutboxRepository },
     { provide: PasswordHasher, useClass: Argon2PasswordHasher },
     { provide: AccessTokenIssuer, useClass: JwtAccessTokenIssuer },
     { provide: OpaqueTokens, useClass: CryptoOpaqueTokens },

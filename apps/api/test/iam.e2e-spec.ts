@@ -1,7 +1,7 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
-import request from 'supertest';
+import * as request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
 import { ApiExceptionFilter } from '../src/common/filters/api-exception.filter';
@@ -9,12 +9,16 @@ import { REFRESH_COOKIE_NAME } from '../src/modules/iam/constants';
 import { Organization } from '../src/modules/iam/entities/organization.entity';
 import { User } from '../src/modules/iam/entities/user.entity';
 import { Session } from '../src/modules/iam/entities/session.entity';
+import { EmailOutboxService } from '../src/modules/iam/services/email-outbox.service';
+import { RegistrationHooks } from '../src/modules/iam/registration-hooks';
 import { VerificationMailer } from '../src/modules/iam/ports/verification-mailer';
 
 /** Captura el token que normalmente viajaría por correo (en producción solo está en el email). */
 class FakeEmailService {
   sent: { to: string; token: string }[] = [];
+  failing = false;
   async sendVerification(to: string, _name: string, token: string) {
+    if (this.failing) throw new Error('SMTP caído');
     this.sent.push({ to, token });
   }
   tokenFor(to: string): string {
@@ -46,6 +50,11 @@ describe('IAM (e2e) — contrato CONTRACTS.md v0.2', () => {
       .overrideProvider(VerificationMailer)
       .useValue(mailer)
       .compile();
+
+    // Billing y Files aún no registran sus hooks en esta rama; el registro los exige, así que aquí se simulan.
+    const hooks = moduleRef.get(RegistrationHooks);
+    hooks.register('demo-subscription', async () => undefined);
+    hooks.register('personal-drive', async () => undefined);
 
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api');
@@ -251,5 +260,43 @@ describe('IAM (e2e) — contrato CONTRACTS.md v0.2', () => {
 
     await request(server()).post('/api/auth/logout').set('Cookie', cookieHeader(cookie)).expect(204);
     await request(server()).post('/api/auth/refresh').set('Cookie', cookieHeader(cookie)).expect(401);
+  });
+
+  it('si el SMTP falla al registrar, la cuenta existe, el correo queda en la outbox y se envía al reintentar', async () => {
+    const email = emailOf('outbox');
+    mailer.failing = true;
+    try {
+      await request(server()).post('/api/auth/register').send(body(email)).expect(201);
+    } finally {
+      mailer.failing = false;
+    }
+
+    const [pending] = await dataSource.query(
+      `SELECT status, attempts, encrypted_payload FROM iam.email_outbox WHERE recipient_email = $1`,
+      [email],
+    );
+    expect(pending.status).toBe('pending');
+    expect(pending.attempts).toBe(1);
+    // Formato iv.tag.datos (AES-256-GCM en base64): el token no queda en claro.
+    expect(pending.encrypted_payload.split('.')).toHaveLength(3);
+
+    // Se adelanta el siguiente intento para no esperar el backoff real.
+    await dataSource.query(
+      `UPDATE iam.email_outbox SET next_attempt_at = now() - interval '1 second' WHERE recipient_email = $1`,
+      [email],
+    );
+    await app.get(EmailOutboxService).dispatchDue();
+
+    const [sent] = await dataSource.query(
+      `SELECT status, encrypted_payload FROM iam.email_outbox WHERE recipient_email = $1`,
+      [email],
+    );
+    expect(sent.status).toBe('sent');
+    expect(sent.encrypted_payload).toBe('');
+
+    await request(server())
+      .post('/api/auth/verify-email')
+      .send({ token: mailer.tokenFor(email) })
+      .expect(200);
   });
 });

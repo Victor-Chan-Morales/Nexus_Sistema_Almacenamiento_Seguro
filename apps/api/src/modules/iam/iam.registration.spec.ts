@@ -1,7 +1,6 @@
-import { HttpException, Logger } from '@nestjs/common';
+import { HttpException } from '@nestjs/common';
 import { INITIAL_DEPLOYMENT_MODEL, Role } from './domain/enums';
 import { RegistrationHooks } from './registration-hooks';
-import { EmailVerificationService } from './services/email-verification.service';
 import { RegistrationService } from './services/registration.service';
 
 const codeOf = async (promise: Promise<unknown>): Promise<string> => {
@@ -34,10 +33,13 @@ const build = () => {
   const memberships = { create: jest.fn(async () => (order.push('membership'), { id: 'm1' })) };
   const hasher = { hash: jest.fn(async (p: string) => `hash:${p}`) };
   const verification = {
-    issue: jest.fn(async () => (order.push('token'), 'raw-token')),
+    issue: jest.fn(async () => (order.push('token'), 'outbox-1')),
     deliver: jest.fn(async () => order.push('deliver')),
   };
   const hooks = new RegistrationHooks();
+  // Los dos hooks que el registro exige (Billing y Files) se registran por defecto en cada prueba.
+  hooks.register('demo-subscription', async () => void order.push('demo-subscription'));
+  hooks.register('personal-drive', async () => void order.push('personal-drive'));
   const uow = { run: jest.fn((work: (tx: unknown) => unknown) => work('tx')) };
 
   const service = new RegistrationService(
@@ -72,21 +74,31 @@ describe('RegistrationService.register (sin base de datos: puertos simulados)', 
     expect(result).toEqual({ userId: 'u1', organizationId: 'o1', role: Role.TENANT_ADMIN, verificationRequired: true });
   });
 
-  it('los hooks reciben la transacción y se ejecutan después de la membresía y antes del token', async () => {
+  it('los hooks van después de la membresía, antes del token, y reciben la transacción', async () => {
     const t = build();
     const seen: unknown[] = [];
     t.hooks.register('prueba', async (ctx) => {
-      t.order.push('hook');
+      t.order.push('prueba');
       seen.push(ctx);
     });
 
     await t.service.register(DTO);
 
     expect(seen).toEqual([{ manager: 'tx', userId: 'u1', organizationId: 'o1' }]);
-    expect(t.order).toEqual(['user', 'organization', 'membership', 'hook', 'token', 'deliver']);
+    expect(t.order).toEqual([
+      'user',
+      'organization',
+      'membership',
+      'demo-subscription',
+      'personal-drive',
+      'prueba',
+      'token',
+      'deliver',
+    ]);
+    expect(t.verification.deliver).toHaveBeenCalledWith('outbox-1');
   });
 
-  it('si un hook falla, el registro falla, no se emite el token y no se envía correo (la transacción se revierte)', async () => {
+  it('si un hook falla, el registro falla, no se emite el token y no se envía correo', async () => {
     const t = build();
     t.hooks.register('billing-que-falla', async () => {
       throw new Error('cuota no creada');
@@ -156,36 +168,19 @@ describe('RegistrationService.register (sin base de datos: puertos simulados)', 
   });
 });
 
-describe('EmailVerificationService.deliver (fallo del proveedor de correo)', () => {
-  const build2 = (mailer: { sendVerification: unknown }) =>
-    new EmailVerificationService({} as never, {} as never, {} as never, {} as never, mailer as never);
-  const user = { id: 'u1', email: 'ana@test.com', fullName: 'Ana' };
+describe('RegistrationHooks (hooks requeridos)', () => {
+  const ctx = { manager: 'tx', userId: 'u1', organizationId: 'o1' } as never;
 
-  it('si el SMTP falla no lanza (la cuenta ya existe) y el registro sigue respondiendo', async () => {
-    const service = build2({ sendVerification: jest.fn().mockRejectedValue(new Error('ECONNREFUSED 127.0.0.1:1025')) });
-    let threw = false;
-    try {
-      await service.deliver(user, 'TOKEN-SECRETO-123');
-    } catch {
-      threw = true;
-    }
-    expect(threw).toBe(false);
+  it('si falta el hook de Files (personal-drive), el registro se rechaza en lugar de confirmarse sin Drive', async () => {
+    const hooks = new RegistrationHooks();
+    hooks.register('demo-subscription', async () => undefined);
+
+    await expect(hooks.run(ctx)).rejects.toThrow('Faltan hooks de registro requeridos: personal-drive');
   });
 
-  it('el log del fallo incluye el userId y el tipo de error, pero nunca el token, el correo ni el mensaje del SMTP', async () => {
-    const spy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-    const service = build2({
-      sendVerification: jest.fn().mockRejectedValue(new Error('rechazado para ana@test.com con TOKEN-SECRETO-123')),
-    });
+  it('si faltan todos los hooks requeridos, los lista todos', async () => {
+    const hooks = new RegistrationHooks();
 
-    await service.deliver(user, 'TOKEN-SECRETO-123');
-
-    expect(spy).toHaveBeenCalledTimes(1);
-    const logged = String(spy.mock.calls[0][0]);
-    expect(logged).toContain('userId=u1');
-    expect(logged).toContain('Error');
-    expect(logged).not.toContain('TOKEN-SECRETO-123');
-    expect(logged).not.toContain('ana@test.com');
-    (spy as unknown as { mockRestore: () => void }).mockRestore();
+    await expect(hooks.run(ctx)).rejects.toThrow('demo-subscription, personal-drive');
   });
 });

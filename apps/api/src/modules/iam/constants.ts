@@ -1,4 +1,4 @@
-export const REFRESH_COOKIE_NAME = 'nexus_rt';
+export const REFRESH_COOKIE_NAME = 'nexus_refresh';
 /** La cookie solo viaja a las rutas de autenticación (prefijo global /api). */
 export const REFRESH_COOKIE_PATH = '/api/auth';
 

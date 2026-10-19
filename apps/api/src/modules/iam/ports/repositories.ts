@@ -50,7 +50,7 @@ export abstract class MembershipRepository {
 export abstract class SessionRepository {
   abstract create(
     tx: TransactionContext,
-    data: { userId: string; refreshTokenHash: string; expiresAt: Date },
+    data: { userId: string; organizationId: string; refreshTokenHash: string; expiresAt: Date },
   ): Promise<Session>;
   abstract findByRefreshHashForUpdate(
     tx: TransactionContext,
@@ -73,4 +73,33 @@ export abstract class OneTimeTokenRepository {
     purpose: TokenPurpose,
   ): Promise<OneTimeToken | null>;
   abstract markUsed(tx: TransactionContext, token: OneTimeToken): Promise<void>;
+}
+
+/** Mensaje reclamado para envío: el token sigue cifrado hasta el momento de enviarlo. */
+export interface OutboxMessage {
+  id: string;
+  recipientEmail: string;
+  recipientName: string;
+  encryptedPayload: string;
+  attempts: number;
+  expiresAt: Date;
+}
+
+/** Outbox de correo. El servicio decide cuándo reclamar, enviar y marcar; aquí solo hay persistencia. */
+export abstract class EmailOutboxRepository {
+  abstract create(
+    tx: TransactionContext,
+    data: { kind: string; recipientEmail: string; recipientName: string; encryptedPayload: string; expiresAt: Date },
+  ): Promise<string>;
+  /** Reclama mensajes pendientes y vencidos para reintento con bloqueo (SKIP LOCKED) hasta `leaseUntil`. */
+  abstract claimDue(
+    tx: TransactionContext,
+    data: { ids?: string[]; now: Date; leaseUntil: Date; limit: number },
+  ): Promise<OutboxMessage[]>;
+  abstract markSent(id: string): Promise<void>;
+  abstract markFailed(
+    id: string,
+    data: { attempts: number; nextAttemptAt: Date; lastError: string },
+  ): Promise<void>;
+  abstract markExpired(id: string): Promise<void>;
 }

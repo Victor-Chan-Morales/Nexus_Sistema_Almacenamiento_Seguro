@@ -11,6 +11,12 @@ export interface RegistrationContext {
 export type RegistrationHook = (ctx: RegistrationContext) => Promise<void>;
 
 /**
+ * Hooks que el registro exige. Si alguno no está registrado, el registro falla y se revierte: una cuenta
+ * sin suscripción Demo o sin Drive no puede confirmarse como éxito.
+ */
+export const REQUIRED_REGISTRATION_HOOKS = ['demo-subscription', 'personal-drive'] as const;
+
+/**
  * Abierto a extensión, cerrado a modificación (OCP): otros módulos participan en el registro
  * sin que IAM los conozca y sin dependencias circulares (Billing y Files ya importan IamModule por el guard).
  *
@@ -26,6 +32,10 @@ export class RegistrationHooks {
   }
 
   async run(ctx: RegistrationContext): Promise<void> {
+    const missing = REQUIRED_REGISTRATION_HOOKS.filter((name) => !this.hooks.has(name));
+    if (missing.length > 0) {
+      throw new Error(`Faltan hooks de registro requeridos: ${missing.join(', ')}`);
+    }
     for (const hook of this.hooks.values()) {
       await hook(ctx);
     }

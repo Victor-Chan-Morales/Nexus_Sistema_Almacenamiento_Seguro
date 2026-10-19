@@ -1,8 +1,8 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 /**
- * Tabla iam.session. La tabla NO tiene organization_id: al refrescar, la organización se vuelve a
- * derivar de la primera membresía activa (selector de organización: pendiente).
+ * Tabla iam.session. Guarda la organización activa con la que se abrió la sesión: el refresh la conserva
+ * y revalida su membresía, sin elegir otra organización en silencio.
  * No se mapean ip_address, user_agent ni created_at (la BD pone el valor por defecto).
  */
 @Entity({ schema: 'iam', name: 'session' })
@@ -12,6 +12,9 @@ export class Session {
 
   @Column({ name: 'user_id', type: 'uuid' })
   userId!: string;
+
+  @Column({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string;
 
   /** SHA-256 hex del refresh token. El valor en claro solo vive en la cookie HttpOnly. */
   @Column({ name: 'refresh_token_hash', type: 'varchar', length: 255 })

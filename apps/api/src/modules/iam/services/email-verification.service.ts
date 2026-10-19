@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { VERIFICATION_TOKEN_TTL_MINUTES } from '../constants';
 import { TokenPurpose } from '../domain/enums';
 import { User } from '../entities/user.entity';
@@ -7,42 +7,43 @@ import { addMinutes } from '../iam.utils';
 import { OneTimeTokenRepository, UserRepository } from '../ports/repositories';
 import { OpaqueTokens } from '../ports/security';
 import { TransactionContext, UnitOfWork } from '../ports/transaction';
-import { VerificationMailer } from '../ports/verification-mailer';
+import { EmailOutboxService } from './email-outbox.service';
 
 /** Todo lo relativo al token de verificación: emitir, entregar por correo y consumir (un solo uso, 15 min). */
 @Injectable()
 export class EmailVerificationService {
-  private readonly logger = new Logger(EmailVerificationService.name);
-
   constructor(
     private readonly uow: UnitOfWork,
     private readonly tokensRepo: OneTimeTokenRepository,
     private readonly users: UserRepository,
     private readonly opaque: OpaqueTokens,
-    private readonly mailer: VerificationMailer,
+    private readonly outbox: EmailOutboxService,
   ) {}
 
-  /** Persiste solo el hash y devuelve el token en claro, que debe salir únicamente por correo. */
-  async issue(tx: TransactionContext, userId: string): Promise<string> {
+  /**
+   * Dentro de la transacción del registro: persiste solo el hash del token y deja el correo en la outbox.
+   * Devuelve el id del mensaje para enviarlo después del commit.
+   */
+  async issue(tx: TransactionContext, user: Pick<User, 'id' | 'email' | 'fullName'>): Promise<string> {
     const rawToken = this.opaque.generate();
+    const expiresAt = addMinutes(VERIFICATION_TOKEN_TTL_MINUTES);
     await this.tokensRepo.create(tx, {
-      userId,
+      userId: user.id,
       purpose: TokenPurpose.EMAIL_VERIFICATION,
       tokenHash: this.opaque.hash(rawToken),
-      expiresAt: addMinutes(VERIFICATION_TOKEN_TTL_MINUTES),
+      expiresAt,
     });
-    return rawToken;
+    return this.outbox.enqueueVerification(tx, {
+      recipientEmail: user.email,
+      recipientName: user.fullName,
+      rawToken,
+      expiresAt,
+    });
   }
 
-  /** Se llama tras el commit. Si el SMTP falla la cuenta ya existe: se registra el error (sin token) y se sigue. */
-  async deliver(user: Pick<User, 'id' | 'email' | 'fullName'>, rawToken: string): Promise<void> {
-    try {
-      await this.mailer.sendVerification(user.email, user.fullName, rawToken);
-    } catch (err) {
-      this.logger.error(
-        `No se pudo enviar el correo de verificación (userId=${user.id}): ${(err as Error).name}`,
-      );
-    }
+  /** Tras el commit. Si el envío falla, el mensaje queda en la outbox para reintento; no lanza. */
+  deliver(outboxId: string): Promise<void> {
+    return this.outbox.dispatch(outboxId);
   }
 
   async verify(rawToken: string): Promise<void> {

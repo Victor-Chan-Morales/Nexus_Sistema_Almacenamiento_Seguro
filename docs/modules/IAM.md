@@ -59,7 +59,7 @@ request. Ninguna ruta lee `organizationId` del body, query o headers; `Validatio
 → `{ "userId": "uuid", "organizationId": "uuid", "role": "tenant_admin", "verificationRequired": true }`
 
 Crea usuario, organización (`deployment_model = cloud`), membresía con rol `tenant_admin`, hooks (suscripción demo + cuota, Drive personal "Mi espacio" con carpeta "Archivos")
-y token de verificación en **una sola transacción**. El correo sale después del commit; si el SMTP falla la cuenta existe y se registra el error sin el token.
+token de verificación y mensaje en la **outbox** (`iam.email_outbox`) en **una sola transacción**. Los hooks obligatorios de Billing (`demo-subscription`) y Files (`personal-drive`) deben estar registrados: si falta alguno, el registro falla y se revierte. El correo se envía después del commit; si el SMTP falla, el mensaje queda pendiente y el worker lo reintenta con espera creciente hasta que el token venza. El token viaja cifrado en la outbox y se borra al enviarse o vencer.
 
 ### POST /api/auth/login — 200 (contrato v0.2)
 ```json
@@ -74,15 +74,16 @@ y token de verificación en **una sola transacción**. El correo sale después d
   "role": "tenant_admin"
 }
 ```
-Más cookie `nexus_rt` (HttpOnly, `Path=/api/auth`, 7 días, `Secure` según entorno). El refresh token nunca va en el body y en BD solo existe su hash (`iam.session.refresh_token_hash`). `iam.session` no guarda la organización: al refrescar se vuelve a derivar de la primera membresía activa.
+Más cookie `nexus_refresh` (HttpOnly, `Path=/api/auth`, 7 días, `Secure` según entorno). El refresh token nunca va en el body y en BD solo existe su hash (`iam.session.refresh_token_hash`). `iam.session.organization_id` guarda la organización activa del login: al refrescar se usa esa misma organización y se revalida su membresía; si ya no está activa, la sesión se rechaza.
 
 ### GET /api/auth/me — 200 (contrato v0.2) · `Authorization: Bearer <accessToken>`
 `{ "user": { "id", "fullName", "email" }, "organization": { "id", "name" }, "role": "tenant_admin" }`
 
-### Propuestas (pendientes de aprobación en CONTRACTS.md)
+### Rutas aprobadas en CONTRACTS.md (v0.4)
 - `POST /api/auth/verify-email` `{ token }` → `200 { "verified": true }`. Un solo uso, 15 min, solo se guarda el hash.
 - `POST /api/auth/refresh` (cookie, sin body) → `200` con el esquema del login; rota la cookie. Reutilizar un token ya rotado revoca todas las sesiones del usuario.
 - `POST /api/auth/logout` (cookie) → `204`; revoca la sesión y limpia la cookie.
+- `POST /api/auth/login` responde `403 EMAIL_NOT_VERIFIED` si el correo no está verificado (`IAM_REQUIRE_VERIFIED_EMAIL=true`, por defecto).
 
 ## Integración con frontend (Víctor)
 - `accessToken` solo en memoria; nunca en localStorage. `fetch(..., { credentials: 'include' })` en login, refresh y logout.

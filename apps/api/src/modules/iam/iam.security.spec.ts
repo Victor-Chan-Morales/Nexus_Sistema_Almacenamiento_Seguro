@@ -145,8 +145,9 @@ describe('EmailVerificationService (token de un solo uso, 15 minutos, propósito
     const users = { markEmailVerified: jest.fn() };
     const opaque = { hash: jest.fn((t: string) => `h(${t})`), generate: jest.fn().mockReturnValue('raw') };
     const uow = { run: jest.fn((work: (tx: unknown) => unknown) => work('tx')) };
-    const service = new EmailVerificationService(uow as never, tokensRepo as never, users as never, opaque as never, {} as never);
-    return { service, tokensRepo, users };
+    const outbox = { enqueueVerification: jest.fn().mockResolvedValue('out-1') };
+    const service = new EmailVerificationService(uow as never, tokensRepo as never, users as never, opaque as never, outbox as never);
+    return { service, tokensRepo, users, outbox };
   };
   const MIN = 60_000;
 
@@ -180,15 +181,15 @@ describe('EmailVerificationService (token de un solo uso, 15 minutos, propósito
 
   it('issue: guarda solo el hash, con propósito email_verification y vencimiento de 15 minutos', async () => {
     const t = build(null);
-    const raw = await t.service.issue('tx' as never, 'u1');
+    await t.service.issue('tx' as never, { id: 'u1', email: 'ana@test.com', fullName: 'Ana' });
     const data = (t.tokensRepo.create as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][1] as {
       tokenHash: string;
       purpose: string;
       expiresAt: Date;
     };
-    expect(raw).toBe('raw');
+    expect(t.outbox.enqueueVerification).toHaveBeenCalledWith('tx', expect.objectContaining({ rawToken: 'raw' }));
     expect(data.tokenHash).toBe('h(raw)');
-    expect(data.tokenHash).not.toBe(raw);
+    expect(data.tokenHash).not.toBe('raw');
     expect(data.purpose).toBe('email_verification');
     const ms = data.expiresAt.getTime() - Date.now();
     expect(ms > 14 * MIN && ms <= 15 * MIN).toBe(true);

@@ -34,7 +34,8 @@ import { HealthModule } from './modules/health/health.module';
         // Con `synchronize: true` TypeORM intentaría alterar tablas ya migradas (columnas, tipos,
         // restricciones) y podría borrar datos. Solo se activa a propósito con DB_SYNCHRONIZE=true.
         synchronize: config.get('DB_SYNCHRONIZE') === 'true',
-        logging: config.get('NODE_ENV') === 'development',
+        // Sin volcado de consultas por defecto: los parámetros pueden incluir hashes o tokens.
+        logging: config.get('DB_LOGGING') === 'true' ? ['error', 'warn'] : false,
       }),
       inject: [ConfigService],
     }),

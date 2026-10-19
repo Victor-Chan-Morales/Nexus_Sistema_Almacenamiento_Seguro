@@ -33,7 +33,7 @@ export class RegistrationService {
     const email = normalizeEmail(dto.email);
     const passwordHash = await this.hasher.hash(dto.password);
 
-    let created: { user: User; organization: Organization; rawToken: string };
+    let created: { user: User; organization: Organization; outboxId: string };
     try {
       created = await this.uow.run(async (tx) => {
         if (await this.users.findByEmail(email, tx)) throw IamErrors.emailTaken();
@@ -53,15 +53,16 @@ export class RegistrationService {
         // se confirman o revierten junto con el resto del registro.
         await this.hooks.run({ manager: tx, userId: user.id, organizationId: organization.id });
 
-        const rawToken = await this.verification.issue(tx, user.id);
-        return { user, organization, rawToken };
+        // Token y correo quedan en la misma transacción que la cuenta (outbox persistente).
+        const outboxId = await this.verification.issue(tx, user);
+        return { user, organization, outboxId };
       });
     } catch (err) {
       if (isUniqueViolation(err)) throw IamErrors.emailTaken(); // carrera entre dos registros simultáneos
       throw err;
     }
 
-    await this.verification.deliver(created.user, created.rawToken); // tras el commit
+    await this.verification.deliver(created.outboxId); // tras el commit; el fallo queda pendiente en la outbox
 
     return {
       userId: created.user.id,

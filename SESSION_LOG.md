@@ -5,6 +5,19 @@
 
 Registro dinámico de decisiones, acuerdos pendientes y bloqueos. Añada entradas nuevas al principio; no borre historia. Las propuestas se marcan como pendientes hasta que el equipo las acepte.
 
+## 2026-10-18 — Correcciones IAM según la devolución de la PR #6
+
+- **Estado:** Implementado en `Sebastian_S`; pendiente de verificación con PostgreSQL real.
+- **Decisiones:** se mantiene la v0.4 de `CONTRACTS.md` (incluye `EMAIL_NOT_VERIFIED`). Outbox completa de correo. La consolidación de migraciones la hace el integrador (Víctor).
+- **Implementado:**
+  - Cookie `nexus_refresh` (antes `nexus_rt`).
+  - `iam.session.organization_id`: el refresh conserva la organización y revalida su membresía; si ya no está activa, rechaza la sesión.
+  - Hooks obligatorios `demo-subscription` (Billing) y `personal-drive` (Files): si falta alguno, el registro falla y se revierte. **Hasta que Billing y Files los registren, el registro falla en la aplicación integrada.**
+  - Outbox `iam.email_outbox`: el mensaje se escribe en la transacción del registro, se envía después del commit y se reintenta con espera creciente hasta que el token venza. El token va cifrado y el payload se borra al enviar o vencer. Si cambia `JWT_SECRET`, los mensajes pendientes vencen sin enviarse.
+  - Configuración: `WEB_URL` como único origen; `exposedHeaders: Content-Disposition`; un solo `JWT_SECRET`; sin `WEB_ORIGIN` ni `JWT_EXPIRES_IN`; volcado de consultas de TypeORM desactivado salvo `DB_LOGGING=true`.
+  - Documentación: eliminados los `.Rhistory` y las propuestas v0.2 de `docs/proposals`; `revision_pr6_iam_resultado.md` rotulado como análisis preliminar.
+- **Pendiente:** Billing (`demo-subscription`) y Files (`personal-drive`) deben registrar sus hooks. Migración `20261019090000_add_session_organization_and_email_outbox.sql` aplicada en base limpia. Pruebas e2e con PostgreSQL.
+
 ## 2026-10-06 — Adopción e Implementación del Monolito Modular
 
 - **Estado:** Aprobado e Implementado.
