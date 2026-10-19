@@ -1,38 +1,41 @@
 import {
-  Injectable,
-  NotFoundException,
-  InternalServerErrorException,
-  ConflictException,
-  PayloadTooLargeException,
-  UnsupportedMediaTypeException,
   BadRequestException,
+  ConflictException,
   HttpException,
   HttpStatus,
+  Injectable,
+  InternalServerErrorException,
   Logger,
+  NotFoundException,
+  PayloadTooLargeException,
+  UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
+import { randomUUID } from 'crypto';
 import { Readable } from 'stream';
-import * as path from 'path';
-import { FileRecord } from './entities/file-record.entity';
-import { Folder } from './entities/folder.entity';
-import { FileVersion } from './entities/file-version.entity';
-import { Drive } from './entities/drive.entity';
-import { StorageService } from '../storage/storage.service';
+import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
 import { BillingService } from '../billing/billing.service';
+import { StorageService } from '../storage/storage.service';
+import { Destination } from './entities/destination.entity';
+import { Drive } from './entities/drive.entity';
+import { FileRecord } from './entities/file-record.entity';
+import { FileVersion } from './entities/file-version.entity';
+import { Folder } from './entities/folder.entity';
+import { Reservation } from './entities/reservation.entity';
+import { TenantEncryptionKey } from './entities/tenant-encryption-key.entity';
+import { TenantQuota } from './entities/tenant-quota.entity';
+import { Upload } from './entities/upload.entity';
+import { EncryptedFile, FilesCryptoService } from './files-crypto.service';
 
-// Exactamente 100,000,000 bytes según CONTRACTS.md
-const MAX_FILE_SIZE_BYTES = 100000000;
+const MAX_FILE_SIZE_BYTES = 100_000_000;
+const MAX_ACTIVE_UPLOADS_PER_USER = 3;
+const RESERVATION_TTL_MS = 24 * 60 * 60 * 1000;
 
-// Lista canónica de tipos admitidos con validación cruzada de extensión y MIME
 const ALLOWED_MIME_BY_EXT: Record<string, string[]> = {
   '.pdf': ['application/pdf'],
   '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
-  '.doc': ['application/msword'],
   '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
-  '.xls': ['application/vnd.ms-excel'],
   '.pptx': ['application/vnd.openxmlformats-officedocument.presentationml.presentation'],
-  '.ppt': ['application/vnd.ms-powerpoint'],
   '.jpg': ['image/jpeg'],
   '.jpeg': ['image/jpeg'],
   '.png': ['image/png'],
@@ -40,17 +43,30 @@ const ALLOWED_MIME_BY_EXT: Record<string, string[]> = {
   '.zip': ['application/zip', 'application/x-zip-compressed'],
 };
 
+interface StorageUsage {
+  usedBytes: bigint;
+  reservedBytes: bigint;
+  totalBytes: bigint;
+}
+
+interface UploadReservation {
+  uploadId: string;
+  reservationId: string;
+  existingResponse?: UploadedFileDto;
+}
+
+export interface UploadedFileDto {
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: string;
+  versionId: string;
+  uploadedAt: Date;
+}
+
 @Injectable()
 export class FilesService {
   private readonly logger = new Logger(FilesService.name);
-
-  // Registro de idempotencia en memoria
-  private readonly idempotencyCache = new Map<
-    string,
-    { status: 'processing' | 'completed'; response?: any; timestamp: number }
-  >();
-
-  // Control de concurrencia: máx 3 cargas simultáneas por usuario (ADR-003)
   private readonly activeUploadsByUser = new Map<string, number>();
 
   constructor(
@@ -60,43 +76,52 @@ export class FilesService {
     private readonly folderRepository: Repository<Folder>,
     @InjectRepository(FileVersion)
     private readonly versionRepository: Repository<FileVersion>,
-    @InjectRepository(Drive)
-    private readonly driveRepository: Repository<Drive>,
+    private readonly dataSource: DataSource,
     private readonly storageService: StorageService,
     private readonly billingService: BillingService,
-  ) {
-    setInterval(() => {
-      const oneHourAgo = Date.now() - 60 * 60 * 1000;
-      for (const [key, value] of this.idempotencyCache.entries()) {
-        if (value.timestamp < oneHourAgo) {
-          this.idempotencyCache.delete(key);
-        }
-      }
-    }, 30 * 60 * 1000).unref();
-  }
+    private readonly crypto: FilesCryptoService,
+  ) {}
 
   /**
-   * Obtiene o inicializa el Drive personal y la carpeta raíz de la organización
+   * Creates the personal Drive and tenant storage metadata. IAM passes its manager
+   * so these writes commit or roll back with account registration.
    */
   async getOrCreateUserDrive(
     organizationId: string,
     userId: string,
+    transactionManager?: EntityManager,
   ): Promise<{ id: string; name: string; rootFolderId: string }> {
-    let drive = await this.driveRepository.findOne({
-      where: { organizationId, ownerUserId: userId },
-    });
+    if (transactionManager) {
+      return this.ensureUserDrive(transactionManager, organizationId, userId);
+    }
+    return this.dataSource.transaction((manager) =>
+      this.ensureUserDrive(manager, organizationId, userId),
+    );
+  }
 
+  private async ensureUserDrive(
+    manager: EntityManager,
+    organizationId: string,
+    userId: string,
+  ): Promise<{ id: string; name: string; rootFolderId: string }> {
+    const driveRepo = manager.getRepository(Drive);
+    const folderRepo = manager.getRepository(Folder);
+    let drive = await driveRepo.findOne({
+      where: { organizationId, ownerUserId: userId, teamId: IsNull(), type: 'personal' },
+      order: { createdAt: 'ASC' },
+    });
     if (!drive) {
-      drive = this.driveRepository.create({
+      drive = await driveRepo.save(driveRepo.create({
         organizationId,
         ownerUserId: userId,
+        teamId: null,
         name: 'Mi espacio',
         type: 'personal',
-      });
-      drive = await this.driveRepository.save(drive);
+      }));
     }
 
-    let rootFolder = await this.folderRepository.findOne({
+    const { destination } = await this.ensureTenantResources(manager, organizationId);
+    let rootFolder = await folderRepo.findOne({
       where: {
         organizationId,
         driveId: drive.id,
@@ -104,29 +129,76 @@ export class FilesService {
         isDeleted: false,
       },
     });
-
     if (!rootFolder) {
-      rootFolder = this.folderRepository.create({
+      rootFolder = await folderRepo.save(folderRepo.create({
         organizationId,
-        ownerId: userId,
         driveId: drive.id,
-        name: 'Archivos',
         parentId: null,
+        destinationId: destination.id,
+        name: 'Archivos',
+        createdBy: userId,
         isDeleted: false,
-      });
-      rootFolder = await this.folderRepository.save(rootFolder);
+        deletedAt: null,
+      }));
     }
 
-    return {
-      id: drive.id,
-      name: drive.name,
-      rootFolderId: rootFolder.id,
-    };
+    return { id: drive.id, name: drive.name, rootFolderId: rootFolder.id };
   }
 
-  /**
-   * Listar carpetas devolviendo el Drive y la lista de elementos
-   */
+  private async ensureTenantResources(
+    manager: EntityManager,
+    organizationId: string,
+  ): Promise<{ destination: Destination; key: TenantEncryptionKey }> {
+    const destinationRepo = manager.getRepository(Destination);
+    const keyRepo = manager.getRepository(TenantEncryptionKey);
+    const quotaRepo = manager.getRepository(TenantQuota);
+
+    let destination = await destinationRepo.findOne({
+      where: { organizationId, isDefault: true, isEnabled: true },
+    });
+    if (!destination) {
+      destination = await destinationRepo.save(destinationRepo.create({
+        organizationId,
+        providerType: 's3',
+        connectionStatus: 'Sin comprobar',
+        isEnabled: true,
+        isDefault: true,
+        bucketOrPrefix: this.storageService.bucketName + '/' + organizationId,
+        connectionDetailsEncrypted: this.crypto.encryptConnectionDetails(
+          organizationId,
+          JSON.stringify({
+            endpoint: 'environment:S3_ENDPOINT',
+            credentials: 'environment:S3_ACCESS_KEY,S3_SECRET_KEY',
+            bucket: 'environment:S3_BUCKET',
+          }),
+        ),
+      }));
+    }
+
+    let key = await keyRepo.findOne({
+      where: { organizationId, status: 'active' },
+      order: { createdAt: 'DESC' },
+    });
+    if (!key) {
+      key = await keyRepo.save(keyRepo.create({
+        organizationId,
+        externalReference: this.crypto.externalKeyReference(organizationId),
+        status: 'active',
+        rotatedAt: null,
+      }));
+    }
+
+    if (!(await quotaRepo.findOneBy({ organizationId }))) {
+      await quotaRepo.save(quotaRepo.create({
+        organizationId,
+        confirmedUsageBytes: '0',
+        activeReservationsBytes: '0',
+      }));
+    }
+
+    return { destination, key };
+  }
+
   async listFolders(
     organizationId: string,
     userId: string,
@@ -135,116 +207,98 @@ export class FilesService {
     drive: { id: string; name: string; rootFolderId: string };
     items: Array<{ id: string; name: string; parentFolderId: string | null; driveId: string }>;
   }> {
-    const driveInfo = await this.getOrCreateUserDrive(organizationId, userId);
+    const drive = await this.getOrCreateUserDrive(organizationId, userId);
+    const effectiveParentId = parentId || drive.rootFolderId;
+    await this.requirePersonalFolder(organizationId, drive.id, effectiveParentId);
 
     const folders = await this.folderRepository.find({
       where: {
         organizationId,
-        parentId: parentId ? parentId : IsNull(),
+        driveId: drive.id,
+        parentId: effectiveParentId,
         isDeleted: false,
       },
       order: { name: 'ASC' },
     });
-
     return {
-      drive: driveInfo,
-      items: folders.map((f) => ({
-        id: f.id,
-        name: f.name,
-        parentFolderId: f.parentId,
-        driveId: f.driveId || driveInfo.id,
+      drive,
+      items: folders.map((folder) => ({
+        id: folder.id,
+        name: folder.name,
+        parentFolderId: folder.parentId,
+        driveId: folder.driveId,
       })),
     };
   }
 
-  /**
-   * Crear carpeta garantizando driveId y aislamiento de organización
-   */
   async createFolder(
     organizationId: string,
-    ownerId: string,
+    userId: string,
     name: string,
     parentId?: string,
-  ): Promise<{ id: string; name: string; parentFolderId: string | null; driveId: string; createdAt: Date }> {
-    const driveInfo = await this.getOrCreateUserDrive(organizationId, ownerId);
-
-    if (parentId) {
-      const parent = await this.folderRepository.findOne({
-        where: { id: parentId, organizationId, isDeleted: false },
-      });
-      if (!parent) {
-        throw new NotFoundException(
-          `Carpeta padre ${parentId} no encontrada o fuera del alcance de la organización`,
-        );
-      }
+  ): Promise<{
+    id: string;
+    name: string;
+    parentFolderId: string | null;
+    driveId: string;
+    createdAt: Date;
+  }> {
+    const normalizedName = name?.trim();
+    if (!normalizedName || normalizedName.length > 255) {
+      throw new BadRequestException('El nombre de carpeta debe tener entre 1 y 255 caracteres');
     }
 
-    const folder = this.folderRepository.create({
-      organizationId,
-      ownerId,
-      driveId: driveInfo.id,
-      name: name.trim(),
-      parentId: parentId || null,
-      isDeleted: false,
+    return this.dataSource.transaction(async (manager) => {
+      const drive = await this.ensureUserDrive(manager, organizationId, userId);
+      const parentFolder = await this.requirePersonalFolder(
+        organizationId,
+        drive.id,
+        parentId || drive.rootFolderId,
+        manager,
+      );
+      const folderRepo = manager.getRepository(Folder);
+      const saved = await folderRepo.save(folderRepo.create({
+        organizationId,
+        driveId: drive.id,
+        parentId: parentFolder.id,
+        destinationId: parentFolder.destinationId,
+        name: normalizedName,
+        createdBy: userId,
+        isDeleted: false,
+        deletedAt: null,
+      }));
+      return {
+        id: saved.id,
+        name: saved.name,
+        parentFolderId: saved.parentId,
+        driveId: saved.driveId,
+        createdAt: saved.createdAt,
+      };
     });
-
-    const saved = await this.folderRepository.save(folder);
-
-    return {
-      id: saved.id,
-      name: saved.name,
-      parentFolderId: saved.parentId,
-      driveId: saved.driveId,
-      createdAt: saved.createdAt,
-    };
   }
 
-  /**
-   * Obtener items de carpeta con el contenedor 'folder' y metadatos de versión de archivos
-   */
   async getFolderItems(
     organizationId: string,
+    userId: string,
     folderId: string,
   ): Promise<{
     folder: { id: string; name: string; parentFolderId: string | null; driveId: string; createdAt: Date };
     folders: Array<{ id: string; name: string; parentFolderId: string | null; driveId: string; createdAt: Date }>;
-    files: Array<{ id: string; name: string; mimeType: string; sizeBytes: string; versionId: string; uploadedAt: Date }>;
+    files: UploadedFileDto[];
   }> {
-    const folder = await this.folderRepository.findOne({
-      where: { id: folderId, organizationId, isDeleted: false },
-    });
-    if (!folder) {
-      throw new NotFoundException(`Carpeta ${folderId} no encontrada`);
-    }
-
+    const drive = await this.getOrCreateUserDrive(organizationId, userId);
+    const folder = await this.requirePersonalFolder(organizationId, drive.id, folderId);
     const [folders, files] = await Promise.all([
       this.folderRepository.find({
-        where: { organizationId, parentId: folderId, isDeleted: false },
+        where: { organizationId, driveId: drive.id, parentId: folder.id, isDeleted: false },
         order: { name: 'ASC' },
       }),
       this.fileRepository.find({
-        where: { organizationId, folderId, isDeleted: false },
-        relations: ['versions'],
+        where: { organizationId, folderId: folder.id, isDeleted: false },
+        relations: { versions: true },
         order: { name: 'ASC' },
       }),
     ]);
-
-    const formattedFiles = files.map((file) => {
-      const sortedVersions = (file.versions || []).sort(
-        (a, b) => b.versionNumber - a.versionNumber,
-      );
-      const latest = sortedVersions[0];
-
-      return {
-        id: file.id,
-        name: file.name,
-        mimeType: file.mimeType || 'application/octet-stream',
-        sizeBytes: latest ? String(latest.sizeBytes) : String(file.sizeBytes),
-        versionId: latest ? latest.id : file.id,
-        uploadedAt: latest ? latest.uploadedAt : file.createdAt,
-      };
-    });
-
     return {
       folder: {
         id: folder.id,
@@ -253,106 +307,157 @@ export class FilesService {
         driveId: folder.driveId,
         createdAt: folder.createdAt,
       },
-      folders: folders.map((f) => ({
-        id: f.id,
-        name: f.name,
-        parentFolderId: f.parentId,
-        driveId: f.driveId,
-        createdAt: f.createdAt,
+      folders: folders.map((item) => ({
+        id: item.id,
+        name: item.name,
+        parentFolderId: item.parentId,
+        driveId: item.driveId,
+        createdAt: item.createdAt,
       })),
-      files: formattedFiles,
+      files: files.map((file) => this.toUploadedFileDto(file, file.versions ?? [])),
     };
   }
 
-  /**
-   * Listar archivos de la organización con metadatos de versión
-   */
   async listFiles(
     organizationId: string,
+    userId: string,
     folderId?: string,
-  ): Promise<Array<{ id: string; name: string; mimeType: string; sizeBytes: string; versionId: string; uploadedAt: Date }>> {
+  ): Promise<UploadedFileDto[]> {
+    const drive = await this.getOrCreateUserDrive(organizationId, userId);
+    const effectiveFolderId = folderId || drive.rootFolderId;
+    await this.requirePersonalFolder(organizationId, drive.id, effectiveFolderId);
     const files = await this.fileRepository.find({
-      where: {
-        organizationId,
-        folderId: folderId ? folderId : IsNull(),
-        isDeleted: false,
-      },
-      relations: ['versions'],
+      where: { organizationId, folderId: effectiveFolderId, isDeleted: false },
+      relations: { versions: true },
       order: { createdAt: 'DESC' },
     });
+    return files.map((file) => this.toUploadedFileDto(file, file.versions ?? []));
+  }
 
-    return files.map((file) => {
-      const sortedVersions = (file.versions || []).sort(
-        (a, b) => b.versionNumber - a.versionNumber,
+  private toUploadedFileDto(file: FileRecord, versions: FileVersion[]): UploadedFileDto {
+    const current = versions.find((version) => version.id === file.currentVersionId)
+      ?? versions.reduce<FileVersion | undefined>(
+        (latest, version) => !latest || version.versionNumber > latest.versionNumber ? version : latest,
+        undefined,
       );
-      const latest = sortedVersions[0];
-
-      return {
-        id: file.id,
-        name: file.name,
-        mimeType: file.mimeType,
-        sizeBytes: latest ? String(latest.sizeBytes) : String(file.sizeBytes),
-        versionId: latest ? latest.id : file.id,
-        uploadedAt: latest ? latest.uploadedAt : file.createdAt,
-      };
-    });
+    return {
+      id: file.id,
+      name: file.name,
+      mimeType: file.mimeType || 'application/octet-stream',
+      sizeBytes: current?.sizeBytes ?? '0',
+      versionId: current?.id ?? '',
+      uploadedAt: current?.uploadedAt ?? file.createdAt,
+    };
   }
 
-  /**
-   * Cálculo real de cuota (ADR-003): todas las versiones incluyendo papelera
-   */
-  async getUsedStorageBytes(organizationId: string): Promise<bigint> {
-    const result = await this.versionRepository
-      .createQueryBuilder('version')
-      .innerJoin('version.fileRecord', 'file')
-      .select('COALESCE(SUM(CAST(version.sizeBytes AS BIGINT)), 0)', 'totalBytes')
-      .where('file.organizationId = :organizationId', { organizationId })
-      .getRawOne();
-
-    return BigInt(result?.totalBytes || 0);
+  async getUsedStorageBytes(organizationId: string, manager?: EntityManager): Promise<bigint> {
+    const executor = manager ?? this.dataSource.manager;
+    const rows = await executor.query(
+      'SELECT COALESCE(SUM(version.size_bytes), 0)::text AS "usedBytes" ' +
+      'FROM files.file_version version ' +
+      'INNER JOIN files.file file ON file.file_id = version.file_id ' +
+      'WHERE file.organization_id = $1 ' +
+      "AND (file.is_deleted = false OR file.deleted_at > now() - interval '30 days')",
+      [organizationId],
+    );
+    return BigInt(rows[0]?.usedBytes ?? 0);
   }
 
-  /**
-   * Uso de almacenamiento para el SubscriptionCoordinator de integración (Billing).
-   * Las reservas atómicas de carga todavía no existen en este corte, así que van en cero
-   * y `totalBytes` equivale al uso confirmado; cuando Files agregue la tabla de reservas,
-   * solo cambia este método.
-   */
   async getTotalStorageUsage(
     organizationId: string,
-  ): Promise<{ usedBytes: bigint; reservedBytes: bigint; totalBytes: bigint }> {
-    const usedBytes = await this.getUsedStorageBytes(organizationId);
-    return { usedBytes, reservedBytes: 0n, totalBytes: usedBytes };
+    manager?: EntityManager,
+  ): Promise<StorageUsage> {
+    if (manager) {
+      await this.lockTenantQuota(manager, organizationId);
+      await this.expireStaleReservations(manager, organizationId);
+      const usage = await this.readStorageUsage(manager, organizationId);
+      await this.writeQuotaCounters(manager, organizationId, usage);
+      return usage;
+    }
+    return this.dataSource.transaction((tx) => this.getTotalStorageUsage(organizationId, tx));
   }
 
-  /**
-   * Subida de archivo validando cuota (422), tamaño (413), MIME (415),
-   * concurrencia (3 máx) e idempotencia.
-   */
+  private async readStorageUsage(manager: EntityManager, organizationId: string): Promise<StorageUsage> {
+    const usedRows = await manager.query(
+      'SELECT COALESCE(SUM(version.size_bytes), 0)::text AS total ' +
+      'FROM files.file_version version ' +
+      'INNER JOIN files.file file ON file.file_id = version.file_id ' +
+      'WHERE file.organization_id = $1 ' +
+      "AND (file.is_deleted = false OR file.deleted_at > now() - interval '30 days')",
+      [organizationId],
+    );
+    const reservedRows = await manager.query(
+      "SELECT COALESCE(SUM(size_bytes), 0)::text AS total FROM files.reservation " +
+      "WHERE organization_id = $1 AND status = 'active' AND expires_at > now()",
+      [organizationId],
+    );
+    const usedBytes = BigInt(usedRows[0]?.total ?? 0);
+    const reservedBytes = BigInt(reservedRows[0]?.total ?? 0);
+    return { usedBytes, reservedBytes, totalBytes: usedBytes + reservedBytes };
+  }
+
+  private async lockTenantQuota(manager: EntityManager, organizationId: string): Promise<void> {
+    await manager.query(
+      'INSERT INTO files.tenant_quota (organization_id) VALUES ($1) ' +
+      'ON CONFLICT (organization_id) DO NOTHING',
+      [organizationId],
+    );
+    await manager.query(
+      'SELECT organization_id FROM files.tenant_quota WHERE organization_id = $1 FOR UPDATE',
+      [organizationId],
+    );
+  }
+
+  private async expireStaleReservations(manager: EntityManager, organizationId: string): Promise<void> {
+    await manager.query(
+      "UPDATE files.reservation SET status = 'expired' " +
+      "WHERE organization_id = $1 AND status = 'active' AND expires_at <= now()",
+      [organizationId],
+    );
+  }
+
+  private async writeQuotaCounters(
+    manager: EntityManager,
+    organizationId: string,
+    usage: StorageUsage,
+  ): Promise<void> {
+    await manager.query(
+      'UPDATE files.tenant_quota SET confirmed_usage_bytes = $2, ' +
+      'active_reservations_bytes = $3, updated_at = now() WHERE organization_id = $1',
+      [organizationId, usage.usedBytes.toString(), usage.reservedBytes.toString()],
+    );
+  }
+
+  private async requirePersonalFolder(
+    organizationId: string,
+    driveId: string,
+    folderId: string,
+    manager?: EntityManager,
+    lock = false,
+  ): Promise<Folder> {
+    const folderRepo = manager?.getRepository(Folder) ?? this.folderRepository;
+    const folder = await folderRepo.findOne({
+      where: { id: folderId, organizationId, driveId, isDeleted: false },
+      ...(lock && manager ? { lock: { mode: 'pessimistic_write' as const } } : {}),
+    });
+    if (!folder) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
+    return folder;
+  }
+
   async uploadMultipartFile(params: {
     organizationId: string;
     ownerId: string;
     folderId: string;
     file: any;
     idempotencyKey?: string;
-  }): Promise<{
-    id: string;
-    name: string;
-    mimeType: string;
-    sizeBytes: string;
-    versionId: string;
-    uploadedAt: Date;
-  }> {
-    const { organizationId, ownerId, folderId, file, idempotencyKey } = params;
-
-    // folderId es obligatorio según contrato
-    if (!folderId) {
-      throw new BadRequestException('El parámetro folderId es obligatorio');
+  }): Promise<UploadedFileDto> {
+    const { organizationId, ownerId, folderId, file } = params;
+    if (!folderId) throw new BadRequestException('El parámetro folderId es obligatorio');
+    if (!file?.buffer || !Buffer.isBuffer(file.buffer)) {
+      throw new UnsupportedMediaTypeException('El archivo multipart no contiene datos válidos');
     }
-
-    // Límite de 3 cargas concurrentes por usuario (ADR-003)
-    const currentActive = this.activeUploadsByUser.get(ownerId) || 0;
-    if (currentActive >= 3) {
+    const currentActive = this.activeUploadsByUser.get(ownerId) ?? 0;
+    if (currentActive >= MAX_ACTIVE_UPLOADS_PER_USER) {
       throw new HttpException(
         'Límite de tres cargas simultáneas alcanzado para este usuario',
         HttpStatus.TOO_MANY_REQUESTS,
@@ -360,217 +465,444 @@ export class FilesService {
     }
     this.activeUploadsByUser.set(ownerId, currentActive + 1);
 
-    const cacheKey = idempotencyKey ? `${organizationId}:${idempotencyKey}` : null;
-    if (cacheKey) {
-      const cached = this.idempotencyCache.get(cacheKey);
-      if (cached) {
-        this.decrementActiveUploads(ownerId);
-        if (cached.status === 'processing') {
-          throw new ConflictException(
-            'Operación en procesamiento con la misma Idempotency-Key. Reintente en breve.',
-          );
-        }
-        return cached.response;
-      }
-      this.idempotencyCache.set(cacheKey, { status: 'processing', timestamp: Date.now() });
-    }
-
     try {
-      if (!file) {
-        throw new UnsupportedMediaTypeException('No se ha proporcionado ningún archivo');
-      }
-
-      const fileSize = Number(file.size || (file.buffer ? file.buffer.length : 0));
-      const originalName = file.originalname || 'archivo';
-      const fileExt = path.extname(originalName).toLowerCase();
-      const declaredMime = (file.mimetype || '').toLowerCase();
-
-      // Validación exacta de tamaño: 100,000,000 bytes (HTTP 413)
+      const originalName = this.normalizeFileName(file.originalname);
+      const bytes: Buffer = file.buffer;
+      const fileSize = bytes.length;
       if (fileSize > MAX_FILE_SIZE_BYTES) {
-        throw new PayloadTooLargeException('El archivo excede el tamaño máximo permitido de 100000000 bytes');
+        throw new PayloadTooLargeException('El archivo excede el máximo de 100000000 bytes');
       }
-
-      // Validación estricta y coherente de extensión + MIME (HTTP 415)
-      const allowedMimes = ALLOWED_MIME_BY_EXT[fileExt];
-      if (!allowedMimes || !allowedMimes.includes(declaredMime)) {
+      const extension = this.fileExtension(originalName);
+      const mimeType = String(file.mimetype ?? '').toLowerCase();
+      if (!ALLOWED_MIME_BY_EXT[extension]?.includes(mimeType) || !this.hasExpectedContent(extension, bytes)) {
         throw new UnsupportedMediaTypeException(
-          `Formato de archivo no admitido: ${declaredMime} (${fileExt}). Permitidos: PDF, DOCX, XLSX, PPTX, JPG, PNG, TXT y ZIP`,
+          'El contenido del archivo no coincide con un formato permitido (PDF, DOCX, XLSX, PPTX, JPG, PNG, TXT o ZIP)',
         );
       }
 
-      // Verificación de carpeta de destino en el tenant
-      const folder = await this.folderRepository.findOne({
-        where: { id: folderId, organizationId, isDeleted: false },
+      const drive = await this.getOrCreateUserDrive(organizationId, ownerId);
+      await this.requirePersonalFolder(organizationId, drive.id, folderId);
+      const reservation = await this.reserveUpload({
+        organizationId,
+        ownerId,
+        folderId,
+        name: originalName,
+        sizeBytes: fileSize,
+        idempotencyKey: this.normalizeIdempotencyKey(params.idempotencyKey),
       });
-      if (!folder) {
-        throw new NotFoundException(`Carpeta ${folderId} no encontrada`);
-      }
+      if (reservation.existingResponse) return reservation.existingResponse;
 
-      // Verificación de cuota de almacenamiento: debe responder 422 con STORAGE_QUOTA_EXCEEDED
-      const storageLimit = await this.billingService.getStorageLimitBytes(organizationId);
-      const usedBytes = await this.getUsedStorageBytes(organizationId);
-
-      if (usedBytes + BigInt(fileSize) > storageLimit) {
-        throw new HttpException(
-          {
-            statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
-            error: 'Unprocessable Entity',
-            code: 'STORAGE_QUOTA_EXCEEDED',
-            message: 'La carga excede la cuota de almacenamiento disponible para su plan',
-          },
-          HttpStatus.UNPROCESSABLE_ENTITY,
-        );
-      }
-
-      // Versionado secuencial (ADR-003)
-      let fileRecord = await this.fileRepository.findOne({
-        where: {
-          organizationId,
-          folderId,
-          name: originalName,
-          isDeleted: false,
-        },
-      });
-
-      let isNewRecord = false;
-      let nextVersionNumber = 1;
-
-      if (!fileRecord) {
-        fileRecord = this.fileRepository.create({
-          name: originalName,
-          organizationId,
-          ownerId,
-          folderId,
-          mimeType: declaredMime,
-          sizeBytes: String(fileSize),
-          isDeleted: false,
-        });
-        fileRecord = await this.fileRepository.save(fileRecord);
-        isNewRecord = true;
-      } else {
-        const latestVersion = await this.versionRepository.findOne({
-          where: { fileId: fileRecord.id },
-          order: { versionNumber: 'DESC' },
-        });
-        nextVersionNumber = (latestVersion?.versionNumber || 1) + 1;
-      }
-
-      // Clave opaca en SeaweedFS: <tenant>/<fileId>/v<num>
-      const objectKey = `${organizationId}/${fileRecord.id}/v${nextVersionNumber}`;
-
-      const fileVersion = this.versionRepository.create({
-        fileId: fileRecord.id,
-        versionNumber: nextVersionNumber,
-        objectKey,
-        sizeBytes: String(fileSize),
-        uploadedBy: ownerId,
-      });
-
+      let objectKey: string | undefined;
       try {
-        await this.storageService.put(
-          objectKey,
-          file.buffer || file.stream,
-          fileSize,
-          declaredMime,
-        );
+        return await this.dataSource.transaction(async (manager) => {
+          await this.lockTenantQuota(manager, organizationId);
+          const folder = await this.requirePersonalFolder(
+            organizationId,
+            drive.id,
+            folderId,
+            manager,
+            true,
+          );
+          const fileRepo = manager.getRepository(FileRecord);
+          const versionRepo = manager.getRepository(FileVersion);
+          const uploadRepo = manager.getRepository(Upload);
+          const reservationRepo = manager.getRepository(Reservation);
 
-        const savedVersion = await this.versionRepository.save(fileVersion);
-
-        fileRecord.sizeBytes = String(fileSize);
-        fileRecord.mimeType = declaredMime;
-        await this.fileRepository.save(fileRecord);
-
-        const responseDto = {
-          id: fileRecord.id,
-          name: fileRecord.name,
-          mimeType: fileRecord.mimeType,
-          sizeBytes: fileRecord.sizeBytes,
-          versionId: savedVersion.id,
-          uploadedAt: savedVersion.uploadedAt,
-        };
-
-        if (cacheKey) {
-          this.idempotencyCache.set(cacheKey, {
-            status: 'completed',
-            response: responseDto,
-            timestamp: Date.now(),
+          let fileRecord = await fileRepo.findOne({
+            where: { organizationId, folderId: folder.id, name: originalName, isDeleted: false },
           });
-        }
+          if (!fileRecord) {
+            fileRecord = await fileRepo.save(fileRepo.create({
+              organizationId,
+              folderId: folder.id,
+              name: originalName,
+              mimeType,
+              currentVersionId: null,
+              isDeleted: false,
+              deletedAt: null,
+              createdBy: ownerId,
+            }));
+          }
 
-        return responseDto;
-      } catch (storageError: any) {
-        this.logger.error(`Error persistiendo en SeaweedFS: ${storageError?.message || storageError}`);
-        await this.storageService.delete(objectKey).catch(() => null);
-        if (isNewRecord && fileRecord?.id) {
-          await this.fileRepository.delete(fileRecord.id).catch(() => null);
-        }
-        throw new InternalServerErrorException('Error al persistir el archivo en el almacenamiento');
+          const latest = await versionRepo.findOne({
+            where: { fileId: fileRecord.id },
+            order: { versionNumber: 'DESC' },
+          });
+          const versionNumber = (latest?.versionNumber ?? 0) + 1;
+          const encrypted: EncryptedFile = this.crypto.encryptFile(
+            organizationId,
+            fileRecord.id,
+            versionNumber,
+            bytes,
+          );
+          const generatedObjectKey = organizationId + '/' + fileRecord.id + '/v' + versionNumber + '/' + randomUUID();
+          objectKey = generatedObjectKey;
+
+          const { destination, key } = await this.ensureTenantResources(manager, organizationId);
+          await this.storageService.put(
+            generatedObjectKey,
+            encrypted.bytes,
+            encrypted.bytes.length,
+            'application/octet-stream',
+          );
+
+          const savedVersion = await versionRepo.save(versionRepo.create({
+            fileId: fileRecord.id,
+            versionNumber,
+            destinationId: folder.destinationId ?? destination.id,
+            objectKey: generatedObjectKey,
+            sizeBytes: String(fileSize),
+            checksum: encrypted.checksum,
+            encryptedDek: encrypted.encryptedDek,
+            kekId: key.id,
+            formatVersion: encrypted.formatVersion,
+            uploadedBy: ownerId,
+          }));
+          fileRecord.mimeType = mimeType;
+          fileRecord.currentVersionId = savedVersion.id;
+          await fileRepo.save(fileRecord);
+
+          const reservationRow = await reservationRepo.findOne({
+            where: { id: reservation.reservationId, organizationId, status: 'active' },
+            lock: { mode: 'pessimistic_write' },
+          });
+          if (!reservationRow) {
+            throw new ConflictException('La reserva de cuota de la carga ya no está activa');
+          }
+          reservationRow.status = 'released';
+          await reservationRepo.save(reservationRow);
+
+          const uploadRow = await uploadRepo.findOneBy({
+            id: reservation.uploadId,
+            organizationId,
+          });
+          if (!uploadRow) throw new InternalServerErrorException('No se encontró el registro de carga');
+          uploadRow.status = 'Disponible';
+          uploadRow.receivedSizeBytes = String(fileSize);
+          uploadRow.destinationId = folder.destinationId ?? destination.id;
+          uploadRow.objectKey = generatedObjectKey;
+          await uploadRepo.save(uploadRow);
+
+          const usage = await this.readStorageUsage(manager, organizationId);
+          await this.writeQuotaCounters(manager, organizationId, usage);
+          return {
+            id: fileRecord.id,
+            name: fileRecord.name,
+            mimeType: fileRecord.mimeType ?? mimeType,
+            sizeBytes: String(fileSize),
+            versionId: savedVersion.id,
+            uploadedAt: savedVersion.uploadedAt,
+          };
+        });
+      } catch (error) {
+        const objectDeleted = objectKey
+          ? await this.storageService.delete(objectKey).then(() => true).catch((deleteError) => {
+              this.logger.error('No se pudo limpiar objeto ' + objectKey + ': ' + String(deleteError));
+              return false;
+            })
+          : true;
+        await this.finishFailedUpload(organizationId, reservation, objectKey, objectDeleted);
+        if (error instanceof HttpException) throw error;
+        this.logger.error('Falló la carga de archivos: ' + String(error));
+        throw new InternalServerErrorException('No se pudo completar la carga del archivo');
       }
-    } catch (err) {
-      if (cacheKey) {
-        this.idempotencyCache.delete(cacheKey);
-      }
-      throw err;
     } finally {
       this.decrementActiveUploads(ownerId);
     }
   }
 
-  private decrementActiveUploads(userId: string): void {
-    const current = this.activeUploadsByUser.get(userId) || 1;
-    if (current <= 1) {
-      this.activeUploadsByUser.delete(userId);
-    } else {
-      this.activeUploadsByUser.set(userId, current - 1);
+  private async reserveUpload(params: {
+    organizationId: string;
+    ownerId: string;
+    folderId: string;
+    name: string;
+    sizeBytes: number;
+    idempotencyKey: string;
+  }): Promise<UploadReservation> {
+    return this.dataSource.transaction(async (manager) => {
+      await this.lockTenantQuota(manager, params.organizationId);
+      await this.expireStaleReservations(manager, params.organizationId);
+
+      const uploadRepo = manager.getRepository(Upload);
+      const existing = await uploadRepo.findOne({
+        where: { organizationId: params.organizationId, idempotencyKey: params.idempotencyKey },
+      });
+      if (existing) {
+        if (existing.createdBy !== params.ownerId || existing.folderId !== params.folderId) {
+          throw new ConflictException('La Idempotency-Key ya fue usada para otra solicitud');
+        }
+        if (existing.status === 'Disponible' && existing.objectKey) {
+          const version = await manager.getRepository(FileVersion).findOne({
+            where: { objectKey: existing.objectKey },
+          });
+          const savedFile = version
+            ? await manager.getRepository(FileRecord).findOne({
+                where: { id: version.fileId, organizationId: params.organizationId },
+              })
+            : null;
+          if (version && savedFile) {
+            return {
+              uploadId: existing.id,
+              reservationId: existing.reservationId,
+              existingResponse: {
+                id: savedFile.id,
+                name: savedFile.name,
+                mimeType: savedFile.mimeType ?? 'application/octet-stream',
+                sizeBytes: version.sizeBytes,
+                versionId: version.id,
+                uploadedAt: version.uploadedAt,
+              },
+            };
+          }
+          throw new ConflictException('La operación idempotente ya no está disponible');
+        }
+        if (existing.status !== 'Fallida') {
+          throw new ConflictException('La solicitud con esta Idempotency-Key sigue en proceso');
+        }
+      }
+
+      const usage = await this.readStorageUsage(manager, params.organizationId);
+      const limit = await this.billingService.getStorageLimitBytes(params.organizationId);
+      if (usage.totalBytes + BigInt(params.sizeBytes) > limit) {
+        throw new HttpException(
+          {
+            statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+            error: 'Unprocessable Entity',
+            code: 'STORAGE_QUOTA_EXCEEDED',
+            message: 'La carga excede la cuota disponible para el plan de la organización',
+          },
+          HttpStatus.UNPROCESSABLE_ENTITY,
+        );
+      }
+
+      const { destination } = await this.ensureTenantResources(manager, params.organizationId);
+      const reservationRepo = manager.getRepository(Reservation);
+      const reservation = await reservationRepo.save(reservationRepo.create({
+        organizationId: params.organizationId,
+        sizeBytes: String(params.sizeBytes),
+        status: 'active',
+        expiresAt: new Date(Date.now() + RESERVATION_TTL_MS),
+      }));
+
+      const upload = existing ?? uploadRepo.create();
+      upload.organizationId = params.organizationId;
+      upload.folderId = params.folderId;
+      upload.idempotencyKey = params.idempotencyKey;
+      upload.declaredName = params.name;
+      upload.declaredSizeBytes = String(params.sizeBytes);
+      upload.receivedSizeBytes = null;
+      upload.status = 'Pendiente';
+      upload.reservationId = reservation.id;
+      upload.destinationId = destination.id;
+      upload.objectKey = null;
+      upload.createdBy = params.ownerId;
+      const savedUpload = await uploadRepo.save(upload);
+
+      const updatedUsage = {
+        usedBytes: usage.usedBytes,
+        reservedBytes: usage.reservedBytes + BigInt(params.sizeBytes),
+        totalBytes: usage.totalBytes + BigInt(params.sizeBytes),
+      };
+      await this.writeQuotaCounters(manager, params.organizationId, updatedUsage);
+      return { uploadId: savedUpload.id, reservationId: reservation.id };
+    });
+  }
+
+  private async finishFailedUpload(
+    organizationId: string,
+    reservationInfo: UploadReservation,
+    objectKey: string | undefined,
+    objectDeleted: boolean,
+  ): Promise<void> {
+    try {
+      await this.dataSource.transaction(async (manager) => {
+        await this.lockTenantQuota(manager, organizationId);
+        const reservationRepo = manager.getRepository(Reservation);
+        const reservation = await reservationRepo.findOne({
+          where: { id: reservationInfo.reservationId, organizationId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (reservation && objectDeleted) reservation.status = 'released';
+        if (reservation && !objectDeleted) {
+          reservation.expiresAt = new Date(Date.now() + RESERVATION_TTL_MS);
+        }
+        if (reservation) await reservationRepo.save(reservation);
+
+        const uploadRepo = manager.getRepository(Upload);
+        const upload = await uploadRepo.findOneBy({ id: reservationInfo.uploadId, organizationId });
+        if (upload) {
+          upload.status = objectDeleted ? 'Fallida' : 'Limpieza pendiente';
+          upload.objectKey = objectKey ?? null;
+          await uploadRepo.save(upload);
+        }
+
+        const usage = await this.readStorageUsage(manager, organizationId);
+        await this.writeQuotaCounters(manager, organizationId, usage);
+      });
+    } catch (error) {
+      this.logger.error('No se pudo cerrar la reserva ' + reservationInfo.uploadId + ': ' + String(error));
     }
   }
 
-  /**
-   * Descarga binaria por stream validando aislamiento multi-tenant
-   */
+  private normalizeFileName(value: unknown): string {
+    if (typeof value !== 'string' || !value.trim()) {
+      throw new BadRequestException('El archivo debe tener un nombre válido');
+    }
+    const normalized = value.replace(/\\/g, '/').split('/').pop()!
+      .replace(/[\u0000-\u001f\u007f]/g, '').trim();
+    if (!normalized || normalized.length > 255 || normalized === '.' || normalized === '..') {
+      throw new BadRequestException('El nombre del archivo no es válido');
+    }
+    return normalized;
+  }
+
+  private fileExtension(name: string): string {
+    const dot = name.lastIndexOf('.');
+    return dot < 0 ? '' : name.slice(dot).toLowerCase();
+  }
+
+  private normalizeIdempotencyKey(value?: string): string {
+    if (value === undefined || value === '') return randomUUID();
+    const normalized = value.trim();
+    if (!normalized || normalized.length > 255) {
+      throw new BadRequestException('Idempotency-Key debe tener entre 1 y 255 caracteres');
+    }
+    return normalized;
+  }
+
+  private hasExpectedContent(extension: string, bytes: Buffer): boolean {
+    if (extension === '.pdf') return bytes.subarray(0, 5).toString('ascii') === '%PDF-';
+    if (extension === '.jpg' || extension === '.jpeg') {
+      return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+    }
+    if (extension === '.png') {
+      return bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    }
+    if (extension === '.txt') {
+      if (bytes.includes(0)) return false;
+      try {
+        new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    if (extension === '.zip') return this.isZip(bytes);
+    if (extension === '.docx') return this.isOfficeZip(bytes, 'word/document.xml');
+    if (extension === '.xlsx') return this.isOfficeZip(bytes, 'xl/workbook.xml');
+    if (extension === '.pptx') return this.isOfficeZip(bytes, 'ppt/presentation.xml');
+    return false;
+  }
+
+  private isZip(bytes: Buffer): boolean {
+    return bytes.length >= 4
+      && bytes[0] === 0x50
+      && bytes[1] === 0x4b
+      && [0x03, 0x05, 0x07].includes(bytes[2])
+      && [0x04, 0x06, 0x08].includes(bytes[3]);
+  }
+
+  private isOfficeZip(bytes: Buffer, expectedFile: string): boolean {
+    if (!this.isZip(bytes)) return false;
+    const minOffset = Math.max(0, bytes.length - 65_557);
+    let endOffset = -1;
+    for (let offset = bytes.length - 22; offset >= minOffset; offset -= 1) {
+      if (bytes.readUInt32LE(offset) === 0x06054b50) {
+        endOffset = offset;
+        break;
+      }
+    }
+    if (endOffset < 0) return false;
+
+    const entryCount = bytes.readUInt16LE(endOffset + 10);
+    let cursor = bytes.readUInt32LE(endOffset + 16);
+    const names = new Set<string>();
+    for (let index = 0; index < entryCount && cursor + 46 <= bytes.length; index += 1) {
+      if (bytes.readUInt32LE(cursor) !== 0x02014b50) return false;
+      const nameLength = bytes.readUInt16LE(cursor + 28);
+      const extraLength = bytes.readUInt16LE(cursor + 30);
+      const commentLength = bytes.readUInt16LE(cursor + 32);
+      const nameStart = cursor + 46;
+      names.add(bytes.subarray(nameStart, nameStart + nameLength).toString('utf8'));
+      cursor = nameStart + nameLength + extraLength + commentLength;
+    }
+    return names.has('[Content_Types].xml') && names.has(expectedFile);
+  }
+
+  private decrementActiveUploads(userId: string): void {
+    const current = this.activeUploadsByUser.get(userId) ?? 1;
+    if (current <= 1) this.activeUploadsByUser.delete(userId);
+    else this.activeUploadsByUser.set(userId, current - 1);
+  }
+
   async downloadFileStream(
     fileId: string,
     organizationId: string,
+    userId: string,
   ): Promise<{ stream: Readable; mimeType: string; name: string }> {
-    const file = await this.fileRepository.findOne({
-      where: { id: fileId, organizationId, isDeleted: false },
-    });
-
-    if (!file) {
-      throw new NotFoundException(`Archivo ${fileId} no encontrado`);
+    const drive = await this.getOrCreateUserDrive(organizationId, userId);
+    const file = await this.fileRepository.createQueryBuilder('file')
+      .innerJoin('file.folder', 'folder')
+      .where('file.id = :fileId', { fileId })
+      .andWhere('file.organizationId = :organizationId', { organizationId })
+      .andWhere('file.isDeleted = false')
+      .andWhere('folder.driveId = :driveId', { driveId: drive.id })
+      .andWhere('folder.isDeleted = false')
+      .getOne();
+    if (!file || !file.currentVersionId) {
+      throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
     }
 
-    const latestVersion = await this.versionRepository.findOne({
-      where: { fileId: file.id },
-      order: { versionNumber: 'DESC' },
+    const version = await this.versionRepository.findOne({
+      where: { id: file.currentVersionId, fileId: file.id },
     });
+    if (!version) throw new NotFoundException('Versión no encontrada para el archivo ' + fileId);
 
-    if (!latestVersion) {
-      throw new NotFoundException(`Versión no encontrada para el archivo ${fileId}`);
+    try {
+      const objectStream = await this.storageService.get(version.objectKey);
+      const objectBytes = await this.readStream(objectStream);
+      const plaintext = this.crypto.decryptFile(
+        organizationId,
+        file.id,
+        version.versionNumber,
+        version.encryptedDek,
+        version.checksum,
+        objectBytes,
+      );
+      return {
+        stream: Readable.from([plaintext]),
+        mimeType: file.mimeType || 'application/octet-stream',
+        name: file.name,
+      };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      this.logger.error('No se pudo leer el archivo ' + fileId + ': ' + String(error));
+      throw new InternalServerErrorException('No se pudo recuperar el archivo');
     }
-
-    const stream = await this.storageService.get(latestVersion.objectKey);
-
-    return {
-      stream,
-      mimeType: file.mimeType || 'application/octet-stream',
-      name: file.name,
-    };
   }
 
-  /**
-   * Eliminación lógica (soft-delete)
-   */
-  async softDelete(fileId: string, organizationId: string): Promise<FileRecord> {
-    const file = await this.fileRepository.findOne({
-      where: { id: fileId, organizationId, isDeleted: false },
-    });
-
-    if (!file) {
-      throw new NotFoundException(`Archivo ${fileId} no encontrado`);
+  private async readStream(stream: Readable): Promise<Buffer> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     }
+    return Buffer.concat(chunks);
+  }
+
+  async softDelete(fileId: string, organizationId: string, userId: string): Promise<FileRecord> {
+    const drive = await this.getOrCreateUserDrive(organizationId, userId);
+    const file = await this.fileRepository.createQueryBuilder('file')
+      .innerJoin('file.folder', 'folder')
+      .where('file.id = :fileId', { fileId })
+      .andWhere('file.organizationId = :organizationId', { organizationId })
+      .andWhere('file.isDeleted = false')
+      .andWhere('folder.driveId = :driveId', { driveId: drive.id })
+      .andWhere('folder.isDeleted = false')
+      .getOne();
+    if (!file) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
 
     file.isDeleted = true;
+    file.deletedAt = new Date();
     return this.fileRepository.save(file);
   }
 }

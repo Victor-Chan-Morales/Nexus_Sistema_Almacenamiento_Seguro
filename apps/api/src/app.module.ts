@@ -37,9 +37,6 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
         // Con `synchronize: true` TypeORM intentaría alterar tablas ya migradas (columnas, tipos,
         // restricciones) y podría borrar datos. Solo se activa a propósito con DB_SYNCHRONIZE=true.
         synchronize: config.get('DB_SYNCHRONIZE') === 'true',
-        migrations: [__dirname + '/migrations/*{.ts,.js}'],
-        migrationsRun: false, // Se ejecutan explícitamente vía npm run migration:run
-
         logging: config.get('DB_LOGGING') === 'true' ? ['error', 'warn'] : false,
       }),
       inject: [ConfigService],

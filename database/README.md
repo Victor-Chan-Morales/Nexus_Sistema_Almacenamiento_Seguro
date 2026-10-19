@@ -45,7 +45,7 @@ docker compose exec postgres pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
 
 ``` bash
 docker compose up -d postgres         # espera a que el healthcheck pase
-docker compose run --rm migrate up    # aplica las 14 migraciones, en orden
+docker compose run --rm migrate up    # aplica las migraciones pendientes, en orden
 ```
 
 ### Ejecutar migraciones (entorno ya existente, hay migraciones nuevas)

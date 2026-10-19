@@ -6,10 +6,8 @@ import { FilesService } from '../files.service';
  * Hook `personal-drive` que exige el registro de IAM: delega en Files la creación del Drive
  * `Mi espacio` y su carpeta raíz `Archivos`.
  *
- * Pendiente de este corte: Files aún provisiona con sus propios repositorios, así que esta
- * escritura no viaja en la transacción del alta. La operación es idempotente y Files también
- * la resuelve al primer listado, de modo que la cuenta nunca queda sin espacio; cuando Files
- * acepte un EntityManager, el hook se lo pasará como ya hace Billing.
+ * Recibe el EntityManager de IAM: el Drive, la carpeta raíz, la cuota, el destino y la
+ * referencia de cifrado se confirman o revierten como parte del mismo registro.
  */
 @Injectable()
 export class PersonalDriveHook implements OnModuleInit {
@@ -19,8 +17,8 @@ export class PersonalDriveHook implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
-    this.hooks.register('personal-drive', async ({ userId, organizationId }) => {
-      await this.files.getOrCreateUserDrive(organizationId, userId);
+    this.hooks.register('personal-drive', async ({ manager, userId, organizationId }) => {
+      await this.files.getOrCreateUserDrive(organizationId, userId, manager);
     });
   }
 }

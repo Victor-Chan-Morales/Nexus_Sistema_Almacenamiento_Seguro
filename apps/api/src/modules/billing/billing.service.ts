@@ -3,11 +3,10 @@ import {
   NotFoundException,
   ConflictException,
   OnModuleInit,
-  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
-import { Plan, StorageLocation } from './entities/plan.entity';
+import { Plan } from './entities/plan.entity';
 import { Subscription, SubscriptionStatus } from './entities/subscription.entity';
 
 /**
@@ -20,8 +19,6 @@ import { Subscription, SubscriptionStatus } from './entities/subscription.entity
  */
 @Injectable()
 export class BillingService implements OnModuleInit {
-  private readonly logger = new Logger(BillingService.name);
-
   constructor(
     @InjectRepository(Plan)
     private readonly planRepo: Repository<Plan>,
@@ -32,130 +29,27 @@ export class BillingService implements OnModuleInit {
     private readonly dataSource: DataSource,
   ) {}
 
-  async onModuleInit() {
-    await this.seedDefaultPlans();
+  async onModuleInit(): Promise<void> {
+    await this.validatePlanCatalog();
   }
 
-  // ── Catálogo y Seeding (Fail-Fast e Idempotente) ──────────────────────────
-
-  /**
-   * Asegura la persistencia repetible del catálogo aprobado con valores decimales exactos.
-   * Si ocurre un error de base de datos, falla de forma inmediata (fail-fast)
-   * registrando la causa en el logger para no ocultar inconsistencias.
-   */
-  async seedDefaultPlans(): Promise<void> {
-    try {
-      const defaultCatalog: Partial<Plan>[] = [
-        {
-          name: 'Demo',
-          description: 'Prueba el espacio de trabajo de Nexus con capacidad para una organización pequeña.',
-          priceCents: 0,
-          storageLimitBytes: '5000000000', // 5 GB decimales
-          maxMembers: 5,
-          validityDays: null, // Vencimiento indefinido mientras sea gratuito
-          active: true,
-          storageLocation: StorageLocation.CLOUD,
-        },
-        {
-          name: 'Team',
-          description: 'Almacenamiento seguro para equipos pequeños que comparten archivos de trabajo.',
-          priceCents: 1999, // US$ 19.99
-          storageLimitBytes: '100000000000', // 100 GB decimales
-          maxMembers: 10,
-          validityDays: 30, // 30 días de vigencia
-          active: true,
-          storageLocation: StorageLocation.CLOUD,
-        },
-        {
-          name: 'Business',
-          description: 'Más capacidad y espacio para organizaciones en crecimiento.',
-          priceCents: 5999, // US$ 59.99
-          storageLimitBytes: '500000000000', // 500 GB decimales
-          maxMembers: 30,
-          validityDays: 30, // 30 días de vigencia
-          active: true,
-          storageLocation: StorageLocation.CLOUD,
-        },
-        {
-          name: 'Enterprise',
-          description: 'Capacidad ampliada para organizaciones con mayor volumen.',
-          priceCents: 14999, // US$ 149.99
-          storageLimitBytes: '2000000000000', // 2 TB decimales
-          maxMembers: 100,
-          validityDays: 30, // 30 días de vigencia
-          active: true,
-          storageLocation: StorageLocation.CLOUD,
-        },
-      ];
-
-      // Mapeo de nombres legados para normalización
-      const legacyNameMap: Record<string, string> = {
-        Demo: 'Plan Demo',
-        Team: 'Plan Team',
-        Business: 'Plan Business',
-        Enterprise: 'Plan Enterprise',
-      };
-
-      for (const item of defaultCatalog) {
-        // Buscar por nombre canónico o por nombre legado
-        const legacyName = legacyNameMap[item.name!];
-        let existing = await this.planRepo.findOneBy({ name: item.name });
-        if (!existing && legacyName) {
-          existing = await this.planRepo.findOneBy({ name: legacyName });
-          if (existing) {
-            existing.name = item.name!;
-          }
-        }
-
-        if (!existing) {
-          const created = this.planRepo.create(item);
-          await this.planRepo.save(created);
-        } else {
-          let modified = false;
-          if (existing.name !== item.name) {
-            existing.name = item.name!;
-            modified = true;
-          }
-          if (existing.validityDays !== item.validityDays) {
-            existing.validityDays = item.validityDays ?? null;
-            modified = true;
-          }
-          if (existing.description !== item.description) {
-            existing.description = item.description;
-            modified = true;
-          }
-          if (existing.storageLimitBytes !== item.storageLimitBytes) {
-            existing.storageLimitBytes = item.storageLimitBytes!;
-            modified = true;
-          }
-          if (existing.maxMembers !== item.maxMembers) {
-            existing.maxMembers = item.maxMembers!;
-            modified = true;
-          }
-          if (existing.priceCents !== item.priceCents) {
-            existing.priceCents = item.priceCents!;
-            modified = true;
-          }
-          if (modified) {
-            await this.planRepo.save(existing);
-          }
-        }
+  /** The SQL migration is the single source of catalog data; startup verifies it exists. */
+  async validatePlanCatalog(): Promise<void> {
+    for (const name of ['Demo', 'Team', 'Business', 'Enterprise']) {
+      const plan = await this.planRepo.findOneBy({ name });
+      if (!plan) {
+        throw new NotFoundException(`El plan ${name} no está en el catálogo; aplica las migraciones de Billing`);
       }
-
-      this.logger.log('Catálogo de planes validado y sincronizado con éxito (valores decimales).');
-    } catch (error: any) {
-      this.logger.error(
-        `Fallo crítico de inicialización: no se pudo sembrar el catálogo de planes: ${error?.message}`,
-        error?.stack,
-      );
-      // Fail-fast: interrumpir el arranque si el catálogo obligatorio no se puede inicializar
-      throw error;
     }
+  }
+
+  /** @deprecated Kept for callers from the previous Billing API; catalog data comes from migrations. */
+  async seedDefaultPlans(): Promise<void> {
+    await this.validatePlanCatalog();
   }
 
   async listPlans(): Promise<Plan[]> {
     return this.planRepo.find({
-      where: { active: true },
       order: { priceCents: 'ASC' },
     });
   }
@@ -169,8 +63,7 @@ export class BillingService implements OnModuleInit {
   }
 
   async getDemoPlan(): Promise<Plan> {
-    const demo = await this.planRepo.findOneBy({ name: 'Demo' })
-      || await this.planRepo.findOneBy({ name: 'Plan Demo' });
+    const demo = await this.planRepo.findOneBy({ name: 'Demo' });
     if (!demo) {
       throw new NotFoundException('El Plan Demo no se encuentra registrado en el catálogo');
     }
@@ -188,9 +81,10 @@ export class BillingService implements OnModuleInit {
     transactionalManager?: EntityManager,
   ): Promise<Subscription> {
     const execute = async (manager: EntityManager): Promise<Subscription> => {
-      const demoPlan = await manager.findOne(Plan, { where: { name: 'Demo' } })
-        || await manager.findOne(Plan, { where: { name: 'Plan Demo' } })
-        || await this.getDemoPlan();
+      const demoPlan = await manager.findOne(Plan, { where: { name: 'Demo' } });
+      if (!demoPlan) {
+        throw new NotFoundException('El plan Demo no está en el catálogo; aplica las migraciones de Billing');
+      }
 
       // Idempotencia: si ya existe una suscripción activa (ej. reintento), retornarla
       const existing = await manager.findOne(Subscription, {
@@ -205,6 +99,7 @@ export class BillingService implements OnModuleInit {
         organizationId,
         planId: demoPlan.id,
         status: SubscriptionStatus.ACTIVE,
+        startDate: new Date(),
         simulated: true, // Sin cobro real
         expiresAt: null, // Demo sin vencimiento
       });
@@ -239,7 +134,9 @@ export class BillingService implements OnModuleInit {
 
     if (!sub) return null;
 
-    if (sub.expiresAt && sub.expiresAt.getTime() < Date.now()) {
+    const todayUtc = new Date().toISOString().slice(0, 10);
+    const endDate = sub.expiresAt?.toISOString().slice(0, 10);
+    if (endDate && endDate <= todayUtc) {
       sub.status = SubscriptionStatus.EXPIRED;
       await repo.save(sub);
       return null;
@@ -259,7 +156,8 @@ export class BillingService implements OnModuleInit {
   /**
    * Persiste transaccionalmente el cambio o activación de suscripción.
    * Cancela la suscripción activa previa y guarda la nueva de forma atómica.
-   * Captura específicamente la colisión del índice único parcial (uq_active_org_subscription, código 23505)
+   * Captura específicamente la colisión del índice único parcial
+   * (uq_subscription_one_active_per_organization, código 23505)
    * y lo devuelve como ConflictException controlado.
    */
   async persistSubscription(
@@ -296,6 +194,7 @@ export class BillingService implements OnModuleInit {
           organizationId,
           planId: targetPlan.id,
           status: SubscriptionStatus.ACTIVE,
+          startDate,
           simulated: true, // Sin pasarelas de pago ni tarjetas reales
           expiresAt,
         });
@@ -337,7 +236,7 @@ export class BillingService implements OnModuleInit {
 
   /**
    * Devuelve el límite de almacenamiento en bytes para una organización.
-   * Usado internamente por FilesModule.uploadFile() antes de aceptar subidas.
+   * Usado internamente por FilesModule.uploadMultipartFile() antes de aceptar subidas.
    *
    * Fallback de estado: Si la organización no tiene suscripción activa o su plan venció,
    * retorna BigInt(0), bloqueando inmediatamente nuevas cargas por cuota excedida.

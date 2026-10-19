@@ -39,7 +39,7 @@ export class SubscriptionsController {
       subscriptionId: subscription.id,
       status: 'active',
       simulated: true,
-      startDate: subscription.createdAt.toISOString(),
+      startDate: (subscription.startDate ?? subscription.createdAt).toISOString(),
       endDate: subscription.expiresAt ? subscription.expiresAt.toISOString() : null,
     };
   }

@@ -145,7 +145,9 @@ describe('SubscriptionCoordinator — Pruebas de orquestación, concurrencia y f
         code: 'STORAGE_QUOTA_EXCEEDED',
       });
 
-      expect(filesService.getTotalStorageUsage).toHaveBeenCalledWith('org-test-uuid');
+      // El uso se lee dentro de la transacción, con el mismo EntityManager: el downgrade
+      // debe evaluarse bajo el bloqueo de cuota, no con una lectura suelta previa.
+      expect(filesService.getTotalStorageUsage).toHaveBeenCalledWith('org-test-uuid', mockManager);
       expect(mockManager.save).not.toHaveBeenCalled();
     });
 
@@ -223,7 +225,7 @@ describe('SubscriptionCoordinator — Pruebas de orquestación, concurrencia y f
   });
 
   describe('3. Concurrencia y Colisión de Índice Único Parcial', () => {
-    it('debe capturar error 23505 (uq_active_org_subscription) y responder con ConflictException', async () => {
+    it('debe capturar error 23505 (uq_subscription_one_active_per_organization) y responder con ConflictException', async () => {
       (billingService.findPlanById as jest.Mock).mockResolvedValue(mockTeamPlan);
 
       (filesService.getTotalStorageUsage as jest.Mock).mockResolvedValue({
@@ -232,7 +234,7 @@ describe('SubscriptionCoordinator — Pruebas de orquestación, concurrencia y f
         totalBytes: BigInt(0),
       });
 
-      const uniqueViolationError = new Error('duplicate key value violates unique constraint "uq_active_org_subscription"');
+      const uniqueViolationError = new Error('duplicate key value violates unique constraint "uq_subscription_one_active_per_organization"');
       (uniqueViolationError as any).code = '23505';
 
       const mockManager = {

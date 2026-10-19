@@ -1,12 +1,12 @@
 import {
-  Entity,
-  PrimaryGeneratedColumn,
   Column,
-  ManyToOne,
-  JoinColumn,
   CreateDateColumn,
-  UpdateDateColumn,
+  Entity,
   Index,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+  ValueTransformer,
 } from 'typeorm';
 import { Plan } from './plan.entity';
 
@@ -16,41 +16,53 @@ export enum SubscriptionStatus {
   CANCELLED = 'cancelled',
 }
 
-@Entity('subscriptions')
-@Index('uq_active_org_subscription', ['organizationId'], {
+const dateOnly: ValueTransformer = {
+  to(value: Date | null | undefined): string | null | undefined {
+    return value instanceof Date ? value.toISOString().slice(0, 10) : value;
+  },
+  from(value: string | null): Date | null {
+    return value ? new Date(`${value}T00:00:00.000Z`) : null;
+  },
+};
+
+/** Maps the public Billing model onto the canonical `billing.subscription` table. */
+@Entity({ schema: 'billing', name: 'subscription' })
+@Index('uq_subscription_one_active_per_organization', ['organizationId'], {
   unique: true,
   where: "status = 'active'",
 })
 export class Subscription {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+  @PrimaryGeneratedColumn('uuid', { name: 'subscription_id' })
+  id!: string;
 
-  /** ID de la organización propietaria de esta suscripción */
-  @Column({ name: 'organization_id' })
-  organizationId: string;
+  @Column({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string;
 
   @ManyToOne(() => Plan, { eager: true })
-  @JoinColumn({ name: 'plan_id' })
-  plan: Plan;
+  @JoinColumn({ name: 'plan_id', referencedColumnName: 'id' })
+  plan!: Plan;
 
-  @Column({ name: 'plan_id' })
-  planId: string;
+  @Column({ name: 'plan_id', type: 'uuid' })
+  planId!: string;
 
-  /** Estado de vigencia real de la suscripción (active, expired, cancelled) */
-  @Column({ type: 'varchar', default: SubscriptionStatus.ACTIVE })
-  status: SubscriptionStatus;
+  @Column({
+    type: 'enum',
+    enum: SubscriptionStatus,
+    enumName: 'subscription_status',
+  })
+  status!: SubscriptionStatus;
 
-  /** Indicador de si la suscripción es simulada (sin procesamiento de pago real) */
-  @Column({ default: true })
-  simulated: boolean;
+  @Column({ name: 'start_date', type: 'date', transformer: dateOnly })
+  startDate?: Date;
 
-  /** Fecha de vencimiento. null indica sin vencimiento (ej. Plan Demo) */
-  @Column({ name: 'expires_at', nullable: true, type: 'timestamptz' })
-  expiresAt: Date | null;
+  /** `end_date` is exclusive: on that UTC date the subscription is already expired. */
+  @Column({ name: 'end_date', type: 'date', nullable: true, transformer: dateOnly })
+  expiresAt!: Date | null;
 
-  @CreateDateColumn({ name: 'created_at' })
-  createdAt: Date;
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt!: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
-  updatedAt: Date;
+  /** Billing is simulated in this release; the canonical schema has no payment column. */
+  simulated = true;
+  updatedAt?: Date;
 }
