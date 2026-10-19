@@ -1,2 +1,2 @@
-import { FileBrowser } from "@/components/file-browser";
-export default function TrashPage() { return <FileBrowser trash />; }
+import { FileBrowserLive } from "@/components/file-browser-live";
+export default function TrashPage() { return <FileBrowserLive trash />; }

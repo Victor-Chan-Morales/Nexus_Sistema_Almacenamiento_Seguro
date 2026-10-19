@@ -25,7 +25,7 @@ function FileGlyph({ type }: { type: string }) {
 function storedBytes(file: DemoFile) { return file.versions?.reduce((sum, version) => sum + version.size, 0) ?? file.size; }
 function fileVersions(file: DemoFile | undefined) { return file ? file.versions?.length ? file.versions : [{ number: 1, size: file.size, type: file.type, uploadedAt: "Hoy (demostración)" }] : []; }
 
-export function FileBrowser({ trash = false, quotaExceeded = false }: { trash?: boolean; quotaExceeded?: boolean }) {
+export function FileBrowserPrototype({ trash = false, quotaExceeded = false }: { trash?: boolean; quotaExceeded?: boolean }) {
   const params = useParams<{ folderId?: string }>();
   const router = useRouter();
   const state = useDemo();

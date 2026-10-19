@@ -18,6 +18,9 @@
 
     "infra:up": "docker compose up -d postgres seaweedfs",
     "infra:down": "docker compose down",
-    "infra:logs": "docker compose logs -f"
+    "infra:logs": "docker compose logs -f",
+
+    "migration:run": "docker compose run --rm migrate",
+    "migration:revert": "docker compose run --rm migrate rollback"
   }
 }

@@ -19,3 +19,5 @@ database/schema.sql
 *.tsbuildinfo
 apps/api/*.tsbuildinfo
 dist/
+# Directorio de herramientas local, no es parte del proyecto
+.commandcode/

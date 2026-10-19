@@ -1,3 +1,3 @@
-import { DashboardView } from "@/components/dashboard-views";
+import { DashboardDemoView } from "@/components/dashboard-views";
 
-export default function EmptyDashboardPage() { return <DashboardView variant="empty" />; }
+export default function EmptyDashboardPage() { return <DashboardDemoView variant="empty" />; }
