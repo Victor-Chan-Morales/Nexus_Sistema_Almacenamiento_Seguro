@@ -12,7 +12,7 @@ El Hito del 50% y la revisión del PR #4 exigen resolver inconsistencias en la g
 3. Se debe garantizar como máximo una sola suscripción activa por organización a nivel de base de datos y evitar condiciones de carrera en cambios de plan.
 4. El cambio a un plan menor (downgrade) debe validarse contra el almacenamiento real ocupado por la organización (versiones retenidas + papelera en 30 días) más las reservas de carga activas antes de confirmar la suscripción.
 5. Queda prohibido el uso de `ModuleRef` como anti-patrón de resolución dinámica; la coordinación entre dominios se realiza a través de un `SubscriptionCoordinator` en la capa de integración.
-6. Los cambios en las entidades `Plan` (`description`, `validity_days`) y `Subscription` (`status`, `simulated`, `expires_at`) deben estar versionados en la ubicación canónica `database/migrations/`.
+6. Los cambios en las entidades `Plan` (`description`, `validity_days`) y `Subscription` (`status`, `simulated`, `expires_at`) deben estar versionados en una migración ejecutable.
 
 ## Decisiones
 
@@ -41,11 +41,13 @@ El Hito del 50% y la revisión del PR #4 exigen resolver inconsistencias en la g
    - `POST /subscriptions/activate` es orquestado por el `SubscriptionCoordinator` del módulo de integración.
    - Consulta a `FilesService.getTotalStorageUsage(orgId)` sumando versiones confirmadas, retención de 30 días en papelera y reservas activas.
    - Falla segura: si Files no responde o arroja error, aborta la transacción inmediatamente; nunca asume 0 bytes.
-   - Si el espacio total excede la capacidad del nuevo plan, rechaza con código `409 Conflict` (`STORAGE_QUOTA_EXCEEDED`).
+   - Si el espacio total excede la capacidad del nuevo plan, rechaza con `422 Unprocessable Entity` y `code: "STORAGE_QUOTA_EXCEEDED"`, según `CONTRACTS.md`: la cuota insuficiente es una regla de negocio (422), mientras `409` queda reservado para el conflicto de estado por activación concurrente.
 
 ## Script SQL de Migración (PostgreSQL)
 
-Ubicación canónica: `database/migrations/1729267200000-AlterPlanAddDescriptionAndValidityDays.ts`.
+Ubicación: `apps/api/src/migrations/1729267200000-AlterPlanAddDescriptionAndValidityDays.ts`, ejecutable con `npm run migration:run`.
+
+`database/migrations/` en la raíz está reservada a las migraciones SQL canónicas de dbmate (esquema MER v3, `billing.plan`). Estas entidades usan otro esquema (`plans`), y una migración `.ts` colocada allí no es ejecutable: dbmate ignora los `.ts` y Node no puede resolver `typeorm` fuera de `apps/api`. Consolidar ambos esquemas en la ubicación canónica queda a cargo del integrador; ver `SESSION_LOG.md`.
 
 ```sql
 -- 1. Agregar columnas a plans si no existen

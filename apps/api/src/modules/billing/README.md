@@ -38,5 +38,6 @@
 ## Integridad de Base de Datos y Migraciones
 
 - **Restricción de Concurrencia:** Índice único parcial `uq_active_org_subscription` en PostgreSQL (`WHERE status = 'active'`), garantizando que ninguna organización pueda tener más de una suscripción activa simultáneamente. Colisiones concurrentes son capturadas (código 23505) y transformadas en HTTP 409 controlado.
-- **Ubicación Canónica de Migraciones:** `database/migrations/1729267200000-AlterPlanAddDescriptionAndValidityDays.ts` en la raíz del repositorio, ejecutable explícitamente vía `npm run migration:run`.
+- **Migración:** `apps/api/src/migrations/1729267200000-AlterPlanAddDescriptionAndValidityDays.ts`, ejecutable vía `npm run migration:run`. No siembra el catálogo: su única fuente es `seedDefaultPlans()`. Consolidarla con las migraciones SQL canónicas de `database/migrations/` queda a cargo del integrador (ver `SESSION_LOG.md`).
+- **Cuota insuficiente en un cambio de plan:** `422` con `code: "STORAGE_QUOTA_EXCEEDED"`, según `CONTRACTS.md`. El `409` queda solo para el conflicto por activación concurrente.
 - **Seeding Fail-Fast:** `seedDefaultPlans()` se ejecuta en el arranque del servicio. No oculta errores y asegura la presencia y actualización de los 4 planes aprobados.

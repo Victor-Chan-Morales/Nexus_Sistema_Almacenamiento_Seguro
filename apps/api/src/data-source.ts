@@ -13,7 +13,9 @@ export const AppDataSource = new DataSource({
   password: process.env.POSTGRES_PASSWORD || 'local_only_change_me',
   database: process.env.POSTGRES_DB || 'nexus_dev',
   entities: [path.resolve(__dirname, 'modules/**/*.entity{.ts,.js}')],
-  migrations: [path.resolve(__dirname, '../../../database/migrations/*{.ts,.js}')],
+  // Las migraciones viven dentro del paquete de la API: un .ts fuera de apps/api no puede
+  // resolver 'typeorm', porque node_modules solo existe aquí.
+  migrations: [path.resolve(__dirname, 'migrations/*{.ts,.js}')],
   synchronize: false,
   logging: process.env.NODE_ENV === 'development',
 });

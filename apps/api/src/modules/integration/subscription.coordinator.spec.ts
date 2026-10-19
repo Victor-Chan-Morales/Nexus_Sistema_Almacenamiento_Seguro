@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
-import { ConflictException, InternalServerErrorException } from '@nestjs/common';
+import {
+  ConflictException,
+  InternalServerErrorException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { SubscriptionCoordinator } from './subscription.coordinator';
 import { BillingService } from '../billing/billing.service';
 import { FilesService } from '../files/files.service';
@@ -101,7 +105,7 @@ describe('SubscriptionCoordinator — Pruebas de orquestación, concurrencia y f
   });
 
   describe('2. Coordinación de Downgrade y Falla Segura (Fail-Safe)', () => {
-    it('debe rechazar el downgrade con ConflictException si usedBytes + reservedBytes supera el nuevo plan', async () => {
+    it('debe rechazar el downgrade con 422 STORAGE_QUOTA_EXCEEDED si usedBytes + reservedBytes supera el nuevo plan', async () => {
       // Intenta cambiar a Demo (5 GB = 5000000000 bytes)
       (billingService.findPlanById as jest.Mock).mockResolvedValue(mockDemoPlan);
 
@@ -130,9 +134,16 @@ describe('SubscriptionCoordinator — Pruebas de orquestación, concurrencia y f
       };
       (dataSource.transaction as jest.Mock).mockImplementation((cb: any) => cb(mockManager));
 
-      await expect(
-        coordinator.activateSubscription('org-test-uuid', mockDemoPlan.id),
-      ).rejects.toThrow(ConflictException);
+      // CONTRACTS.md: la cuota insuficiente es 422 (regla de negocio), no 409 (conflicto de estado).
+      const error = await coordinator
+        .activateSubscription('org-test-uuid', mockDemoPlan.id)
+        .catch((err: unknown) => err);
+
+      expect(error).toBeInstanceOf(UnprocessableEntityException);
+      expect((error as UnprocessableEntityException).getStatus()).toBe(422);
+      expect((error as UnprocessableEntityException).getResponse()).toMatchObject({
+        code: 'STORAGE_QUOTA_EXCEEDED',
+      });
 
       expect(filesService.getTotalStorageUsage).toHaveBeenCalledWith('org-test-uuid');
       expect(mockManager.save).not.toHaveBeenCalled();

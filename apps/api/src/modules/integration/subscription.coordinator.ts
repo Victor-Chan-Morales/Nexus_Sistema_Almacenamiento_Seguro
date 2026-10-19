@@ -3,6 +3,7 @@ import {
   Logger,
   ConflictException,
   InternalServerErrorException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { BillingService } from '../billing/billing.service';
@@ -22,6 +23,9 @@ import { Subscription, SubscriptionStatus } from '../billing/entities/subscripti
  *    (SELECT FOR UPDATE) e idempotencia para activaciones del mismo plan.
  * 5. Manejo del índice único parcial: captura el error 23505 (uq_active_org_subscription)
  *    y emite un error 409 controlado de conflicto.
+ *
+ * Códigos de error según CONTRACTS.md: la cuota insuficiente responde 422 STORAGE_QUOTA_EXCEEDED
+ * (regla de negocio); 409 queda reservado para el conflicto de estado por activación concurrente.
  */
 @Injectable()
 export class SubscriptionCoordinator {
@@ -73,9 +77,9 @@ export class SubscriptionCoordinator {
 
       const targetStorageLimit = BigInt(targetPlan.storageLimitBytes);
 
-      // Si el espacio ocupado + reservas supera la capacidad del nuevo plan, rechazar con 409 Conflict
+      // Si el espacio ocupado + reservas supera la capacidad del nuevo plan, rechazar con 422 (cuota)
       if (storageUsage.totalBytes > targetStorageLimit) {
-        throw new ConflictException({
+        throw new UnprocessableEntityException({
           code: 'STORAGE_QUOTA_EXCEEDED',
           message: `El almacenamiento actual (${storageUsage.totalBytes} bytes: ${storageUsage.usedBytes} confirmados + ${storageUsage.reservedBytes} reservados) supera la capacidad del plan seleccionado (${targetStorageLimit} bytes). Elimine o descargue archivos antes de cambiar a un plan menor.`,
         });

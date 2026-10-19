@@ -1,9 +1,11 @@
 import {
   Injectable, NotFoundException, ForbiddenException, BadRequestException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Readable } from 'stream';
+import { randomUUID } from 'crypto';
 import { FileRecord } from './entities/file-record.entity';
 import { Folder } from './entities/folder.entity';
 import { FileVersion } from './entities/file-version.entity';
@@ -73,62 +75,75 @@ export class FilesService {
   }): Promise<FileRecord> {
     // 1. Verificar cuota — llamada directa a BillingService (sin HTTP)
     const storageLimit = await this.billingService.getStorageLimitBytes(params.organizationId);
-    const usedBytes = await this.getUsedStorageBytes(params.organizationId);
 
-    if (usedBytes + BigInt(params.sizeBytes) > storageLimit) {
-      throw new ForbiddenException('Cuota de almacenamiento excedida');
-    }
+    // La reserva se crea ANTES de validar: así dos cargas simultáneas se cuentan entre sí y no
+    // pueden superar juntas el límite del plan. Se libera siempre al confirmar o fallar la carga.
+    const reservationId = randomUUID();
+    this.reserveUpload(params.organizationId, reservationId, BigInt(params.sizeBytes));
 
-    // 2. Crear registro del archivo
-    let fileRecord = await this.fileRepo.findOne({
-      where: {
-        name: params.name,
-        organizationId: params.organizationId,
-        folderId: params.folderId ?? null,
-        isDeleted: false,
-      },
-    });
+    try {
+      // totalBytes ya incluye esta reserva, por eso no se vuelve a sumar sizeBytes.
+      const { totalBytes } = await this.getTotalStorageUsage(params.organizationId);
+      if (totalBytes > storageLimit) {
+        throw new UnprocessableEntityException({
+          code: 'STORAGE_QUOTA_EXCEEDED',
+          message: 'La carga supera el almacenamiento disponible de tu plan.',
+        });
+      }
 
-    let versionNumber = 1;
-    if (!fileRecord) {
-      fileRecord = this.fileRepo.create({
-        name: params.name,
-        organizationId: params.organizationId,
-        ownerId: params.ownerId,
-        folderId: params.folderId,
-        mimeType: params.mimeType,
+      // 2. Crear registro del archivo
+      let fileRecord = await this.fileRepo.findOne({
+        where: {
+          name: params.name,
+          organizationId: params.organizationId,
+          folderId: params.folderId ?? null,
+          isDeleted: false,
+        },
+      });
+
+      let versionNumber = 1;
+      if (!fileRecord) {
+        fileRecord = this.fileRepo.create({
+          name: params.name,
+          organizationId: params.organizationId,
+          ownerId: params.ownerId,
+          folderId: params.folderId,
+          mimeType: params.mimeType,
+          sizeBytes: params.sizeBytes.toString(),
+        });
+        await this.fileRepo.save(fileRecord);
+      } else {
+        const lastVersion = await this.versionRepo.findOne({
+          where: { fileId: fileRecord.id },
+          order: { versionNumber: 'DESC' },
+        });
+        versionNumber = (lastVersion?.versionNumber ?? 0) + 1;
+      }
+
+      // 3. Generar clave de objeto con prefijo de organización (seguridad multi-tenant)
+      const objectKey = `${params.organizationId}/${fileRecord.id}/v${versionNumber}`;
+
+      // 4. Guardar en SeaweedFS — llamada directa a StorageService (sin HTTP)
+      await this.storageService.put(objectKey, params.stream, params.sizeBytes, params.mimeType);
+
+      // 5. Registrar versión
+      const version = this.versionRepo.create({
+        fileId: fileRecord.id,
+        versionNumber,
+        objectKey,
         sizeBytes: params.sizeBytes.toString(),
+        uploadedBy: params.ownerId,
       });
+      await this.versionRepo.save(version);
+
+      // 6. Actualizar tamaño del archivo
+      fileRecord.sizeBytes = params.sizeBytes.toString();
       await this.fileRepo.save(fileRecord);
-    } else {
-      const lastVersion = await this.versionRepo.findOne({
-        where: { fileId: fileRecord.id },
-        order: { versionNumber: 'DESC' },
-      });
-      versionNumber = (lastVersion?.versionNumber ?? 0) + 1;
+
+      return fileRecord;
+    } finally {
+      this.releaseReservation(params.organizationId, reservationId);
     }
-
-    // 3. Generar clave de objeto con prefijo de organización (seguridad multi-tenant)
-    const objectKey = `${params.organizationId}/${fileRecord.id}/v${versionNumber}`;
-
-    // 4. Guardar en SeaweedFS — llamada directa a StorageService (sin HTTP)
-    await this.storageService.put(objectKey, params.stream, params.sizeBytes, params.mimeType);
-
-    // 5. Registrar versión
-    const version = this.versionRepo.create({
-      fileId: fileRecord.id,
-      versionNumber,
-      objectKey,
-      sizeBytes: params.sizeBytes.toString(),
-      uploadedBy: params.ownerId,
-    });
-    await this.versionRepo.save(version);
-
-    // 6. Actualizar tamaño del archivo
-    fileRecord.sizeBytes = params.sizeBytes.toString();
-    await this.fileRepo.save(fileRecord);
-
-    return fileRecord;
   }
 
   async getDownloadUrl(fileId: string, organizationId: string): Promise<string> {
@@ -154,7 +169,15 @@ export class FilesService {
 
   // ── Cuota y Reservas de Almacenamiento ─────────────────────────────────
 
-  // Mapa en memoria para reservas atómicas activas: organizationId -> Map<reservationId, bigint>
+  /**
+   * Reservas de cargas en curso: organizationId -> Map<reservationId, bigint>.
+   *
+   * LIMITACIÓN CONOCIDA: este almacén vive en memoria del proceso. Protege contra cargas
+   * simultáneas dentro de una misma instancia, pero no entre varias instancias y se pierde al
+   * reiniciar. Para cumplir "reserva atómica por organización" de CONTRACTS.md en un despliegue
+   * con más de una instancia, debe reemplazarse por una tabla en PostgreSQL. Pendiente de Files
+   * (Miguel); registrado en SESSION_LOG.md.
+   */
   private readonly activeReservations = new Map<string, Map<string, bigint>>();
 
   /**

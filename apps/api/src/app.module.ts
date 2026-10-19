@@ -29,9 +29,10 @@ import { IntegrationModule } from './modules/integration/integration.module';
         password: config.get('POSTGRES_PASSWORD', 'local_only_change_me'),
         database: config.get('POSTGRES_DB', 'nexus_dev'),
         autoLoadEntities: true,
-        // No depender de synchronize: true en producción; utilizar migraciones explícitas
-        synchronize: config.get('TYPEORM_SYNC') === 'true',
-        migrations: [__dirname + '/../../../database/migrations/*{.ts,.js}'],
+        // No depender de synchronize: true en producción; utilizar migraciones explícitas.
+        // La variable es DB_SYNCHRONIZE, igual que en main y en el módulo IAM.
+        synchronize: config.get('DB_SYNCHRONIZE') === 'true',
+        migrations: [__dirname + '/migrations/*{.ts,.js}'],
         migrationsRun: false, // Se ejecutan explícitamente vía npm run migration:run
         logging: config.get('NODE_ENV') === 'development',
       }),

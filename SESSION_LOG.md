@@ -5,6 +5,25 @@
 
 Registro dinámico de decisiones, acuerdos pendientes y bloqueos. Añada entradas nuevas al principio; no borre historia. Los contratos de integración v0.3 fueron aprobados por el integrador para implementación el 2026-10-18.
 
+## 2026-10-19 — Correcciones del integrador sobre PR #4 (Billing)
+
+- **Estado:** aplicado por Víctor (integrador) sobre `feature/anthony/billing-demo`. Verificado con PostgreSQL 16.
+- **Corregido:**
+  - La cuota insuficiente en un cambio de plan responde `422 STORAGE_QUOTA_EXCEEDED` en lugar de `409`. `CONTRACTS.md` reserva `409` para conflictos de estado; el `409` por colisión del índice único se mantiene.
+  - Las reservas de carga dejaron de ser código muerto: `uploadFile()` reserva antes de validar y libera en `finally`, así dos cargas simultáneas se cuentan entre sí. La cuota excedida al cargar pasó de `403` a `422 STORAGE_QUOTA_EXCEEDED`.
+  - La migración no era ejecutable por ninguna vía: dbmate ignora los `.ts` y Node no resuelve `typeorm` fuera de `apps/api`. Se movió a `apps/api/src/migrations/` y ahora corre con `npm run migration:run`.
+  - La migración ya no siembra el catálogo. Única fuente de valores: `BillingService.seedDefaultPlans()`. Esto también elimina un `ON CONFLICT ("name")` que dependía de una restricción única inexistente.
+  - Filtro de excepciones movido de `shared/filters/` a `common/filters/`, la misma ruta que usa IAM, para que la integración tenga un solo archivo.
+  - `synchronize` vuelve a leer `DB_SYNCHRONIZE`, como `main` e IAM, en lugar de `TYPEORM_SYNC`.
+  - Revertido `apps/web/next-env.d.ts`, que es un archivo generado.
+- **Verificado:** `tsc` y `nest build` sin errores; Jest 25/25, con 5 pruebas nuevas de cuota y reservas, incluida una de cargas simultáneas. Migración aplicada en base limpia y en base con 3 suscripciones vigentes de la misma organización: quedó 1 activa (la más reciente) y 2 `cancelled`, los nombres legados se renombraron y el índice único se creó sin fallar. El `down` también se probó. El índice rechaza una segunda activa con `23505`.
+- **Propiedad:** `SubscriptionCoordinator` lo implementó Anthony, aunque `CONTRACTS.md` lo asigna al integrador. Se acepta la implementación y se registra el cambio en `ENTS_REGISTRY.md`, según `CONTRIBUTING.md`. Víctor ya no lo implementa por separado.
+- **Pendiente antes del merge:**
+  1. **Conexión con el registro.** Anthony conectó Billing haciendo que `IamModule` importe `BillingModule` y modificando `iam.service.ts`. En `Sebastian_S` ese archivo ya no existe: IAM se reestructuró con `RegistrationHooks`. Como IAM se integra primero, al rebasar hay que registrar el hook `demo-subscription` que llame a `provisionInitialSubscription(orgId, manager)`, que ya está implementado. No puede hacerse antes porque `RegistrationHooks` no existe en la base de esta rama.
+  2. **Reservas persistentes.** El almacén de reservas vive en memoria del proceso: no cubre varias instancias ni sobrevive a un reinicio. Files (Miguel) debe reemplazarlo por una tabla en PostgreSQL.
+  3. **Esquema divergente (decisión del integrador).** Las migraciones SQL canónicas describen el MER v3 (`billing.plan`, `storage_limit_gb`), pero las entidades de la API usan otro esquema (`plans`, `storage_limit_bytes`). Afecta a los cuatro módulos, no solo a Billing. Hay que decidir cuál es el esquema real antes de consolidar `database/migrations/`.
+  4. `plans."storageLocation"` quedó en camelCase mientras el resto de columnas usa snake_case.
+
 ## 2026-10-18 — Cierre de observaciones de PR #4 (Billing) y alineación con CONTRACTS.md v0.3
 
 - **Estado:** Implementado, refactorizado y validado con 100% de pruebas unitarias y compilación limpia.

@@ -3,15 +3,20 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 /**
  * Migración Canónica TypeORM: Alteración, Normalización e Índices de Billing
  *
- * Ubicación: database/migrations/ (raíz del repositorio)
- * Cumple con: CONTRACTS.md v0.3, CONTRIBUTING.md y ADR-005.
+ * Ubicación: apps/api/src/migrations/ — se ejecuta con `npm run migration:run`.
+ * `database/migrations/` en la raíz está reservada a las migraciones SQL canónicas de dbmate, que
+ * describen el esquema MER v3 (billing.plan). Estas entidades usan otro esquema (plans), así que
+ * consolidar ambos queda a cargo del integrador. Ver SESSION_LOG.md.
+ * Cumple con: CONTRACTS.md v0.4 y ADR-005.
  *
  * Acciones:
  * 1. Agrega description y validity_days a plans.
  * 2. Agrega simulated a subscriptions.
  * 3. Normaliza suscripciones históricas (simulated a active/cancelled determinista).
  * 4. Crea índice único condicional (parcial) uq_active_org_subscription.
- * 5. Siembra/actualiza el catálogo canónico con capacidades decimales exactas.
+ * 5. Renombra los planes legados a los nombres canónicos de CONTRACTS.md.
+ *
+ * No siembra el catálogo: los valores viven solo en BillingService.seedDefaultPlans().
  */
 export class AlterPlanAddDescriptionAndValidityDays1729267200000 implements MigrationInterface {
   name = 'AlterPlanAddDescriptionAndValidityDays1729267200000';
@@ -66,22 +71,9 @@ export class AlterPlanAddDescriptionAndValidityDays1729267200000 implements Migr
       UPDATE "plans" SET name = 'Enterprise' WHERE name = 'Plan Enterprise';
     `);
 
-    // 6. Sembrar / Actualizar catálogo oficial aprobado con valores decimales exactos
-    await queryRunner.query(`
-      INSERT INTO "plans" ("id", "name", "description", "price_cents", "storage_limit_bytes", "max_members", "validity_days", "storage_location", "active", "created_at")
-      VALUES
-        (gen_random_uuid(), 'Demo', 'Prueba el espacio de trabajo de Nexus con capacidad para una organización pequeña.', 0, 5000000000, 5, NULL, 'cloud', true, NOW()),
-        (gen_random_uuid(), 'Team', 'Almacenamiento seguro para equipos pequeños que comparten archivos de trabajo.', 1999, 100000000000, 10, 30, 'cloud', true, NOW()),
-        (gen_random_uuid(), 'Business', 'Más capacidad y espacio para organizaciones en crecimiento.', 5999, 500000000000, 30, 30, 'cloud', true, NOW()),
-        (gen_random_uuid(), 'Enterprise', 'Capacidad ampliada para organizaciones con mayor volumen.', 14999, 2000000000000, 100, 30, 'cloud', true, NOW())
-      ON CONFLICT ("name") DO UPDATE SET
-        "description" = EXCLUDED."description",
-        "price_cents" = EXCLUDED."price_cents",
-        "storage_limit_bytes" = EXCLUDED."storage_limit_bytes",
-        "max_members" = EXCLUDED."max_members",
-        "validity_days" = EXCLUDED."validity_days",
-        "active" = true;
-    `);
+    // El catálogo NO se siembra aquí: su única fuente son los valores de
+    // BillingService.seedDefaultPlans(), que se aplican de forma idempotente al arrancar la API.
+    // Así los importes y capacidades no pueden divergir entre migración y código.
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

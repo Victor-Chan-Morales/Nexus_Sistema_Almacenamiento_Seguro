@@ -12,7 +12,7 @@ import {
   ActivateSubscriptionDto,
   SubscriptionActivationResponse,
 } from '../billing/billing.dto';
-import { ApiExceptionFilter } from '../../shared/filters/api-exception.filter';
+import { ApiExceptionFilter } from '../../common/filters/api-exception.filter';
 
 /**
  * SubscriptionsController — Coordinación de suscripciones en Integración

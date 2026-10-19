@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { BillingService } from './billing.service';
 import { PlanCatalogResponse } from './billing.dto';
-import { ApiExceptionFilter } from '../../shared/filters/api-exception.filter';
+import { ApiExceptionFilter } from '../../common/filters/api-exception.filter';
 
 /**
  * BillingController
