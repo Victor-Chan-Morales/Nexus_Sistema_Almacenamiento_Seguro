@@ -1,30 +1,19 @@
-import {
-  Entity,
-  PrimaryGeneratedColumn,
-  Column,
-  CreateDateColumn,
-  UpdateDateColumn,
-  OneToMany,
-} from 'typeorm';
-import { Membership } from './membership.entity';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
-@Entity('organizations')
+/** Tabla admin.organization. created_at / updated_at los llena la BD (default y trigger). */
+@Entity({ schema: 'admin', name: 'organization' })
 export class Organization {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+  @PrimaryGeneratedColumn('uuid', { name: 'organization_id' })
+  id!: string;
 
-  @Column({ unique: true })
-  name: string;
+  @Column({ type: 'varchar', length: 150 })
+  name!: string;
 
-  @Column({ nullable: true })
-  domain: string;
+  /** ENUM admin.organization_status (active | suspended | cancelled). */
+  @Column({ type: 'varchar' })
+  status!: string;
 
-  @OneToMany(() => Membership, (membership) => membership.organization)
-  memberships: Membership[];
-
-  @CreateDateColumn({ name: 'created_at' })
-  createdAt: Date;
-
-  @UpdateDateColumn({ name: 'updated_at' })
-  updatedAt: Date;
+  /** ENUM admin.deployment_model, NOT NULL y sin default: el registro debe enviarlo. */
+  @Column({ name: 'deployment_model', type: 'varchar' })
+  deploymentModel!: string;
 }

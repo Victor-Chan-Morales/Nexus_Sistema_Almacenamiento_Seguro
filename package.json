@@ -20,7 +20,7 @@
     "infra:down": "docker compose down",
     "infra:logs": "docker compose logs -f",
 
-    "migration:run": "cd apps/api && npm run migration:run",
-    "migration:revert": "cd apps/api && npm run migration:revert"
+    "migration:run": "docker compose run --rm migrate",
+    "migration:revert": "docker compose run --rm migrate rollback"
   }
 }

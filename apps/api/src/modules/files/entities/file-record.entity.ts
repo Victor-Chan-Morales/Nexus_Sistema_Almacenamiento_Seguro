@@ -1,43 +1,55 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column,
-  CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, OneToMany,
+  Column,
+  CreateDateColumn,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 import { FileVersion } from './file-version.entity';
+import { Folder } from './folder.entity';
 
-@Entity('file_records')
+@Entity({ schema: 'files', name: 'file' })
 export class FileRecord {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+  @PrimaryGeneratedColumn('uuid', { name: 'file_id' })
+  id!: string;
 
-  @Column()
-  name: string;
+  @Column({ name: 'organization_id', type: 'uuid' })
+  organizationId!: string;
 
-  @Column({ name: 'organization_id' })
-  organizationId: string;
+  @Column({ name: 'folder_id', type: 'uuid' })
+  folderId!: string;
 
-  @Column({ name: 'owner_id' })
-  ownerId: string;
+  @ManyToOne(() => Folder, { nullable: false })
+  @JoinColumn({ name: 'folder_id', referencedColumnName: 'id' })
+  folder?: Folder;
 
-  /** Carpeta padre (null = raíz) */
-  @Column({ name: 'folder_id', nullable: true })
-  folderId: string;
+  @Column({ type: 'varchar', length: 255 })
+  name!: string;
 
-  @Column({ name: 'mime_type', nullable: true })
-  mimeType: string;
+  @Column({ name: 'mime_type', type: 'varchar', length: 100, nullable: true })
+  mimeType!: string | null;
 
-  /** Tamaño total en bytes de la versión más reciente */
-  @Column({ name: 'size_bytes', type: 'bigint', default: 0 })
-  sizeBytes: string;
+  @Column({ name: 'current_version_id', type: 'uuid', nullable: true })
+  currentVersionId!: string | null;
 
-  @Column({ name: 'is_deleted', default: false })
-  isDeleted: boolean;
+  @Column({ name: 'is_deleted', type: 'boolean', default: false })
+  isDeleted!: boolean;
 
-  @OneToMany(() => FileVersion, (v) => v.fileRecord)
-  versions: FileVersion[];
+  @Column({ name: 'deleted_at', type: 'timestamptz', nullable: true })
+  deletedAt!: Date | null;
 
-  @CreateDateColumn({ name: 'created_at' })
-  createdAt: Date;
+  @Column({ name: 'created_by', type: 'uuid' })
+  createdBy!: string;
 
-  @UpdateDateColumn({ name: 'updated_at' })
-  updatedAt: Date;
+  @OneToMany(() => FileVersion, (version) => version.fileRecord)
+  versions!: FileVersion[];
+
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt!: Date;
+
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz', nullable: true })
+  updatedAt!: Date | null;
 }

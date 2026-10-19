@@ -174,7 +174,7 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
     it('debe capturar colisión de índice único parcial (23505) y lanzar ConflictException controlado', async () => {
       (planRepo.findOneBy as jest.Mock).mockResolvedValue(mockTeamPlan);
 
-      const collisionError = new Error('duplicate key value violates unique constraint "uq_active_org_subscription"');
+      const collisionError = new Error('duplicate key value violates unique constraint "uq_subscription_one_active_per_organization"');
       (collisionError as any).code = '23505';
 
       const mockManager = {

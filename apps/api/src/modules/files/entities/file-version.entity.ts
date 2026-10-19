@@ -1,34 +1,52 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column,
-  CreateDateColumn, ManyToOne, JoinColumn,
+  Column,
+  CreateDateColumn,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
 } from 'typeorm';
 import { FileRecord } from './file-record.entity';
 
-@Entity('file_versions')
+@Entity({ schema: 'files', name: 'file_version' })
 export class FileVersion {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+  @PrimaryGeneratedColumn('uuid', { name: 'version_id' })
+  id!: string;
 
-  @ManyToOne(() => FileRecord, (f) => f.versions, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'file_id' })
-  fileRecord: FileRecord;
+  @Column({ name: 'file_id', type: 'uuid' })
+  fileId!: string;
 
-  @Column({ name: 'file_id' })
-  fileId: string;
+  @ManyToOne(() => FileRecord, (file) => file.versions, { nullable: false })
+  @JoinColumn({ name: 'file_id', referencedColumnName: 'id' })
+  fileRecord!: FileRecord;
 
-  @Column({ name: 'version_number' })
-  versionNumber: number;
+  @Column({ name: 'version_number', type: 'integer' })
+  versionNumber!: number;
 
-  /** Clave del objeto en SeaweedFS con prefijo de organización */
-  @Column({ name: 'object_key' })
-  objectKey: string;
+  @Column({ name: 'destination_id', type: 'uuid' })
+  destinationId!: string;
+
+  @Column({ name: 'object_key', type: 'varchar', length: 500 })
+  objectKey!: string;
 
   @Column({ name: 'size_bytes', type: 'bigint' })
-  sizeBytes: string;
+  sizeBytes!: string;
 
-  @Column({ name: 'uploaded_by' })
-  uploadedBy: string;
+  @Column({ type: 'varchar', length: 128 })
+  checksum!: string;
 
-  @CreateDateColumn({ name: 'uploaded_at' })
-  uploadedAt: Date;
+  @Column({ name: 'encrypted_dek', type: 'varchar', length: 500 })
+  encryptedDek!: string;
+
+  @Column({ name: 'kek_id', type: 'uuid' })
+  kekId!: string;
+
+  @Column({ name: 'format_version', type: 'smallint' })
+  formatVersion!: number;
+
+  @Column({ name: 'uploaded_by', type: 'uuid' })
+  uploadedBy!: string;
+
+  @CreateDateColumn({ name: 'uploaded_at', type: 'timestamptz' })
+  uploadedAt!: Date;
 }

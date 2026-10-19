@@ -13,9 +13,10 @@ import { IntegrationModule } from './modules/integration/integration.module';
 @Module({
   imports: [
     // ── Configuración global ────────────────────────────────────────────────
+    // IAM necesita JWT_SECRET (>= 32 caracteres) en este mismo .env; sin él la API no arranca.
     ConfigModule.forRoot({
       isGlobal: true, // Disponible en todos los módulos sin reimportar
-      envFilePath: '../../.env', // Apunta al .env raíz del monorepo
+      envFilePath: ['.env', '../../.env'], // Apunta al .env raíz del monorepo
     }),
 
     // ── Base de datos PostgreSQL ─────────────────────────────────────────────
@@ -24,27 +25,28 @@ import { IntegrationModule } from './modules/integration/integration.module';
       useFactory: (config: ConfigService) => ({
         type: 'postgres',
         host: config.get('POSTGRES_HOST', 'localhost'),
-        port: config.get<number>('POSTGRES_PORT', 5432),
+        port: config.get<number>('POSTGRES_PORT', 5433),
         username: config.get('POSTGRES_USER', 'nexus_dev'),
         password: config.get('POSTGRES_PASSWORD', 'local_only_change_me'),
         database: config.get('POSTGRES_DB', 'nexus_dev'),
+        // Carga automáticamente las entidades registradas con TypeOrmModule.forFeature (IAM, etc.)
         autoLoadEntities: true,
-        // No depender de synchronize: true en producción; utilizar migraciones explícitas.
-        // La variable es DB_SYNCHRONIZE, igual que en main y en el módulo IAM.
+        // El esquema (iam, admin, ...) lo crean las migraciones versionadas, NO TypeORM.
+        // Con `synchronize: true` TypeORM intentaría alterar tablas ya migradas (columnas, tipos,
+        // restricciones) y podría borrar datos. Solo se activa a propósito con DB_SYNCHRONIZE=true.
         synchronize: config.get('DB_SYNCHRONIZE') === 'true',
-        migrations: [__dirname + '/migrations/*{.ts,.js}'],
-        migrationsRun: false, // Se ejecutan explícitamente vía npm run migration:run
-        logging: config.get('NODE_ENV') === 'development',
+        // Sin volcado de consultas por defecto: los parámetros pueden incluir hashes o tokens.
+        logging: config.get('DB_LOGGING') === 'true' ? ['error', 'warn'] : false,
       }),
       inject: [ConfigService],
     }),
 
     // ── Módulos de dominio ───────────────────────────────────────────────────
-    IamModule,         // Identidad: usuarios, organizaciones, roles, sesiones
-    BillingModule,     // Facturación: planes, catálogo, suscripciones
-    FilesModule,       // Archivos: carpetas, metadatos, versiones, cuotas
-    StorageModule,     // Almacenamiento: contrato con SeaweedFS (S3)
-    HealthModule,      // Salud: endpoint /api/health para verificar el sistema
+    IamModule,       // Identidad: usuarios, organizaciones, roles, sesiones
+    BillingModule,   // Facturación: planes, suscripciones (simuladas)
+    FilesModule,     // Archivos: carpetas, metadatos, versiones, cuotas
+    StorageModule,   // Almacenamiento: contrato con SeaweedFS (S3)
+    HealthModule,    // Salud: endpoint /api/health para verificar el sistema
     IntegrationModule, // Integración: SubscriptionCoordinator entre Billing y Files
   ],
 })

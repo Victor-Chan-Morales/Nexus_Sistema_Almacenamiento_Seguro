@@ -21,7 +21,7 @@ import { Subscription, SubscriptionStatus } from '../billing/entities/subscripti
  *    nunca asume 0 bytes.
  * 4. Control de concurrencia y carreras: ejecuta bajo transacción TypeORM con bloqueo pesimista
  *    (SELECT FOR UPDATE) e idempotencia para activaciones del mismo plan.
- * 5. Manejo del índice único parcial: captura el error 23505 (uq_active_org_subscription)
+ * 5. Manejo del índice único parcial: captura el error 23505 (uq_subscription_one_active_per_organization)
  *    y emite un error 409 controlado de conflicto.
  *
  * Códigos de error según CONTRACTS.md: la cuota insuficiente responde 422 STORAGE_QUOTA_EXCEEDED
@@ -45,10 +45,12 @@ export class SubscriptionCoordinator {
 
     return this.dataSource.transaction(async (manager: EntityManager) => {
       // 1. Lectura de estado vigente con bloqueo pesimista para prevenir carreras concurrentes
+      // Sin cargar el plan: PostgreSQL rechaza FOR UPDATE sobre el lado nulo de un LEFT JOIN,
+      // y aquí solo hacen falta planId y el estado para cancelar la suscripción vigente.
       const currentActive = await manager.findOne(Subscription, {
         where: { organizationId, status: SubscriptionStatus.ACTIVE },
         lock: { mode: 'pessimistic_write' },
-        relations: ['plan'],
+        loadEagerRelations: false,
       });
 
       // 2. Idempotencia: Si ya está activo el mismo plan, retornar la suscripción vigente sin recrear
@@ -59,7 +61,7 @@ export class SubscriptionCoordinator {
       // 3. Validación de Downgrade contra FilesModule (Uso Confirmado + Reservas Activas)
       let storageUsage: { usedBytes: bigint; reservedBytes: bigint; totalBytes: bigint };
       try {
-        storageUsage = await this.filesService.getTotalStorageUsage(organizationId);
+        storageUsage = await this.filesService.getTotalStorageUsage(organizationId, manager);
         if (!storageUsage || typeof storageUsage.totalBytes !== 'bigint') {
           throw new Error('Respuesta no válida del módulo Files');
         }
@@ -102,6 +104,7 @@ export class SubscriptionCoordinator {
           organizationId,
           planId: targetPlan.id,
           status: SubscriptionStatus.ACTIVE,
+          startDate,
           simulated: true, // Sin procesamiento de cobro real
           expiresAt,
         });
@@ -114,7 +117,7 @@ export class SubscriptionCoordinator {
         if (
           dbError?.code === '23505' ||
           dbError?.driverError?.code === '23505' ||
-          dbError?.message?.includes('uq_active_org_subscription')
+          dbError?.message?.includes('uq_subscription_one_active_per_organization')
         ) {
           throw new ConflictException({
             code: 'CONCURRENT_SUBSCRIPTION_CONFLICT',
