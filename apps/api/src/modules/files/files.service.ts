@@ -313,6 +313,19 @@ export class FilesService {
   }
 
   /**
+   * Uso de almacenamiento para el SubscriptionCoordinator de integración (Billing).
+   * Las reservas atómicas de carga todavía no existen en este corte, así que van en cero
+   * y `totalBytes` equivale al uso confirmado; cuando Files agregue la tabla de reservas,
+   * solo cambia este método.
+   */
+  async getTotalStorageUsage(
+    organizationId: string,
+  ): Promise<{ usedBytes: bigint; reservedBytes: bigint; totalBytes: bigint }> {
+    const usedBytes = await this.getUsedStorageBytes(organizationId);
+    return { usedBytes, reservedBytes: 0n, totalBytes: usedBytes };
+  }
+
+  /**
    * Subida de archivo validando cuota (422), tamaño (413), MIME (415),
    * concurrencia (3 máx) e idempotencia.
    */
