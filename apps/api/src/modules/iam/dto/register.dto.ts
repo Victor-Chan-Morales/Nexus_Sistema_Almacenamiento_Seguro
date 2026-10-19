@@ -1,19 +1,28 @@
-import { IsEmail, IsString, MinLength, MaxLength } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsEmail, IsString, Length, Matches, MaxLength, MinLength } from 'class-validator';
+
+export const trim = ({ value }: { value: unknown }) =>
+  typeof value === 'string' ? value.trim() : value;
 
 export class RegisterDto {
-  @IsEmail({}, { message: 'El correo no es válido' })
-  email: string;
+  @Transform(trim)
+  @IsString()
+  @Length(2, 120)
+  fullName!: string;
+
+  @Transform(trim)
+  @IsEmail()
+  @MaxLength(254)
+  email!: string;
 
   @IsString()
-  @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres' })
-  @MaxLength(72, { message: 'La contraseña no puede superar 72 caracteres' })
-  password: string;
+  @MinLength(8)
+  @MaxLength(128)
+  @Matches(/^(?=.*[A-Za-z])(?=.*\d).+$/, { message: 'La contraseña debe incluir letras y números' })
+  password!: string;
 
+  @Transform(trim)
   @IsString()
-  @MinLength(2, { message: 'El nombre debe tener al menos 2 caracteres' })
-  fullName: string;
-
-  @IsString()
-  @MinLength(2, { message: 'El nombre de organización debe tener al menos 2 caracteres' })
-  organizationName: string;
+  @Length(2, 120)
+  organizationName!: string;
 }

@@ -10,3 +10,14 @@ coverage/
 .DS_Store
 .vscode/
 .idea/
+
+
+npm-debug.log*
+database/schema.sql
+
+# TypeScript build cache
+*.tsbuildinfo
+apps/api/*.tsbuildinfo
+dist/
+# Directorio de herramientas local, no es parte del proyecto
+.commandcode/

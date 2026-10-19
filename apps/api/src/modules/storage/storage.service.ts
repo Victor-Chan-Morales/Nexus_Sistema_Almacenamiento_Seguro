@@ -1,7 +1,6 @@
-import { Injectable, Inject, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, Inject, InternalServerErrorException, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Readable } from 'stream';
-import { OnModuleInit } from '@nestjs/common';
 import {
   CreateBucketCommand,
   DeleteObjectCommand,
@@ -14,13 +13,14 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 /**
  * StorageService — contrato de almacenamiento de objetos.
  *
- * Implementa put / get / delete sobre un proveedor compatible con S3.
- * El patrón Strategy permite agregar S3 u otro proveedor
+ * Implementa put / get / delete sobre un proveedor compatible con S3 (SeaweedFS).
+ * El patrón Strategy permite intercambiar el proveedor de almacenamiento
  * sin modificar FilesModule (Principio Open/Closed — SOLID).
  */
 @Injectable()
 export class StorageService implements OnModuleInit {
   private readonly bucket: string;
+  private readonly logger = new Logger(StorageService.name);
 
   constructor(
     @Inject('S3_CLIENT') private readonly s3Client: any,
@@ -30,29 +30,36 @@ export class StorageService implements OnModuleInit {
     this.bucket = this.config.get<string>('S3_BUCKET', 'nexus-dev');
   }
 
+  get bucketName(): string {
+    return this.bucket;
+  }
+
   /**
-   * Guarda un objeto en el almacenamiento S3.
+   * Guarda un objeto en el almacenamiento S3 / SeaweedFS.
    * @param objectKey   Clave única del objeto (incluye prefijo de org)
-   * @param stream      Stream con los bytes del archivo
+   * @param stream      Stream o buffer con los bytes del archivo
    * @param size        Tamaño en bytes (-1 si desconocido)
    * @param contentType MIME type del archivo
    */
   async put(
     objectKey: string,
-    stream: Readable,
+    stream: any,
     size: number,
     contentType: string,
   ): Promise<void> {
     try {
-      await this.s3Client.send(new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: objectKey,
-        Body: stream,
-        ...(size >= 0 ? { ContentLength: size } : {}),
-        ContentType: contentType,
-      }));
-    } catch (err) {
-      throw new InternalServerErrorException(`Error al guardar el objeto: ${err.message}`);
+      await this.s3Client.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: objectKey,
+          Body: stream,
+          ...(size >= 0 ? { ContentLength: size } : {}),
+          ContentType: contentType,
+        }),
+      );
+    } catch (err: any) {
+      this.logger.error(`No se pudo guardar el objeto en Storage: ${err?.message || err}`);
+      throw new InternalServerErrorException('Error al guardar el objeto en Storage');
     }
   }
 
@@ -61,13 +68,16 @@ export class StorageService implements OnModuleInit {
    */
   async get(objectKey: string): Promise<Readable> {
     try {
-      const result = await this.s3Client.send(new GetObjectCommand({
-        Bucket: this.bucket,
-        Key: objectKey,
-      }));
+      const result = await this.s3Client.send(
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: objectKey,
+        }),
+      );
       return result.Body as Readable;
-    } catch (err) {
-      throw new InternalServerErrorException(`Error al obtener el objeto: ${err.message}`);
+    } catch (err: any) {
+      this.logger.error(`No se pudo recuperar el objeto de Storage: ${err?.message || err}`);
+      throw new InternalServerErrorException('Error al recuperar el objeto de Storage');
     }
   }
 
@@ -76,12 +86,15 @@ export class StorageService implements OnModuleInit {
    */
   async delete(objectKey: string): Promise<void> {
     try {
-      await this.s3Client.send(new DeleteObjectCommand({
-        Bucket: this.bucket,
-        Key: objectKey,
-      }));
-    } catch (err) {
-      throw new InternalServerErrorException(`Error al eliminar el objeto: ${err.message}`);
+      await this.s3Client.send(
+        new DeleteObjectCommand({
+          Bucket: this.bucket,
+          Key: objectKey,
+        }),
+      );
+    } catch (err: any) {
+      this.logger.error(`No se pudo eliminar el objeto de Storage: ${err?.message || err}`);
+      throw new InternalServerErrorException('Error al eliminar el objeto de Storage');
     }
   }
 
@@ -97,21 +110,30 @@ export class StorageService implements OnModuleInit {
         new GetObjectCommand({ Bucket: this.bucket, Key: objectKey }),
         { expiresIn: expirySeconds },
       );
-    } catch (err) {
-      throw new InternalServerErrorException(`Error al generar URL prefirmada: ${err.message}`);
+    } catch (err: any) {
+      throw new InternalServerErrorException(
+        `Error al generar URL prefirmada: ${err?.message || err}`,
+      );
     }
   }
 
   /**
-   * Verifica que el bucket existe; si no, lo crea.
-   * Llamado al iniciar la aplicación.
+   * Verifica que el bucket existe; si no, lo crea automáticamente.
+   * Ejecutado en el ciclo de vida onModuleInit.
    */
   async ensureBucket(): Promise<void> {
     try {
       await this.s3Client.send(new HeadBucketCommand({ Bucket: this.bucket }));
-    } catch (error) {
-      const missingBucket = error?.$metadata?.httpStatusCode === 404 || error?.name === 'NotFound';
-      if (!missingBucket) throw error;
+    } catch (err: any) {
+      const missingBucket =
+        err?.$metadata?.httpStatusCode === 404 ||
+        err?.name === 'NotFound' ||
+        err?.name === 'NoSuchBucket';
+
+      if (!missingBucket) {
+        throw err;
+      }
+
       await this.s3Client.send(new CreateBucketCommand({ Bucket: this.bucket }));
     }
   }
