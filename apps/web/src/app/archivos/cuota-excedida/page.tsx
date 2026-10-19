@@ -1,5 +1,5 @@
-import { FileBrowser } from "@/components/file-browser";
+import { FileBrowserLive } from "@/components/file-browser-live";
 
 export default function StorageQuotaPage() {
-  return <FileBrowser quotaExceeded />;
+  return <FileBrowserLive quotaExceeded />;
 }

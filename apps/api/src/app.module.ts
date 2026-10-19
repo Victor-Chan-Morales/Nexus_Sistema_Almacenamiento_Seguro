@@ -9,6 +9,7 @@ import { FilesModule } from './modules/files/files.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { HealthModule } from './modules/health/health.module';
 import { IntegrationModule } from './modules/integration/integration.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { IntegrationModule } from './modules/integration/integration.module';
     StorageModule,     // Almacenamiento: contrato con SeaweedFS (S3)
     HealthModule,      // Salud: endpoint /api/health para verificar el sistema
     IntegrationModule, // Integración: SubscriptionCoordinator entre Billing y Files
+    DashboardModule,   // Integración: GET /api/dashboard (plan + uso + organización)
   ],
 })
 export class AppModule {}

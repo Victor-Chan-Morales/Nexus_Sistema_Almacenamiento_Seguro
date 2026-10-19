@@ -1,2 +1,2 @@
-import { FileBrowser } from "@/components/file-browser";
-export default function FilesPage() { return <FileBrowser />; }
+import { FileBrowserLive } from "@/components/file-browser-live";
+export default function FilesPage() { return <FileBrowserLive />; }
