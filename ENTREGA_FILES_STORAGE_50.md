@@ -1,42 +1,4 @@
-Todas las pruebas pasaron con precisión milimétrica cumpliendo `CONTRACTS.md` v0.3 y las observaciones de la segunda revisión:
 
-1. **`GET /folders`:** Retornó el objeto `drive` con su `rootFolderId` real (`Archivos`) y los items con su `driveId` correspondiente.
-
-
-2. **`POST /folders`:** Creó la subcarpeta asociando el `driveId` real de la organización (sin nulos ni valores inventados).
-
-
-3. **`POST /files/upload`:** Devolvió el DTO canónico con `versionId` y `uploadedAt`.
-
-
-4. **`GET /folders/:id/items`:** Incluyó el contenedor padre `folder` y formateó cada archivo con `versionId` y `uploadedAt`.
-
-
-5. **Validación de tipos:** Rechazó `.exe` con código **HTTP 415 Unsupported Media Type**.
-
-
-6. **Validación de `folderId` obligatorio:** Rechazó la petición sin carpeta con código **HTTP 400 Bad Request**.
-
-
-
----
-
-### Paso 1: Limpiar archivos de prueba temporales
-
-Ejecuta en la raíz del proyecto para mantener el repositorio limpio:
-
-```powershell
-Remove-Item -Path doc-v03.txt, ejecutable.exe, upload-v03.json -Force -ErrorAction SilentlyContinue
-
-```
-
----
-
-### Paso 2: Actualizar `ENTREGA_FILES_STORAGE_50.md`
-
-Actualiza el archivo `ENTREGA_FILES_STORAGE_50.md` en la raíz con la evidencia completa y sin bloques truncados:
-
-```markdown
 # Informe de Entrega: Files & Storage (Hito 50% — Contratos v0.3)
 
 - **Módulo:** `FilesModule` y `StorageModule`
@@ -152,40 +114,6 @@ Actualiza el archivo `ENTREGA_FILES_STORAGE_50.md` en la raíz con la evidencia 
 * **Cuota:** Código `422 Unprocessable Entity` con `{ code: "STORAGE_QUOTA_EXCEEDED" }`.
 
 
-
-```
-
----
-
-### Paso 3: Consolidar y enviar a GitHub
-
-Ejecuta desde la raíz del proyecto para registrar todos los cambios (migraciones canónicas, eliminación de `apps/db`, DTOs v0.3 y `.gitignore`)[cite: 9]:
-
-```powershell
-# 1. Comprobar archivos pendientes
-git status
-
-# 2. Agregar cambios
-git add .gitignore database/ apps/api/src/modules/files/ ENTREGA_FILES_STORAGE_50.md
-
-# 3. Si Git muestra que apps/db sigue rastreado, removerlo del índice
-git rm -r --cached apps/db --ignore-unmatch
-
-# 4. Crear el commit
-git commit -m "fix(files): alinear contratos v0.3, entidad drive, migraciones canonicas y codigos http"
-
-# 5. Enviar a GitHub
-git push origin feature/miguel/files-storage-mvp
-
-```
-
----
-
-### Paso 4: Responder a la segunda devolución en el PR #5
-
-Pega este comentario en la conversación de tu PR #5 en GitHub para notificar que todos los bloqueantes de la revisión fueron solucionados:
-
-```markdown
 ## Resolución de observaciones — Devolución PR #5 (Contratos v0.3)
 
 Se atendieron y validaron todos los puntos bloqueantes señalados en la revisión:
