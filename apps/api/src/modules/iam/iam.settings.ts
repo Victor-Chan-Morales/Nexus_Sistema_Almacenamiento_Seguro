@@ -6,7 +6,7 @@ import { ConfigService } from '@nestjs/config';
 export class IamSettings {
   constructor(private readonly config: ConfigService) {}
 
-  /** Decisión de contrato propuesta: por defecto el login exige correo verificado. */
+  /** CONTRACTS.md v0.4: el login exige correo verificado. IAM_REQUIRE_VERIFIED_EMAIL=false solo para pruebas locales. */
   get requireVerifiedEmail(): boolean {
     return this.config.get<string>('IAM_REQUIRE_VERIFIED_EMAIL') !== 'false';
   }

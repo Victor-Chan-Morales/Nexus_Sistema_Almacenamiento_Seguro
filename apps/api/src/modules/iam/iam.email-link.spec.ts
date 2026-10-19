@@ -9,7 +9,7 @@ describe('buildVerificationLink (enlace del correo de verificación)', () => {
     expect(link).not.toContain('/verify-email');
   });
 
-  it('normaliza la barra final de APP_URL y la barra inicial de la ruta', () => {
+  it('normaliza la barra final de WEB_URL y la barra inicial de la ruta', () => {
     expect(buildVerificationLink('https://nexus.example.com/', '/verificar-correo', 't')).toBe(
       'https://nexus.example.com/verificar-correo?token=t',
     );
@@ -18,7 +18,7 @@ describe('buildVerificationLink (enlace del correo de verificación)', () => {
     );
   });
 
-  it('respeta una ruta distinta (IAM_VERIFY_EMAIL_PATH) y un APP_URL con subdirectorio', () => {
+  it('respeta una ruta distinta (IAM_VERIFY_EMAIL_PATH) y un WEB_URL con subdirectorio', () => {
     expect(buildVerificationLink('https://host.example/app', '/auth/verificar', 't')).toBe(
       'https://host.example/app/auth/verificar?token=t',
     );

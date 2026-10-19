@@ -1,5 +1,11 @@
 # Devolución para Sebastián — PR #6 IAM
 
+> **Cerrada el 2026-10-18: no hay nada que devolver.** Sebastián corrigió la PR y el integrador terminó
+> lo que faltaba (hooks de Billing y Files, catálogo de planes, unificación de `WEB_URL` y renovación del
+> token de verificación) al integrarla. El estado real y lo verificado están en la entrada
+> «Integración de la PR #6 (IAM) en main» de [`SESSION_LOG.md`](../SESSION_LOG.md).
+> Lo que sigue es el registro histórico de la revisión y ya no describe la rama.
+
 **Fecha:** 2026-10-17
 **Devolución dirigida a:** Sebastián (responsable de IAM, según el plan del módulo)
 **Usuario autor en GitHub:** `Pun-Yei`

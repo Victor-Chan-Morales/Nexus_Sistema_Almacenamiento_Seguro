@@ -35,7 +35,6 @@ export class IamController {
     return this.registration.register(dto);
   }
 
-  /** PROPUESTO en CONTRACTS.md (pendiente de aprobación). */
   @Post('verify-email')
   @HttpCode(HttpStatus.OK)
   async verifyEmail(@Body() dto: VerifyEmailDto): Promise<{ verified: true }> {
@@ -52,7 +51,6 @@ export class IamController {
     return this.deliver(res, await this.auth.authenticate(dto.email, dto.password));
   }
 
-  /** PROPUESTO en CONTRACTS.md (pendiente de aprobación). */
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   async refresh(
@@ -68,7 +66,6 @@ export class IamController {
     }
   }
 
-  /** PROPUESTO en CONTRACTS.md (pendiente de aprobación). */
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<void> {

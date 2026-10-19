@@ -28,11 +28,11 @@ export function readCookie(header: string | undefined, name: string): string | u
 }
 
 /**
- * Enlace del correo de verificación: <APP_URL><ruta>?token=<token>.
- * Normaliza la barra final de APP_URL y la barra inicial de la ruta, y codifica el token.
+ * Enlace del correo de verificación: <WEB_URL><ruta>?token=<token>.
+ * Normaliza la barra final de WEB_URL y la barra inicial de la ruta, y codifica el token.
  */
-export function buildVerificationLink(appUrl: string, path: string, token: string): string {
-  const base = appUrl.replace(/\/+$/, '');
+export function buildVerificationLink(webUrl: string, path: string, token: string): string {
+  const base = webUrl.replace(/\/+$/, '');
   const route = path.startsWith('/') ? path : `/${path}`;
   return `${base}${route}?token=${encodeURIComponent(token)}`;
 }

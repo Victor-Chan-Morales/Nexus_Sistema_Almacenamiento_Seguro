@@ -26,9 +26,9 @@ export class EmailService implements VerificationMailer {
   }
 
   async sendVerification(to: string, fullName: string, token: string): Promise<void> {
-    const appUrl = this.config.get<string>('APP_URL') ?? 'http://localhost:3000';
+    const webUrl = this.config.get<string>('WEB_URL') ?? 'http://localhost:3000';
     const path = this.config.get<string>('IAM_VERIFY_EMAIL_PATH') ?? DEFAULT_VERIFY_EMAIL_PATH;
-    const link = buildVerificationLink(appUrl, path, token);
+    const link = buildVerificationLink(webUrl, path, token);
     const from = this.config.get<string>('MAIL_FROM') ?? 'Nexus <no-reply@nexus.local>';
 
     await this.transporter.sendMail({

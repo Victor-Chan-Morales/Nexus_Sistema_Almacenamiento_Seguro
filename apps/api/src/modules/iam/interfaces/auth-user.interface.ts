@@ -22,7 +22,7 @@ export interface AuthUser {
   organizationName: string;
 }
 
-/** CONTRACTS.md v0.2 · POST /auth/login (y refresh): fechas ISO-8601 UTC. */
+/** CONTRACTS.md v0.4 · POST /auth/login (y refresh): fechas ISO-8601 UTC. */
 export interface LoginResponse {
   accessToken: string;
   expiresAt: string;
@@ -31,7 +31,7 @@ export interface LoginResponse {
   role: string;
 }
 
-/** CONTRACTS.md v0.2 · POST /auth/register */
+/** CONTRACTS.md v0.4 · POST /auth/register */
 export interface RegisterResponse {
   userId: string;
   organizationId: string;
@@ -39,7 +39,7 @@ export interface RegisterResponse {
   verificationRequired: boolean;
 }
 
-/** CONTRACTS.md v0.2 · GET /auth/me → { user, organization, role } */
+/** CONTRACTS.md v0.4 · GET /auth/me → { user, organization, role } */
 export interface MeResponse {
   user: { id: string; fullName: string; email: string };
   organization: { id: string; name: string };

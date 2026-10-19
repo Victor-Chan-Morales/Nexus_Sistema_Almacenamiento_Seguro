@@ -6,23 +6,23 @@
 #   docker compose --profile containerized-api up -d --build   → además, la API en contenedor
 #
 # La API normalmente corre en el host (npm run dev:api) y se conecta a los puertos publicados.
-# Todos los servicios comparten la red paas_backend: entre contenedores se llaman por nombre de servicio
+# Todos los servicios comparten la red nexus_backend: entre contenedores se llaman por nombre de servicio
 # (postgres, seaweedfs, mailpit), no por localhost.
 # ─────────────────────────────────────────────────────────────────────────────
 
 networks:
-  paas_backend:
-    name: paas_backend
+  nexus_backend:
+    name: nexus_backend
 
 volumes:
-  postgres_data:
+  nexus-postgres-data:
   nexus-seaweedfs-data:
 
 services:
   # ── Base de datos ─────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
-    container_name: paas_postgres
+    container_name: nexus-postgres-dev
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-nexus_dev}
@@ -31,11 +31,11 @@ services:
     ports:
       # Solo para desarrollo.
       # Quitar este mapeo de puerto en producción; los servicios se conectan por la red interna.
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - nexus-postgres-data:/var/lib/postgresql/data
     networks:
-      - paas_backend
+      - nexus_backend
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nexus_dev} -d ${POSTGRES_DB:-nexus_dev}"]
       interval: 5s
@@ -46,7 +46,7 @@ services:
   # ── Migraciones (se ejecutan a mano: docker compose run --rm migrate) ─────
   migrate:
     image: ghcr.io/amacneil/dbmate:latest
-    container_name: paas_db_migrate
+    container_name: nexus-migrate-dev
     profiles: ["tools"]
     depends_on:
       postgres:
@@ -58,7 +58,7 @@ services:
     volumes:
       - ./database/migrations:/db/migrations:ro
     networks:
-      - paas_backend
+      - nexus_backend
     command: ["--no-dump-schema", "--wait", "up"]
 
   # ── Almacenamiento de objetos ──────────────────────────────────────────────
@@ -79,7 +79,7 @@ services:
     volumes:
       - nexus-seaweedfs-data:/data
     networks:
-      - paas_backend
+      - nexus_backend
 
   # ── Correo de desarrollo (NUEVO, para IAM: verificación de correo) ─────────
   # Recibe los correos de la API y los muestra en http://localhost:8025 (no envía nada a nadie).
@@ -91,7 +91,7 @@ services:
       - "1025:1025" # SMTP → MAIL_PORT
       - "8025:8025" # Interfaz web
     networks:
-      - paas_backend
+      - nexus_backend
 
   # ── API (monolito modular NestJS) ─────────────────────────────────────────
   # Un único contenedor con todos los módulos: IAM, Billing, Files, Storage, Health.
@@ -120,7 +120,7 @@ services:
     ports:
       - "3001:3001"
     networks:
-      - paas_backend
+      - nexus_backend
     depends_on:
       postgres:
         condition: service_healthy

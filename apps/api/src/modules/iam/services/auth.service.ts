@@ -14,7 +14,7 @@ import { SessionService } from './session.service';
 /**
  * AuthService del diagrama de clases.
  *   authenticate(email, password) → Session    ✔ implementado
- *   verifyEmail(token)                         ✔ implementado (ruta propuesta en CONTRACTS.md)
+ *   verifyEmail(token)                         ✔ implementado (CONTRACTS.md v0.4)
  *   requestPasswordReset(email)                ⏳ pendiente: sin contrato aprobado
  *   verifyTotp(userId, code)                   ⛔ fuera de alcance (MFA/TOTP); authenticate falla cerrado si mfaEnabled
  */
