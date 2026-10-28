@@ -12,7 +12,7 @@
 | **Dependencias** | SPEC-101 (`@Roles`). **Bloquea a** 302 y 303 (302 reutiliza `recordOperation`). |
 | **Hito Objetivo** | Corte 80% (30-Oct-2026) |
 | **Estimación** | 2.0 h |
-| **Estado** | En revisión (reescrita 2026-10-27 según ADR-007) |
+| **Estado** | Aprobada (2026-10-28, Víctor Chán) |
 
 ---
 
@@ -41,6 +41,11 @@ Escenario 2: Activar un plan nuevo registra el cobro simulado
   Dado un tenant_admin que activa el plan Team (US$19.99)
   Cuando POST /api/subscriptions/activate crea la nueva suscripción
   Entonces se escribe, en la MISMA transacción, una operación "charge" con amount 19.99
+
+Escenario 2b: Bajar de plan también registra
+  Dado un tenant_admin con el plan Team vigente
+  Cuando activa Demo y la operación se acepta
+  Entonces se escribe, en la MISMA transacción, una operación "charge" con amount 0 (precio del plan destino)
 
 Escenario 3: Reactivar el mismo plan no escribe nada
   Dado que ya tiene el plan vigente
@@ -89,8 +94,8 @@ Pantalla en SPEC-303.
 
 - `BillingService.recordOperation(manager, subscription, type, amount)`: inserta con el `EntityManager` recibido (misma transacción).
 - **Dónde se llama:**
-  1. `provisionInitialSubscription` (hook del registro): `charge` de 0 al crear Demo.
-  2. `SubscriptionCoordinator.activateSubscription`: tras `manager.save(newSubscription)` y solo cuando se **crea** una suscripción. **Nota:** el coordinador hoy escribe la suscripción por su cuenta (no pasa por `BillingService.persistSubscription`); por eso el registro de la operación debe añadirse en ambos sitios o, mejor, el coordinador debe delegar en `persistSubscription` (decisión de Anthony; si se refactoriza, mantener las pruebas existentes del coordinador).
+  1. `provisionInitialSubscription` (hook `demo-subscription` del registro): `charge` de 0 al crear Demo, con el `EntityManager` de la transacción de registro (CONTRACTS v0.5, "Facturación").
+  2. `SubscriptionCoordinator.activateSubscription`: tras `manager.save(newSubscription)` y solo cuando se **crea** una suscripción. **Nota:** el coordinador hoy escribe la suscripción por su cuenta (no pasa por `BillingService.persistSubscription`); por eso el registro de la operación debe añadirse en ambos sitios o, mejor, el coordinador debe delegar en `persistSubscription`. **Recomendado:** hoy ambos duplican la lógica (cerrar la vigente y guardar la nueva: `billing.service.ts:185-202` y `subscription.coordinator.ts:95-112`), y delegar deja un solo punto de escritura. Mantener las pruebas existentes del coordinador.
   3. `persistSubscription` cuando crea una fila nueva.
 - `BillingService.listOperations(organizationId)`: `billing_operation` ⋈ `subscription` ⋈ `plan` con `subscription.organization_id = :orgId`, `ORDER BY simulated_at DESC LIMIT 100`.
 - Ruta en `BillingController`: `@Get('billing/operations')` con `@UseGuards(AuthGuard('jwt'), RolesGuard)` y `@Roles(Role.TENANT_ADMIN)`. `GET /plans` sigue público.
@@ -113,7 +118,7 @@ Pantalla en SPEC-303.
 | Criterio | Tipo | Archivo |
 |---|---|---|
 | Escenarios 1, 7 | Unitaria | `modules/billing/billing.service.spec.ts` |
-| Escenarios 2, 3 | Unitaria | `modules/integration/subscription.coordinator.spec.ts` |
+| Escenarios 2, 2b, 3 | Unitaria | `modules/integration/subscription.coordinator.spec.ts` |
 | Escenarios 4–6 | Unitaria | `modules/billing/billing.controller.spec.ts` |
 
 ---
@@ -136,4 +141,5 @@ Ninguna. Decisión: ADR-007 §9.
 | Fecha | Autor | Descripción |
 |---|---|---|
 | 2026-10-27 | Víctor Chán | Versión inicial. |
+| 2026-10-28 | Revisión | Escenario 2b: todo cambio de plan escribe `charge` con el precio del plan destino, incluso US$0 (CONTRACTS v0.5 aprobado); hook `demo-subscription` nombrado; refactor del coordinador pasa a recomendado. |
 | 2026-10-27 | Revisión | Esquema real (`type` ∈ charge/renewal, `amount` en USD, sin org/plan/moneda); detectado que nada escribe la tabla; se añade el registro en tres caminos; solo `tenant_admin`; nivel N2. |
