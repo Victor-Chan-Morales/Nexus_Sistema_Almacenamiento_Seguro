@@ -13,7 +13,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { Readable } from 'stream';
-import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
 import { BillingService } from '../billing/billing.service';
 import { StorageService } from '../storage/storage.service';
 import { Destination } from './entities/destination.entity';
@@ -26,6 +26,7 @@ import { TenantEncryptionKey } from './entities/tenant-encryption-key.entity';
 import { TenantQuota } from './entities/tenant-quota.entity';
 import { Upload } from './entities/upload.entity';
 import { EncryptedFile, FilesCryptoService } from './files-crypto.service';
+import { TrashItemDto, TrashResponseDto } from './dto/trash.dto';
 
 const MAX_FILE_SIZE_BYTES = 100_000_000;
 const MAX_ACTIVE_UPLOADS_PER_USER = 3;
@@ -97,6 +98,67 @@ export class FilesService {
     return this.dataSource.transaction((manager) =>
       this.ensureUserDrive(manager, organizationId, userId),
     );
+    
+  }
+  
+/**
+   * SPEC-202: Listado de archivos en papelera para el Drive personal del solicitante.
+   */
+  async listTrash(organizationId: string, userId: string): Promise<TrashResponseDto> {
+    // 1. Obtener o resolver el Drive personal del solicitante
+    const drive = await this.getOrCreateUserDrive(organizationId, userId);
+
+    // 2. Consultar archivos borrados lógicamente que pertenezcan a las carpetas de su Drive
+    const files = await this.fileRepository
+      .createQueryBuilder('file')
+      .innerJoin('file.folder', 'folder')
+      .where('file.organizationId = :organizationId', { organizationId })
+      .andWhere('folder.driveId = :driveId', { driveId: drive.id })
+      .andWhere('file.isDeleted = :isDeleted', { isDeleted: true })
+      .orderBy('file.deletedAt', 'DESC')
+      .take(500)
+      .getMany();
+
+    if (files.length === 0) {
+      return {
+        items: [],
+        totalItems: 0,
+      };
+    }
+
+    // 3. Consultar las versiones vigentes mediante currentVersionId
+    const versionIds = files
+      .map((f) => f.currentVersionId)
+      .filter((id): id is string => Boolean(id));
+
+    const versions = versionIds.length > 0
+      ? await this.versionRepository.findBy({ id: In(versionIds) })
+      : [];
+
+    const versionMap = new Map(versions.map((v) => [v.id, v]));
+
+    // 4. Mapear DTOs calculando retentionEndsAt (deletedAt + 30 días)
+    const items: TrashItemDto[] = files.map((file) => {
+      const deletedDate = file.deletedAt ? new Date(file.deletedAt) : new Date();
+      const retentionDate = new Date(deletedDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+      const version = file.currentVersionId ? versionMap.get(file.currentVersionId) : null;
+      const sizeNum = version?.sizeBytes ? Number(version.sizeBytes) : 0;
+
+      return {
+        id: file.id,
+        name: file.name,
+        mimeType: file.mimeType || 'application/octet-stream',
+        sizeBytes: sizeNum,
+        deletedAt: deletedDate.toISOString(),
+        retentionEndsAt: retentionDate.toISOString(),
+      };
+    });
+
+    return {
+      items,
+      totalItems: items.length,
+    };
   }
 
   private async ensureUserDrive(

@@ -114,3 +114,40 @@ Ninguna.
 |---|---|---|
 | 2026-10-27 | Víctor Chán | Versión inicial. |
 | 2026-10-27 | Revisión | `is_deleted`/`deleted_at` en vez de `status`; solo archivos; acotado al Drive del solicitante (antes mostraba toda la organización); añadido `retentionEndsAt`. |
+
+
+
+### Resumen de Cambios — SPEC-202
+
+#### 1. Archivos Modificados y Creados
+
+* **`apps/api/src/modules/files/dto/trash.dto.ts`** *(Creado)*: Define `TrashItemDto` y `TrashResponseDto` con cálculo de retención a 30 días (`retentionEndsAt`) y tamaño numérico (`sizeBytes`).
+* **`apps/api/src/modules/files/files.service.ts`** *(Modificado)*: Implementa `listTrash(orgId, userId)` filtrando por Drive personal (`folder.driveId`), `is_deleted = true`, límite de 500 registros y resolución de versiones por `currentVersionId`.
+* **`apps/api/src/modules/files/files.controller.ts`** *(Modificado)*: Registra la ruta `@Get('trash')` protegida con `JwtAuthGuard` antes de las rutas con `:id`.
+* **`specs/202-papelera-api.md`** *(Actualizado)*: Tareas marcadas como completadas y registro de cambios cerrado.
+
+#### 2. Ajustes de Infraestructura
+
+* **PostgreSQL (Docker):** Configurado en el puerto `5434` (para evitar colisión con el puerto local de Windows/WSL) con usuario `nexus_dev`.
+* **Tabla `billing.plan`:** Actualizada en el contenedor con las columnas requeridas (`description`, `validity_days`, `price_monthly`, `storage_limit_gb`, `user_limit`) para permitir el arranque limpio de `BillingService`.
+
+#### 3. Evidencia de Validación
+
+* **Compilación:** `Found 0 errors` en TypeScript.
+* **Prueba Funcional (PowerShell):**
+```powershell
+# Invocación autenticada a la API local
+$trash = Invoke-RestMethod -Uri "http://localhost:3001/api/files/trash" -Method Get -Headers @{ Authorization = "Bearer $token" }
+$trash | ConvertTo-Json -Depth 5
+
+```
+
+
+* **Respuesta obtenida (200 OK):**
+```json
+{
+  "items": [],
+  "totalItems": 0
+}
+
+```
