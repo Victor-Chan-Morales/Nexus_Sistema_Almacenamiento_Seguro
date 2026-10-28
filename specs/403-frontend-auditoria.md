@@ -12,7 +12,7 @@
 | **Dependencias** | SPEC-402 (API) y SPEC-106 (`getMembers`, para nombres). Puede avanzar con un mock. |
 | **Hito Objetivo** | Corte 80% (30-Oct-2026) |
 | **Estimación** | 1.5 h |
-| **Estado** | En revisión (reescrita 2026-10-27 según ADR-007) |
+| **Estado** | Aprobada (2026-10-28, Víctor Chán) |
 
 ---
 

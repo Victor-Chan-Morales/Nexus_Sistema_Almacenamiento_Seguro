@@ -12,7 +12,7 @@
 | **Dependencias** | SPEC-101 (`@Roles`) y SPEC-103 T2 (outbox generalizado, `member_invitation`). |
 | **Hito Objetivo** | Corte 80% (30-Oct-2026) |
 | **Estimación** | 2.5 h |
-| **Estado** | En revisión (reescrita 2026-10-27 según ADR-007) |
+| **Estado** | Aprobada (2026-10-28, Víctor Chán) |
 
 ---
 
@@ -112,6 +112,7 @@ Pantalla en SPEC-106.
 - **Servicio** `members.service.ts`: `addMember(actor: AuthUser, dto: AddMemberDto): Promise<MemberDto>`. DTO con `@IsString @Length(2,150) fullName`, `@IsEmail email`, `@IsEnum(Role) role`.
 - **Política de límite sin acoplar IAM a Billing** (mismo idioma que `RegistrationHooks`): IAM define `member-admission.ts` con `MemberAdmission` (`register(source)`, `userLimit(organizationId): Promise<number | null>`). Billing registra la fuente en `onModuleInit` (`modules/billing/registration/user-limit.hook.ts`) usando `BillingService.getSubscription(orgId)` → `plan.maxMembers`. Si no hay fuente registrada o no hay plan, el límite es 0 (falla cerrada → `USER_LIMIT_EXCEEDED`).
 - **Orden de comprobaciones** (todo dentro de una `UnitOfWork`): (1) correo normalizado; (2) ¿existe usuario? membresía en esta org → `MEMBER_ALREADY_EXISTS`; en otra → `EMAIL_BELONGS_TO_OTHER_ORGANIZATION`; (3) contar membresías activas de la org vs `userLimit`; (4) crear usuario + membresía; (5) crear token (purpose `password_reset`, 24 h) + mensaje `member_invitation`. Tras el commit: `dispatch(id)` sin esperarlo.
+- **Puertos nuevos:** `MembershipRepository` necesita métodos para buscar la membresía de un usuario en cualquier organización y contar las activas de una organización (hoy solo tiene `create` y `findActive`); añadirlos al puerto y a la implementación TypeORM.
 - **Concurrencia:** dos altas simultáneas podrían exceder el límite; bloquear la fila de la organización (`SELECT ... FOR UPDATE` sobre `admin.organization`) antes de contar.
 - **Auditoría:** `MEMBER_ADDED` se añade en SPEC-405.
 - **Riesgos:** (a) pre-registro de un correo ajeno: la cuenta queda sin contraseña utilizable y solo el dueño del buzón puede definirla; (b) revela a un administrador que un correo existe en otra organización: se acepta por ser un endpoint solo de administradores; (c) invitación perdida: el administrador no puede reenviarla en este corte (limitación declarada).
@@ -157,4 +158,5 @@ Ninguna. Decisiones: ADR-007 §5.
 | Fecha | Autor | Descripción |
 |---|---|---|
 | 2026-10-27 | Víctor Chán | Versión inicial. |
+| 2026-10-28 | Revisión | Anotados los métodos nuevos que requiere `MembershipRepository`. |
 | 2026-10-27 | Revisión | Rol `colaborador`; `fullName` obligatorio; mecanismo de alta decidido (correo para definir contraseña); `EMAIL_BELONGS_TO_OTHER_ORGANIZATION`; límite de usuarios del plan; dependencia de 103; atomicidad y bloqueo concurrente; códigos de error alineados con el filtro (`VALIDATION_ERROR`). |

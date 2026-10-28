@@ -12,7 +12,7 @@
 | **Dependencias** | SPEC-401 (`AuditService`, global). Los eventos de 102, 103, 203, 204, 302 se añaden aquí, no en esas specs. |
 | **Hito Objetivo** | Corte 80% (30-Oct-2026) |
 | **Estimación** | Víctor 0.5 h · Miguel 0.5 h · Anthony 0.3 h |
-| **Estado** | En revisión (spec nueva, 2026-10-27) |
+| **Estado** | Aprobada (2026-10-28, Víctor Chán) |
 
 ---
 

@@ -12,7 +12,7 @@
 | **Dependencias** | Migración del outbox (✅ creada y verificada: `database/migrations/20261027090000_allow_password_reset_outbox_kinds.sql`) y T2 (Víctor). **Bloquea a** 102 (reutiliza el outbox y el flujo de definir contraseña) y 105. Absorbe a SPEC-107. |
 | **Hito Objetivo** | Corte 80% (30-Oct-2026) |
 | **Estimación** | 2.3 h Sebastián (T3–T5) + 0.7 h Víctor (T2) |
-| **Estado** | En revisión (reescrita 2026-10-27 según ADR-007) |
+| **Estado** | Aprobada (2026-10-28, Víctor Chán) |
 
 ---
 
@@ -111,7 +111,7 @@ Pantallas en SPEC-105.
 
 - **Servicio nuevo** `services/password-reset.service.ts` (SRP; no engordar `AuthService`):
   - `requestReset(email: string): Promise<void>` — normaliza el correo; si el usuario existe y está `active`: en una transacción invalida tokens previos, crea token (15 min) y el mensaje del outbox; tras el commit llama a `dispatch(id)` **sin esperarlo** (evita diferencias de tiempo observables).
-  - `reset(token: string, newPassword: string): Promise<void>` — en una transacción: valida el token (hash, `purpose`, no vencido, no usado), hashea con Argon2id, actualiza usuario (`passwordHash`, `emailVerified = true`), marca el token usado y llama `SessionRepository.revokeAllForUser(tx, userId)`.
+  - `reset(token: string, newPassword: string): Promise<void>` — en una transacción: valida el token (hash, `purpose`, no vencido, no usado), hashea con Argon2id, actualiza usuario (`passwordHash`, `emailVerified = true`), marca el token usado y llama `SessionRepository.revokeAllActiveOf(tx, userId)` (ya existe).
 - **Outbox generalizado** (`email-outbox.service.ts`): `enqueue(tx, { kind, ... })`; `send()` despacha por `kind`; la renovación de token (`freshPayload`) **solo** para `email_verification`. Para los otros dos, `expires_at` del mensaje = vencimiento del token y, vencido, se marca `expired`.
 - **Puerto de correo** (`ports/verification-mailer.ts`): añadir `sendPasswordReset(to, name, rawToken)` y `sendMemberInvitation(to, name, rawToken)`; `EmailService` implementa ambos. Texto genérico, sin nombres de organización.
 - **Constantes** (`constants.ts`): `PASSWORD_RESET_TOKEN_TTL_MINUTES = 15`, `MEMBER_INVITATION_TOKEN_TTL_HOURS = 24`, ruta `/nueva-contrasena` (enlace = `WEB_URL` + ruta + `?token=`).
@@ -125,7 +125,7 @@ Pantallas en SPEC-105.
 
 - [x] **T1**: migración del outbox, creada y verificada contra Postgres 16 (up, down y re-up). Falta aplicarla en cada entorno local (`npm run migration:run`).
 - [ ] **T2 (Víctor, 40 min; asignado a Víctor para quitar carga a la ruta crítica de IAM)**: generalizar `EmailOutboxService` + `VerificationMailer`/`EmailService` + constantes (`password_reset`, `member_invitation`). **Abrir este PR primero: SPEC-102 depende de él.**
-- [ ] **T3 (35 min)**: `PasswordResetService` + `SessionRepository.revokeAllForUser`.
+- [ ] **T3 (35 min)**: `PasswordResetService`; reutiliza `SessionRepository.revokeAllActiveOf`, que ya existe.
 - [ ] **T4 (15 min)**: rutas y DTOs (`ForgotPasswordDto`, `ResetPasswordDto` con la política de `RegisterDto`) en `IamController`.
 - [ ] **T5 (50 min)**: pruebas (escenarios 1–6; revocación de sesiones; invalidación de tokens previos; no consumir token con contraseña débil).
 
@@ -160,4 +160,5 @@ Ninguna. Decisiones: ADR-007 §5 y §6.
 | Fecha | Autor | Descripción |
 |---|---|---|
 | 2026-10-27 | Víctor Chán | Versión inicial. |
+| 2026-10-28 | Revisión | Corregido el nombre del método de revocación: `revokeAllActiveOf`, ya existente (no `revokeAllForUser`). |
 | 2026-10-27 | Revisión | Declarada la migración del outbox (el CHECK lo impedía); generalización del outbox; revocación de todas las sesiones (ADR-003, absorbe SPEC-107); `email_verified = true`; respuesta idéntica y despacho no esperado. |

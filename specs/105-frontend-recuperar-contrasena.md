@@ -12,13 +12,13 @@
 | **Dependencias** | SPEC-103 (API). Puede avanzar con un mock del contrato v0.5. |
 | **Hito Objetivo** | Corte 80% (30-Oct-2026) |
 | **Estimación** | 1.5 h |
-| **Estado** | En revisión (reescrita 2026-10-27 según ADR-007) |
+| **Estado** | Aprobada (2026-10-28, Víctor Chán) |
 
 ---
 
 ## 2. Objetivo
 
-Conectar `RecoverForm` y `NewPasswordForm` con `POST /auth/forgot-password` y `POST /auth/reset-password`, y eliminar las marcas de "prototipo" y el enlace "Abrir nueva contraseña (demo)".
+Conectar `RecoverForm` y `NewPasswordForm` con `POST /auth/forgot-password` y `POST /auth/reset-password`, y eliminar las marcas de "prototipo" (`simulated` en `AuthFrame`), el enlace "Abrir nueva contraseña (demo)" y el botón "Probar enlace vencido" de `NewPasswordForm`.
 
 ---
 
@@ -117,4 +117,5 @@ Ninguna.
 | Fecha | Autor | Descripción |
 |---|---|---|
 | 2026-10-27 | Víctor Chán | Versión inicial. |
+| 2026-10-28 | Revisión | Añadido retirar el botón demo "Probar enlace vencido" de `NewPasswordForm`. |
 | 2026-10-27 | Revisión | Funciones en `lib/api/iam.ts` (no existe `auth.ts`); retirado el enlace demo; estados y token inválido. |
