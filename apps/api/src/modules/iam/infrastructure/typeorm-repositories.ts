@@ -228,6 +228,7 @@ export class TypeOrmEmailOutboxRepository implements EmailOutboxRepository {
 
     return rows.map((row) => ({
       id: row.id,
+      kind: row.kind,
       userId: row.userId,
       recipientEmail: row.recipientEmail,
       recipientName: row.recipientName,

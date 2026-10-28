@@ -62,6 +62,8 @@ request. Ninguna ruta lee `organizationId` del body, query o headers; `Validatio
 Crea usuario, organización (`deployment_model = cloud`), membresía con rol `tenant_admin`, hooks (suscripción demo + cuota, Drive personal "Mi espacio" con carpeta "Archivos")
 token de verificación y mensaje en la **outbox** (`iam.email_outbox`) en **una sola transacción**. Los hooks obligatorios de Billing (`demo-subscription`, en `modules/billing/registration`) y Files (`personal-drive`, en `modules/files/registration`) están registrados y escriben con el mismo `EntityManager`: si falta alguno o falla, el registro falla y se revierte completo. El correo se envía después del commit; si el SMTP falla, el mensaje queda pendiente y el worker lo reintenta con espera creciente durante 24 horas, y si el token de 15 minutos venció esperando, emite uno nuevo antes de enviar. El token viaja cifrado en la outbox y se borra al enviarse o vencer.
 
+La outbox maneja tres tipos de mensaje (`kind`, CHECK `ck_email_outbox_kind`): `email_verification` (token de 15 min; el reintento lo renueva si venció), `password_reset` (token de 15 min, SPEC-103) y `member_invitation` (token de 24 h, SPEC-102). Los dos últimos **no renuevan** el token: si vence antes de enviarse, el mensaje pasa a `expired` y se vuelve a solicitar. `EmailOutboxService.enqueue(tx, { kind, ... })` encola; el enlace de `password_reset` y `member_invitation` apunta a `/nueva-contrasena?token=...`.
+
 ### POST /api/auth/login — 200 (contrato v0.4)
 ```json
 { "email": "ana@empresa.com", "password": "Password123" }

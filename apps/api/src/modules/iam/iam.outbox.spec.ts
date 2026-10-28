@@ -14,6 +14,7 @@ const cipher = new OutboxCipher({
 
 const message = (overrides: Record<string, unknown> = {}) => ({
   id: 'out-1',
+  kind: 'email_verification',
   userId: 'u1',
   recipientEmail: EMAIL,
   recipientName: 'Ana',
@@ -33,7 +34,11 @@ const build = (claimed: unknown[] = []) => {
     markFailed: jest.fn().mockResolvedValue(undefined),
     markExpired: jest.fn().mockResolvedValue(undefined),
   };
-  const mailer = { sendVerification: jest.fn().mockResolvedValue(undefined) };
+  const mailer = {
+    sendVerification: jest.fn().mockResolvedValue(undefined),
+    sendPasswordReset: jest.fn().mockResolvedValue(undefined),
+    sendMemberInvitation: jest.fn().mockResolvedValue(undefined),
+  };
   const uow = { run: jest.fn((work: (tx: unknown) => unknown) => work('tx')) };
   const tokens = {
     issue: jest.fn().mockResolvedValue({ rawToken: TOKEN_NUEVO, expiresAt: new Date(Date.now() + 15 * MIN) }),
@@ -45,7 +50,8 @@ const build = (claimed: unknown[] = []) => {
 describe('EmailOutboxService (outbox persistente de correo)', () => {
   it('al encolar guarda el token cifrado, nunca en claro', async () => {
     const t = build();
-    await t.service.enqueueVerification('tx' as never, {
+    await t.service.enqueue('tx' as never, {
+      kind: 'password_reset',
       userId: 'u1',
       recipientEmail: EMAIL,
       recipientName: 'Ana',
@@ -53,7 +59,8 @@ describe('EmailOutboxService (outbox persistente de correo)', () => {
       expiresAt: new Date(),
     });
 
-    const stored = t.outbox.create.mock.calls[0][1] as { encryptedPayload: string; userId: string };
+    const stored = t.outbox.create.mock.calls[0][1] as { kind: string; encryptedPayload: string; userId: string };
+    expect(stored.kind).toBe('password_reset');
     expect(stored.userId).toBe('u1'); // permite emitir un token nuevo al reintentar
     expect(stored.encryptedPayload).not.toContain(TOKEN);
     expect(cipher.decrypt(stored.encryptedPayload)).toBe(TOKEN);
@@ -106,6 +113,44 @@ describe('EmailOutboxService (outbox persistente de correo)', () => {
     expect(t.outbox.markSent).toHaveBeenCalledWith('out-1');
     expect(t.outbox.markExpired).not.toHaveBeenCalled(); // la cuenta no queda sin enlace utilizable
     log.mockRestore();
+  });
+
+  it.each([
+    ['password_reset', 'sendPasswordReset'],
+    ['member_invitation', 'sendMemberInvitation'],
+  ] as const)('un mensaje %s se envía con %s y el token descifrado', async (kind, method) => {
+    const t = build([message({ kind })]);
+
+    await t.service.dispatch('out-1');
+
+    expect(t.mailer[method]).toHaveBeenCalledWith(EMAIL, 'Ana', TOKEN);
+    expect(t.mailer.sendVerification).not.toHaveBeenCalled();
+    expect(t.outbox.markSent).toHaveBeenCalledWith('out-1');
+  });
+
+  it('un mensaje member_invitation vencido NO emite token nuevo: se marca expirado y no se envía', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const t = build([message({ kind: 'member_invitation', expiresAt: new Date(Date.now() - MIN) })]);
+
+    await t.service.dispatch('out-1');
+
+    expect(t.tokens.issue).not.toHaveBeenCalled();
+    expect(t.outbox.updatePayload).not.toHaveBeenCalled();
+    expect(t.mailer.sendMemberInvitation).not.toHaveBeenCalled();
+    expect(t.outbox.markExpired).toHaveBeenCalledWith('out-1');
+    warn.mockRestore();
+  });
+
+  it('un password_reset vencido tampoco renueva el token', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const t = build([message({ kind: 'password_reset', expiresAt: new Date(Date.now() - MIN) })]);
+
+    await t.service.dispatch('out-1');
+
+    expect(t.tokens.issue).not.toHaveBeenCalled();
+    expect(t.mailer.sendPasswordReset).not.toHaveBeenCalled();
+    expect(t.outbox.markExpired).toHaveBeenCalledWith('out-1');
+    warn.mockRestore();
   });
 
   it('pasadas 24 h desde el registro el mensaje se abandona y no se envía', async () => {

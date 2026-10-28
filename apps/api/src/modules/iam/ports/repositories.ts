@@ -78,6 +78,7 @@ export abstract class OneTimeTokenRepository {
 /** Mensaje reclamado para envío: el token sigue cifrado hasta el momento de enviarlo. */
 export interface OutboxMessage {
   id: string;
+  kind: string;
   userId: string;
   recipientEmail: string;
   recipientName: string;
