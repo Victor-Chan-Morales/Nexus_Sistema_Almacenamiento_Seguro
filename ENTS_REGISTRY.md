@@ -15,7 +15,7 @@ Este registro es operativo. Actualícelo cuando cambie un responsable, ruta, int
 | Web común | Víctor | Víctor | Layout, navegación, rutas, componentes visuales, consumo tipado de API y ajuste a Figma | Reglas de autorización, SQL, credenciales SeaweedFS |
 | IAM | Sebastián | Víctor | Registro, login, hash, sesión/JWT y asociación inicial usuario-organización | Pantallas duplicadas, Billing, archivos |
 | Billing | Anthony | Víctor | Catálogo y activación simulada por organización | Cobro real, pantallas paralelas, cuota de Files |
-| Files + Storage | Miguel | Víctor | Carpetas, metadatos, primera carga/descarga, interfaz `StorageProvider`, SeaweedFS | UI paralela, login, cobro |
+| Files + Storage | Miguel | Víctor | Carpetas, metadatos, primera carga/descarga, cliente `StorageService` (S3/SeaweedFS) | UI paralela, login, cobro |
 | Integración | Víctor | Víctor | Contratos compartidos, estructura web, Compose/migraciones consolidadas y validación del recorrido | Reescritura silenciosa de la lógica de un dueño |
 
 **Cambio de propiedad registrado el 2026-10-19:** `SubscriptionCoordinator` y `SubscriptionsController` (`apps/api/src/modules/integration/`) los implementó **Anthony** en la PR #4, aunque `CONTRACTS.md` asigna el coordinador de activación al integrador. El equipo acepta esa implementación y Víctor no la reescribe; el mantenimiento queda con Anthony y la revisión de integración con Víctor. Registrado en `SESSION_LOG.md`, según `CONTRIBUTING.md`.
@@ -73,7 +73,7 @@ Las relaciones Usuario–Membresía–Sesión, tenant–recursos, recurso–dest
 | IAM | Web y módulos de API | Usuario autenticado + organización/membresía autorizada; errores de sesión y permisos |
 | Billing | Web y Dashboard | Planes visibles, suscripción vigente y límites de plan |
 | Files | Web y Dashboard | Carpetas/archivos autorizados; uso de espacio derivado de versiones |
-| StorageProvider | Files | Guardar, recuperar o eliminar objeto; errores previsibles, sin filtrar secreto |
+| StorageService | Files | Guardar, recuperar o eliminar objeto; errores previsibles, sin filtrar secreto |
 | Web | IAM/Billing/Files | Solicitudes HTTP según `CONTRACTS.md`; no se comunica directamente con DB ni object storage |
 
 ## Ciclo de cambio

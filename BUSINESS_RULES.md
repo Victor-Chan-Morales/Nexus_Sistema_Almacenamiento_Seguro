@@ -68,7 +68,7 @@ En el primer corte se permite un rol mínimo de administrador para la cuenta que
 - Verificar correo, recuperar contraseña, sesiones revocables y RBAC completo. MFA/TOTP queda fuera del alcance actual y se conserva como mejora futura.
 - Versionado, papelera/recuperación, enlaces temporales protegidos y revocación.
 - Auditoría centralizada e integridad de registros.
-- Cifrado en streaming con libsodium y gestión Envelope DEK/KEK.
+- Cifrado de archivos con gestión Envelope DEK/KEK. La propuesta pedía libsodium en streaming; la implementación vigente usa AES-256-GCM de `node:crypto` en memoria (límite de 100 MB), según ADR-006. El streaming y la rotación de llaves quedan como mejora futura.
 - Selección de destino cloud, on-premises e híbrido y despliegue on-premises reproducible.
 - Renovaciones e historial de operaciones simuladas conforme al curso.
 
