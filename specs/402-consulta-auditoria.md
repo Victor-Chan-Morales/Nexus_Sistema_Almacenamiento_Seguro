@@ -12,7 +12,7 @@
 | **Dependencias** | SPEC-401 y SPEC-101 (`@Roles`). |
 | **Hito Objetivo** | Corte 80% (30-Oct-2026) |
 | **Estimación** | 1.5 h |
-| **Estado** | En revisión (reescrita 2026-10-27 según ADR-007) |
+| **Estado** | Aprobada (2026-10-28, Víctor Chán) |
 
 ---
 
@@ -80,6 +80,7 @@ Pantalla en SPEC-403.
 
 - `AuditService.listEvents(organizationId, { limit, before })`: `WHERE organization_id = :org [AND occurred_at < :before] ORDER BY occurred_at DESC, event_id DESC LIMIT limit + 1`; si vuelve un registro de más, hay `nextBefore`.
 - `AuditController` (`@Controller('audit')`) con `@UseGuards(AuthGuard('jwt'), RolesGuard)` y `@Roles(Role.TENANT_ADMIN)`. Usa `AuthGuard('jwt')` como `DashboardController`, **sin importar `IamModule`** (evita un ciclo con el módulo global).
+- **Limitación del cursor:** `nextBefore` es solo `occurredAt`, así que dos eventos de la misma organización con idéntico `occurredAt` (mismo milisegundo) en el límite entre páginas podrían omitirse. Es improbable (los eventos de una organización se serializan) y se acepta en este corte; un cursor compuesto `(occurredAt, id)` requeriría cambiar el contrato.
 - DTO de consulta (`@IsOptional @IsInt @Min(1) @Max(100) limit`, `@IsOptional @IsISO8601 before`) y DTO de respuesta propio.
 
 ---
@@ -118,4 +119,5 @@ Ninguna.
 | Fecha | Autor | Descripción |
 |---|---|---|
 | 2026-10-27 | Víctor Chán | Versión inicial. |
+| 2026-10-28 | Revisión | Declarada la limitación del cursor por `occurredAt`. |
 | 2026-10-27 | Revisión | Solo `tenant_admin` (no existe el rol auditor); sin `metadata`; `occurredAt`; paginación por cursor; sin campos internos. |

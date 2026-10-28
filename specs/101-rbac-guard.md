@@ -12,7 +12,7 @@
 | **Dependencias** | Ninguna. **Bloquea a** 102, 104, 302 y 402 (usan `@Roles`). Va primero. |
 | **Hito Objetivo** | Corte 80% (30-Oct-2026) |
 | **Estimación** | 2.0 h |
-| **Estado** | En revisión (reescrita 2026-10-27 según ADR-007) |
+| **Estado** | Aprobada (2026-10-28, Víctor Chán) |
 
 ---
 

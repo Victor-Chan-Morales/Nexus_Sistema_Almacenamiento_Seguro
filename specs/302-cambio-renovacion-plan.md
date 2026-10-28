@@ -12,7 +12,7 @@
 | **Dependencias** | SPEC-101 (`@Roles`) y SPEC-301 (`recordOperation`). |
 | **Hito Objetivo** | Corte 80% (30-Oct-2026) |
 | **Estimación** | 1.5 h |
-| **Estado** | En revisión (reescrita 2026-10-27 según ADR-007) |
+| **Estado** | Aprobada (2026-10-28, Víctor Chán) |
 
 ---
 
@@ -87,6 +87,7 @@ Botón "Renovar" en SPEC-303.
 
 - `BillingService.renewSubscription(organizationId, manager?)`: en una transacción, bloquear (`pessimistic_write`) la suscripción activa; si no hay o su fecha ya pasó → `422 NO_ACTIVE_SUBSCRIPTION`; si el plan no tiene `validityDays` → `422 PLAN_NOT_RENEWABLE`; calcular el nuevo fin; guardar; `recordOperation(manager, sub, 'renewal', price)`.
 - No pasa por el coordinador: renovar no cambia el límite de almacenamiento, así que no hay que consultar a Files.
+- **Nombres en el código:** la columna `end_date` se mapea a la propiedad `expiresAt` de la entidad `Subscription`. La respuesta de `renew` debe construirse con el mismo mapeo que `activate` (`startDate ?? createdAt`, `expiresAt`); extraer un método privado compartido en el controlador para no duplicarlo.
 - `SubscriptionsController`: añadir `@Post('renew')` y `@UseGuards(AuthGuard('jwt'), RolesGuard)` + `@Roles(Role.TENANT_ADMIN)` también sobre `activate`.
 - **Auditoría:** `PLAN_ACTIVATED` y `PLAN_RENEWED` (SPEC-405).
 - **Riesgos:** (a) sumar días sobre un fin ya pasado → por eso `max(hoy, fin actual)`; (b) fechas de solo día en UTC (`dateOnly`): usar la misma conversión que `persistSubscription`.
@@ -128,4 +129,5 @@ Ninguna. Decisión: ADR-007 §9. SPEC-304 (bloqueo de reducción) queda cubierta
 | Fecha | Autor | Descripción |
 |---|---|---|
 | 2026-10-27 | Víctor Chán | Versión inicial ("cambio y renovación"). |
+| 2026-10-28 | Revisión | Nombres reales del código (`expiresAt`) y mapeo de respuesta compartido con `activate`. |
 | 2026-10-27 | Revisión | Retirado `POST /subscriptions/change` (duplicaba `activate`); ahora es solo renovación; `planId` (no `planCode`); `status` en minúsculas; `STORAGE_QUOTA_EXCEEDED` para reducciones; `@Roles` en `activate`; controlador real (`subscriptions.controller.ts`). |

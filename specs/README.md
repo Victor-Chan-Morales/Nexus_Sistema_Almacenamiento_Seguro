@@ -37,11 +37,11 @@
 
 | ID | Especificación | Nivel | Responsable | Requisitos | Prioridad | Estado |
 |---|---|:---:|---|---|:---:|:---:|
-| `SPEC-101` | `@Roles` y `RolesGuard` | N2 | Sebastián | RF-003 | P1 | En revisión |
-| `SPEC-102` | Alta de miembros `POST /organizations/members` | N2 | Sebastián (+Anthony T6) | RF-003, Curso §4.1 | P1 | En revisión |
-| `SPEC-103` | Recuperación de contraseña + outbox generalizado + revocación de sesiones | N2 | Sebastián (T2: Víctor) | Curso §4.1, RNF-004 | P1 | En revisión |
-| `SPEC-104` | Listado de miembros `GET /organizations/members` | N2 | Sebastián | RF-003 | P1 | En revisión |
-| `SPEC-105` | Frontend: recuperar contraseña | N1 | Miguel (delegado) | Curso §4.1 | P1 | En revisión |
+| `SPEC-101` | `@Roles` y `RolesGuard` | N2 | Sebastián | RF-003 | P1 | Aprobada |
+| `SPEC-102` | Alta de miembros `POST /organizations/members` | N2 | Sebastián (+Anthony T6) | RF-003, Curso §4.1 | P1 | Aprobada |
+| `SPEC-103` | Recuperación de contraseña + outbox generalizado + revocación de sesiones | N2 | Sebastián (T2: Víctor) | Curso §4.1, RNF-004 | P1 | Aprobada |
+| `SPEC-104` | Listado de miembros `GET /organizations/members` | N2 | Sebastián | RF-003 | P1 | Aprobada |
+| `SPEC-105` | Frontend: recuperar contraseña | N1 | Miguel (delegado) | Curso §4.1 | P1 | Aprobada |
 | `SPEC-106` | Frontend: miembros en `/configuracion` | N1 | Miguel (delegado) | RF-003 | P1 | Aprobada |
 | `SPEC-107` | Revocar sesiones al cambiar contraseña | — | — | — | — | ⤵ Absorbida por SPEC-103 |
 
@@ -64,19 +64,19 @@
 | ID | Especificación | Nivel | Responsable | Requisitos | Prioridad | Estado |
 |---|---|:---:|---|---|:---:|:---:|
 | `SPEC-301` | Registro y consulta de operaciones de facturación | N2 | Anthony | RF-013, Curso §4.2 | P1 | Aprobada |
-| `SPEC-302` | Renovación `POST /subscriptions/renew` (antes "cambio de plan") | N2 | Anthony | RF-013, Curso §4.2 | P1 | En revisión |
-| `SPEC-303` | Frontend: historial y "Renovar" en `/suscripcion` | N1 | Miguel (delegado) | RF-013, Curso §4.2 | P1 | En revisión |
+| `SPEC-302` | Renovación `POST /subscriptions/renew` (antes "cambio de plan") | N2 | Anthony | RF-013, Curso §4.2 | P1 | Aprobada |
+| `SPEC-303` | Frontend: historial y "Renovar" en `/suscripcion` | N1 | Miguel (delegado) | RF-013, Curso §4.2 | P1 | Aprobada |
 | `SPEC-304` | Bloqueo de reducción de plan por espacio ocupado | — | — | RF-013 | — | ✅ Cubierta por `SubscriptionCoordinator` (`STORAGE_QUOTA_EXCEEDED`) |
 
 ## 4xx: Auditoría
 
 | ID | Especificación | Nivel | Responsable | Requisitos | Prioridad | Estado |
 |---|---|:---:|---|---|:---:|:---:|
-| `SPEC-401` | Servicio base de auditoría (`AuditModule` global, hash desde la v1) | N2 | Anthony | RF-012, RNF-007 | P1 | En revisión |
-| `SPEC-402` | `GET /audit/events` (solo `tenant_admin`) | N1 | Miguel (delegado) | RF-012 | P1 | En revisión |
-| `SPEC-403` | Frontend: pantalla de auditoría | N1 | Víctor | RF-012 | P1 | En revisión |
+| `SPEC-401` | Servicio base de auditoría (`AuditModule` global, hash desde la v1) | N2 | Anthony | RF-012, RNF-007 | P1 | Aprobada |
+| `SPEC-402` | `GET /audit/events` (solo `tenant_admin`) | N1 | Miguel (delegado) | RF-012 | P1 | Aprobada |
+| `SPEC-403` | Frontend: pantalla de auditoría | N1 | Víctor | RF-012 | P1 | Aprobada |
 | `SPEC-404` | Verificación de la cadena de hashes y checkpoints | N2 | Anthony | RNF-007 | 100% | Pendiente |
-| `SPEC-405` | Enganches de auditoría por dueño de módulo (**nueva**) | N1 | Víctor (IAM) / Miguel (Files) / Anthony (Billing) | RF-012, RNF-007 | P1 | En revisión |
+| `SPEC-405` | Enganches de auditoría por dueño de módulo (**nueva**) | N1 | Víctor (IAM) / Miguel (Files) / Anthony (Billing) | RF-012, RNF-007 | P1 | Aprobada |
 
 ## 5xx: Super Admin
 
