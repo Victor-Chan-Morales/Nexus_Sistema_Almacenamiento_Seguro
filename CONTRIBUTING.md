@@ -10,7 +10,7 @@
 ## Ramas y commits
 
 - `main` contiene únicamente cambios revisados y ejecutables.
-- Use una rama por cambio: `feature/victor/web-shell`, `feature/sebastian/iam-register`, `feature/miguel/files-upload`, `feature/anthony/billing-plans`.
+- Use una rama por cambio, con el formato de `docs/sdd/flujo.md` §4: `feat/<ID>-<descripcion-corta>` para funcionalidades (p. ej. `feat/101-rbac-guard`) y `fix/<ID>-<descripcion-corta>` para correcciones, donde `<ID>` es el número de la spec en `specs/`. Cambios sin spec (documentación, mantenimiento): `docs/<tema>` o `chore/<tema>`. Las ramas anteriores a esta regla (`feature/<persona>/<tema>`) no se renombran.
 - Cree PR hacia `main`; no integre directamente.
 - Use commits breves en español o inglés, con verbo: `feat(web): agregar ruta de registro`.
 - Un PR debe incluir propósito, archivos tocados, cómo probar, captura si cambia interfaz, limitaciones y contrato afectado.
@@ -41,7 +41,7 @@ La ubicación canónica de migraciones compartidas es `database/migrations/` en 
 - Mantenga `strict-ssl=true` en npm. Las etapas Alpine del Dockerfile instalan `ca-certificates`; si una red inspecciona TLS con una CA propia, añádala al almacén de confianza de la imagen, no desactive la validación.
 - No copie componentes compartidos para darles estilos distintos; amplíe el componente o cree uno específico cuando las responsabilidades realmente difieran.
 - No acople pantallas a respuestas inventadas. Use `apps/web/src/lib/api/README.md` y tipos centralizados cuando el contrato esté aprobado.
-- Toda decisión sobre almacenamiento pasa por `StorageProvider`; no llame SeaweedFS desde IAM, Billing o el frontend.
+- Toda decisión sobre almacenamiento pasa por `StorageService` (módulo Storage); no llame SeaweedFS desde IAM, Billing o el frontend.
 - En todas las consultas de recursos, valide organización y rol en backend.
 - Nunca suba `.env`, contraseñas reales, tokens, llaves, credenciales ni archivos reales. Use `.env.example` con valores solo de desarrollo.
 

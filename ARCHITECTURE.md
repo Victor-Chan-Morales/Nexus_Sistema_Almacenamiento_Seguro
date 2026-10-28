@@ -52,7 +52,7 @@ Files valida sesión, pertenencia, carpeta y límites; Storage persiste el objet
 
 - Contraseñas con Argon2id; TLS para tráfico externo; tokens y sesiones revocables.
 - Verificación de correo, restablecimiento seguro de contraseña, sesiones revocables y RBAC. MFA/TOTP queda fuera del alcance actual y se reserva para una fase posterior.
-- Cifrado autenticado de archivos en streaming con libsodium y diseño envelope DEK/KEK conforme a la propuesta.
+- Cifrado autenticado de archivos con AES-256-GCM (`node:crypto`) y envelope DEK/KEK por versión de archivo y por tenant (ADR-006). La propuesta pedía libsodium en streaming; la implementación cifra en memoria (límite de 100 MB) y no rota llaves todavía. Ambas desviaciones están documentadas en el ADR-006.
 - Las claves reales se conservan fuera de PostgreSQL; la base almacena referencias y material cifrado permitido por el modelo.
 - Mensajes API no filtran stack traces, llaves, tokens, rutas internas ni contenido.
 - Auditoría futura sin secretos ni contenido de archivos y con controles de integridad descritos en el diccionario.
@@ -103,7 +103,7 @@ definidas.
 ## SOLID aplicado
 
 - **S:** controladores atienden HTTP; servicios ejecutan casos de uso; proveedores guardan bytes.
-- **O:** agregar S3 u otro destino añadiendo una implementación de `StorageProvider` y configuración, sin reescribir reglas de archivos.
+- **O:** cambiar de SeaweedFS a MinIO o a AWS S3 es configuración (`S3_*`) y no toca las reglas de archivos; un destino que no hable S3 exigiría extraer una interfaz de proveedor, que hoy no existe.
 - **L:** toda implementación del proveedor respeta el resultado/error definido para guardar, recuperar y eliminar.
 - **I:** separar interfaz de operaciones de objetos de las operaciones administrativas del bucket.
-- **D:** `FilesService` recibe `StorageProvider` por inyección; no instancia el cliente SeaweedFS directamente.
+- **D:** `FilesService` recibe `StorageService` por inyección de Nest y no instancia el cliente S3 directamente; depender de una interfaz propia es la evolución prevista.

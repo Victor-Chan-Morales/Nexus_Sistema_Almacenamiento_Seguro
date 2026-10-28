@@ -77,3 +77,8 @@ Estas decisiones completan las reglas de `ADR-002` sin reemplazarlas.
 - El endpoint de cambio/activación de plan se coordina desde un `SubscriptionCoordinator` de integración que consulta Files y delega persistencia en Billing. Billing no inyecta Files; Files puede seguir consultando Billing para aplicar el límite de carga.
 - La respuesta de Dashboard usa `organizationName` del principal validado, uso confirmado de Files, plan/límite de Billing y `recentActivity: []` hasta que Audit tenga fuente de datos.
 - Las migraciones de todos los dominios comparten `database/migrations/` en la raíz. Víctor integra en un solo PR el esquema coordinado; las carpetas duplicadas bajo `apps/db/` no son una segunda fuente de migraciones.
+
+## Enmienda 2026-10-27 (ver ADR-007)
+
+- **Papelera:** la eliminación definitiva puede ejecutarla el dueño del archivo desde su propio Drive; ya no se limita a administradores. Sigue auditada. Motivo: en este corte no existen Drives de equipo ni vista administrativa de la papelera de otros miembros.
+- **Sesiones:** la recuperación de contraseña revoca todas las sesiones del usuario (se implementa en SPEC-103).

@@ -2,6 +2,8 @@
 
 > **Versión 0.4 — aprobada para implementación por Víctor, integrador, el 2026-10-18.** Esta versión fija las interfaces que deben seguir las PR de IAM, Billing, Files y frontend. Si una implementación necesita cambiar una ruta, campo o regla, primero se actualiza este documento y `SESSION_LOG.md`.
 
+> **Versión 0.5 — BORRADOR pendiente de aprobación del coordinador (2026-10-27).** Añade las rutas del corte del 80% (RBAC, miembros, recuperación de contraseña, papelera, versiones, facturación, auditoría). Las secciones nuevas están marcadas **[v0.5]**. Hasta que Víctor la apruebe, ninguna PR debe implementar rutas de esta versión. Las decisiones que la sustentan están en `docs/decisions/ADR-007-decisiones-corte-80.md`.
+
 Los tipos del frontend viven en `apps/web/src/lib/api/types.ts`. Son tipos de compilación; la API también debe validar los datos en tiempo de ejecución.
 
 ## Reglas comunes
@@ -32,6 +34,17 @@ Los tipos del frontend viven en `apps/web/src/lib/api/types.ts`. Son tipos de co
 | Files | `GET /folders/:id/items` | Bearer token | `{ folder: { id, name, parentFolderId, driveId }, folders: [{ id, name, parentFolderId, driveId }], files: [{ id, name, mimeType, sizeBytes, versionId, uploadedAt }] }` | Miguel |
 | Files | `POST /files/upload` | Multipart: `folderId`, `file`; opcional `Idempotency-Key` | `{ id, name, mimeType, sizeBytes, versionId, uploadedAt }` | Miguel |
 | Files | `GET /files/:id/download` | Bearer token | Bytes del archivo y `Content-Disposition` seguro | Miguel |
+| IAM **[v0.5]** | `POST /auth/forgot-password` | `{ email }` | `200 { message }` genérico (exista o no el correo) | Sebastián |
+| IAM **[v0.5]** | `POST /auth/reset-password` | `{ token, newPassword }` | `200 { message }`; revoca todas las sesiones | Sebastián |
+| IAM **[v0.5]** | `GET /organizations/members` | Bearer token, `tenant_admin` | `{ members: [...], totalMembers, userLimit }` | Sebastián |
+| IAM **[v0.5]** | `POST /organizations/members` | `{ fullName, email, role }`, `tenant_admin` | `201 { id, userId, email, fullName, role, status, createdAt }` | Sebastián |
+| Files **[v0.5]** | `GET /files/trash` | Bearer token | `{ items: [...], totalItems }` | Miguel |
+| Files **[v0.5]** | `POST /files/:id/restore` | Bearer token | `{ id, name, folderId }` | Miguel |
+| Files **[v0.5]** | `DELETE /files/:id/purge` | Bearer token | `{ id, freedBytes }` | Miguel |
+| Files **[v0.5]** | `GET /files/:id/versions` | Bearer token | `{ fileId, fileName, currentVersion, versions: [...] }` | Miguel |
+| Billing **[v0.5]** | `GET /billing/operations` | Bearer token, `tenant_admin` | `{ items: [...] }` | Anthony |
+| Integración **[v0.5]** | `POST /subscriptions/renew` | Bearer token, `tenant_admin`, sin cuerpo | Misma respuesta que `activate` | Anthony |
+| Audit **[v0.5]** | `GET /audit/events` | Bearer token, `tenant_admin`; `?limit&before` | `{ events: [...], nextBefore }` | Anthony |
 
 ## IAM y sesión
 
@@ -118,9 +131,115 @@ getUsedStorageBytes(organizationId: string): Promise<bigint>
 - Una organización ajena se trata como inexistente (`404`) en listados, carga, descarga y operaciones de archivo.
 - Errores HTTP comunes: `400` entrada inválida; `401` sin sesión válida; `403` rol o estado no habilita; `404` recurso inexistente o ajeno; `409` conflicto; `413` archivo demasiado grande; `415` tipo no permitido; `422` regla de negocio o cuota; `429` límite de intentos/carga; `500` error inesperado seguro.
 
+## Roles y autorización [v0.5]
+
+- Valores de rol en JWT, BD y API: `tenant_admin` y `colaborador`. Super Admin es el flag `is_super_admin`, no un rol. Auditor no se implementa en este corte.
+- `@Roles(...)` + `RolesGuard` (IAM) leen `req.user.role`, que `JwtStrategy` ya toma de la membresía activa en cada request. Un endpoint sin `@Roles` solo exige sesión.
+- Rol insuficiente → `403` con el error común y `code: "FORBIDDEN_ROLE"`. El cuerpo no incluye la lista de roles requeridos.
+- Matriz del corte (fuente: ADR-007 §4):
+
+| Endpoint | Rol |
+|---|---|
+| `POST` y `GET /organizations/members` | `tenant_admin` |
+| `GET /audit/events` | `tenant_admin` |
+| `POST /subscriptions/activate`, `POST /subscriptions/renew`, `GET /billing/operations` | `tenant_admin` |
+| Resto de rutas autenticadas | cualquier miembro |
+
+- Cambio de comportamiento: `POST /subscriptions/activate` deja de estar abierto a `colaborador`.
+
+## Recuperación de contraseña [v0.5]
+
+- `POST /auth/forgot-password` `{ email }` → siempre `200 { "message": "Si el correo está registrado, recibirás un enlace para restablecer tu contraseña." }`. Si el correo existe y la cuenta está activa se encola un correo; si no, no se envía nada y la respuesta es idéntica. Emitir un token nuevo invalida los anteriores sin usar.
+- El enlace abre `/nueva-contrasena?token=...` (se arma con `WEB_URL`). El token vence en **15 minutos**, es de un solo uso y se guarda como hash.
+- `POST /auth/reset-password` `{ token, newPassword }` → `200 { "message": "Contraseña actualizada. Ya puedes iniciar sesión." }`. Token inválido, vencido o usado → `400` con `code: "INVALID_OR_EXPIRED_TOKEN"`. Contraseña que no cumple la política → `400 VALIDATION_ERROR`. Argon2id.
+- Al restablecer: se **revocan todas las sesiones** del usuario, el token queda usado y la cuenta queda con `email_verified = true` (el enlace prueba que controla el buzón).
+- El outbox de correo admite los `kind`: `email_verification`, `password_reset`, `member_invitation`. Los dos nuevos no emiten token nuevo en el reintento: si su token vence, el mensaje se abandona.
+
+## Miembros de la organización [v0.5]
+
+`GET /organizations/members` (solo `tenant_admin`):
+
+```json
+{
+  "members": [
+    { "id": "uuid", "userId": "uuid", "fullName": "Nombre", "email": "correo@dominio.com", "role": "tenant_admin", "status": "active", "joinedAt": "ISO-8601" }
+  ],
+  "totalMembers": 1,
+  "userLimit": 5
+}
+```
+
+`userLimit` viene del plan vigente (`null` si no hay suscripción vigente).
+
+`POST /organizations/members` (solo `tenant_admin`): cuerpo `{ "fullName": "...", "email": "...", "role": "tenant_admin" | "colaborador" }`. Respuesta `201`: `{ id, userId, email, fullName, role, status: "active", createdAt }`. Crea la cuenta con contraseña aleatoria inutilizable y encola un correo `member_invitation` con un enlace a `/nueva-contrasena?token=...` de **24 h**.
+
+| HTTP | `code` | Causa |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Cuerpo inválido (correo, nombre, rol). |
+| 403 | `FORBIDDEN_ROLE` | El solicitante no es `tenant_admin`. |
+| 422 | `MEMBER_ALREADY_EXISTS` | Ya es miembro de esta organización. |
+| 422 | `EMAIL_BELONGS_TO_OTHER_ORGANIZATION` | El correo ya existe en otra organización. |
+| 422 | `USER_LIMIT_EXCEEDED` | La organización alcanzó el límite de usuarios del plan (o no hay plan vigente). |
+
+## Papelera y versiones [v0.5]
+
+Todas estas rutas se acotan al **Drive personal del solicitante** y tratan un archivo ajeno o inexistente como `404`.
+
+- `GET /files/trash` → `{ "items": [{ "id", "name", "mimeType", "sizeBytes", "deletedAt", "retentionEndsAt" }], "totalItems" }`. Solo archivos eliminados; `sizeBytes` es el de la versión actual; `retentionEndsAt` = `deletedAt` + 30 días (informativo: no hay purga automática).
+- `POST /files/:id/restore` → `200 { "id", "name", "folderId" }`. `404` si no está en la papelera del solicitante; `409 FILE_NAME_CONFLICT` si la carpeta ya tiene un archivo activo con ese nombre; `409 PARENT_FOLDER_UNAVAILABLE` si la carpeta ya no está disponible.
+- `DELETE /files/:id/purge` → `200 { "id", "freedBytes" }`. `freedBytes` es la suma de **todas** las versiones. `422 CANNOT_PURGE_ACTIVE_FILE` si el archivo no está en la papelera. Borra metadatos y versiones en una transacción (reescribe los contadores de cuota) y elimina los objetos de SeaweedFS **después** del commit, con mejor esfuerzo: un objeto que no se pudo borrar queda huérfano y se registra, nunca al revés.
+- `GET /files/:id/versions` → `{ "fileId", "fileName", "currentVersion", "versions": [{ "versionId", "versionNumber", "sizeBytes", "uploadedAt", "isCurrent" }] }`, de la más reciente a la más antigua. Solo archivos activos.
+- Cuota (sin cambio respecto de v0.4): un archivo eliminado sigue contando para la cuota **durante 30 días desde `deleted_at`**; pasado ese plazo deja de contar aunque sus objetos sigan almacenados hasta la purga. No hay purga automática en este corte, así que `retentionEndsAt` indica cuándo deja de contar, no cuándo se borra.
+
+## Facturación: historial y renovación [v0.5]
+
+- `GET /billing/operations` (solo `tenant_admin`) → `{ "items": [{ "id", "type": "charge" | "renewal", "planName", "amount", "simulated": true, "occurredAt" }] }`, más recientes primero, máximo 100. `amount` es USD (número). Se resuelve por la suscripción de la organización del token.
+- `POST /subscriptions/activate` escribe una operación `charge` (monto del plan) cuando **crea** una suscripción. Reactivar el mismo plan no escribe nada. El alta de la organización escribe un `charge` de US$0 (Demo). La reducción de plan sigue respondiendo `422 STORAGE_QUOTA_EXCEEDED` (no existe `DOWNGRADE_STORAGE_EXCEEDED`).
+- `POST /subscriptions/renew` (solo `tenant_admin`, sin cuerpo): extiende la vigencia de la suscripción vigente en `validityDays` desde `max(hoy, fin actual)` y escribe una operación `renewal`. No crea otra suscripción. Respuesta igual a `activate` (`{ subscriptionId, status: "active", simulated: true, startDate, endDate }`). `422 NO_ACTIVE_SUBSCRIPTION` sin suscripción vigente; `422 PLAN_NOT_RENEWABLE` para planes sin vigencia (Demo).
+
+## Auditoría [v0.5]
+
+`GET /audit/events?limit=50&before=<ISO-8601>` (solo `tenant_admin`): `limit` por defecto 50, máximo 100; `before` pagina por `occurredAt`.
+
+```json
+{
+  "events": [
+    { "id": "uuid", "action": "FILE_UPLOAD", "resourceType": "file", "resourceId": "uuid", "actorId": "uuid", "result": "success", "occurredAt": "ISO-8601" }
+  ],
+  "nextBefore": "ISO-8601 | null"
+}
+```
+
+- Acciones del corte: `AUTH_LOGIN`, `AUTH_PASSWORD_RESET`, `MEMBER_ADDED`, `FILE_UPLOAD`, `FILE_DOWNLOAD`, `FILE_DELETE`, `FILE_RESTORE`, `FILE_PURGE`, `PLAN_ACTIVATED`, `PLAN_RENEWED`. Tipos de recurso: `user`, `membership`, `file`, `subscription`.
+- El evento no incluye nombres de archivo ni datos personales. El frontend resuelve `actorId` a nombre con `GET /organizations/members` (misma audiencia: solo administradores).
+- Cada evento guarda `record_hash` y `prev_hash` desde el primer registro. La verificación de cadena y los checkpoints firmados quedan fuera de este corte.
+- El registro de auditoría es de mejor esfuerzo y posterior al commit de la operación: si falla, la operación principal no se ve afectada.
+- `recentActivity` del Dashboard sigue siendo `[]` en este corte.
+
+## Códigos de error [v0.5]
+
+Catálogo común. El filtro emite `VALIDATION_ERROR` para cualquier `400` de validación (no existe `VALIDATION_FAILED`).
+
+| HTTP | `code` | Uso |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Entrada inválida. |
+| 400 | `INVALID_OR_EXPIRED_TOKEN` | Token de recuperación inválido, vencido o usado. |
+| 403 | `FORBIDDEN_ROLE` | Rol insuficiente. |
+| 403 | `EMAIL_NOT_VERIFIED` | Login sin correo verificado (v0.4). |
+| 404 | `NOT_FOUND` | Recurso inexistente o ajeno. |
+| 409 | `FILE_NAME_CONFLICT`, `PARENT_FOLDER_UNAVAILABLE`, `CONCURRENT_SUBSCRIPTION_CONFLICT` | Conflicto de estado. |
+| 422 | `STORAGE_QUOTA_EXCEEDED`, `MEMBER_ALREADY_EXISTS`, `EMAIL_BELONGS_TO_OTHER_ORGANIZATION`, `USER_LIMIT_EXCEEDED`, `CANNOT_PURGE_ACTIVE_FILE`, `NO_ACTIVE_SUBSCRIPTION`, `PLAN_NOT_RENEWABLE` | Regla de negocio. |
+
+## Cambios de forma en Files ya implementados [v0.5]
+
+Documentan lo que el código ya devuelve (arreglo de tamaño de carpetas, SPEC-001/201):
+
+- En `GET /folders` y `GET /folders/:id/items`, cada carpeta (incluida `folder`) añade `createdAt` (ISO-8601) y `sizeBytes` (número): suma del tamaño de la versión actual de los archivos **activos** de la carpeta y sus subcarpetas.
+- `sizeBytes` de archivos (`UploadedFileDto`) es **número**, no cadena.
+
 ## Implementación y cambios futuros
 
 - IAM implementa identidad, cookies, refresh y el contexto autenticado; Billing implementa catálogo y persistencia de suscripción; Files implementa objetos, versiones, uso y reservas; Víctor implementa Dashboard, coordinador de activación y frontend.
 - Las migraciones compartidas se consolidan en una sola ubicación y se presentan en un solo PR integrador, según `CONTRIBUTING.md`.
 - La ubicación canónica es `database/migrations/` en la raíz del repositorio. Los PR de dominio entregan sus cambios de esquema al integrador; no dupliquen la misma migración en `apps/db/database/migrations/`.
-- MFA/TOTP queda fuera del alcance actual. Recuperación de contraseña y RBAC completo son trabajo posterior; no se deben presentar como parte de este primer flujo.
+- MFA/TOTP queda fuera del alcance actual. **[v0.5]** Recuperación de contraseña y RBAC entran en el corte del 80% según las secciones siguientes.

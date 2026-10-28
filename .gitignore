@@ -21,3 +21,6 @@ apps/api/*.tsbuildinfo
 dist/
 # Directorio de herramientas local, no es parte del proyecto
 .commandcode/
+
+# Diagnostico de traspaso entre agentes, no es parte del proyecto
+DIAGNOSTICO_ESTADO_*.md
