@@ -4,7 +4,7 @@
 > Catálogo de todo el trabajo pendiente. **Corte del 80%: viernes 30 de octubre de 2026** (decisión del coordinador, 2026-10-27). El alcance "100%" queda para la primera semana de noviembre.
 >
 > - **Decisiones vigentes:** `docs/decisions/ADR-007-decisiones-corte-80.md`.
-> - **Contratos:** `CONTRACTS.md` **v0.5 (borrador, pendiente de aprobación)**. Ninguna PR implementa rutas de v0.5 hasta que Víctor lo apruebe.
+> - **Contratos:** `CONTRACTS.md` **v0.5 (aprobada el 2026-10-28)**. Las PR ya pueden implementar sus rutas, una vez que Víctor apruebe la spec correspondiente.
 > - **Numeración de requisitos:** la de la propuesta (RF-001…RF-016, RNF-001…RNF-011). Lo que exige el curso y la propuesta no numera se cita como "Curso §4.1/§4.2".
 > - **Estado:** todas las specs reescritas el 2026-10-27 quedan **En revisión** hasta que Víctor las marque Aprobada.
 
@@ -42,7 +42,7 @@
 | `SPEC-103` | Recuperación de contraseña + outbox generalizado + revocación de sesiones | N2 | Sebastián (T2: Víctor) | Curso §4.1, RNF-004 | P1 | En revisión |
 | `SPEC-104` | Listado de miembros `GET /organizations/members` | N2 | Sebastián | RF-003 | P1 | En revisión |
 | `SPEC-105` | Frontend: recuperar contraseña | N1 | Miguel (delegado) | Curso §4.1 | P1 | En revisión |
-| `SPEC-106` | Frontend: miembros en `/configuracion` | N1 | Miguel (delegado) | RF-003 | P1 | En revisión |
+| `SPEC-106` | Frontend: miembros en `/configuracion` | N1 | Miguel (delegado) | RF-003 | P1 | Aprobada |
 | `SPEC-107` | Revocar sesiones al cambiar contraseña | — | — | — | — | ⤵ Absorbida por SPEC-103 |
 
 ## 2xx: Archivos, Papelera y Versiones
@@ -63,7 +63,7 @@
 
 | ID | Especificación | Nivel | Responsable | Requisitos | Prioridad | Estado |
 |---|---|:---:|---|---|:---:|:---:|
-| `SPEC-301` | Registro y consulta de operaciones de facturación | N2 | Anthony | RF-013, Curso §4.2 | P1 | En revisión |
+| `SPEC-301` | Registro y consulta de operaciones de facturación | N2 | Anthony | RF-013, Curso §4.2 | P1 | Aprobada |
 | `SPEC-302` | Renovación `POST /subscriptions/renew` (antes "cambio de plan") | N2 | Anthony | RF-013, Curso §4.2 | P1 | En revisión |
 | `SPEC-303` | Frontend: historial y "Renovar" en `/suscripcion` | N1 | Miguel (delegado) | RF-013, Curso §4.2 | P1 | En revisión |
 | `SPEC-304` | Bloqueo de reducción de plan por espacio ocupado | — | — | RF-013 | — | ✅ Cubierta por `SubscriptionCoordinator` (`STORAGE_QUOTA_EXCEEDED`) |

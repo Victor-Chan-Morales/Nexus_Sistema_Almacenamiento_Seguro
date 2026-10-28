@@ -2,7 +2,7 @@
 
 > **Versión 0.4 — aprobada para implementación por Víctor, integrador, el 2026-10-18.** Esta versión fija las interfaces que deben seguir las PR de IAM, Billing, Files y frontend. Si una implementación necesita cambiar una ruta, campo o regla, primero se actualiza este documento y `SESSION_LOG.md`.
 
-> **Versión 0.5 — BORRADOR pendiente de aprobación del coordinador (2026-10-27).** Añade las rutas del corte del 80% (RBAC, miembros, recuperación de contraseña, papelera, versiones, facturación, auditoría). Las secciones nuevas están marcadas **[v0.5]**. Hasta que Víctor la apruebe, ninguna PR debe implementar rutas de esta versión. Las decisiones que la sustentan están en `docs/decisions/ADR-007-decisiones-corte-80.md`.
+> **Versión 0.5 — aprobada para implementación por Víctor, coordinador, el 2026-10-28.** Añade las rutas del corte del 80% (RBAC, miembros, recuperación de contraseña, papelera, versiones, facturación, auditoría). Las secciones nuevas están marcadas **[v0.5]**. Si una implementación necesita cambiar una ruta, campo o regla, primero se actualiza este documento. Las decisiones que la sustentan están en `docs/decisions/ADR-007-decisiones-corte-80.md`.
 
 Los tipos del frontend viven en `apps/web/src/lib/api/types.ts`. Son tipos de compilación; la API también debe validar los datos en tiempo de ejecución.
 
@@ -154,6 +154,7 @@ getUsedStorageBytes(organizationId: string): Promise<bigint>
 - `POST /auth/reset-password` `{ token, newPassword }` → `200 { "message": "Contraseña actualizada. Ya puedes iniciar sesión." }`. Token inválido, vencido o usado → `400` con `code: "INVALID_OR_EXPIRED_TOKEN"`. Contraseña que no cumple la política → `400 VALIDATION_ERROR`. Argon2id.
 - Al restablecer: se **revocan todas las sesiones** del usuario, el token queda usado y la cuenta queda con `email_verified = true` (el enlace prueba que controla el buzón).
 - El outbox de correo admite los `kind`: `email_verification`, `password_reset`, `member_invitation`. Los dos nuevos no emiten token nuevo en el reintento: si su token vence, el mensaje se abandona.
+- `POST /auth/forgot-password` no tiene límite de intentos en este corte (limitación declarada): un abuso podría llenar el outbox de correos. El límite por IP o correo (`429`) queda para el 100%.
 
 ## Miembros de la organización [v0.5]
 
@@ -172,6 +173,8 @@ getUsedStorageBytes(organizationId: string): Promise<bigint>
 `userLimit` viene del plan vigente (`null` si no hay suscripción vigente).
 
 `POST /organizations/members` (solo `tenant_admin`): cuerpo `{ "fullName": "...", "email": "...", "role": "tenant_admin" | "colaborador" }`. Respuesta `201`: `{ id, userId, email, fullName, role, status: "active", createdAt }`. Crea la cuenta con contraseña aleatoria inutilizable y encola un correo `member_invitation` con un enlace a `/nueva-contrasena?token=...` de **24 h**.
+
+**Invitación vencida:** el administrador no puede reinvitar (`MEMBER_ALREADY_EXISTS`) y el reintento del outbox no emite token nuevo. La salida es que la persona use **"Olvidé mi contraseña"** (`POST /auth/forgot-password`), que emite un token de 15 minutos y deja la cuenta verificada. Es el comportamiento previsto, no un error; la pantalla de miembros debe indicarlo.
 
 | HTTP | `code` | Causa |
 |---|---|---|
@@ -193,8 +196,8 @@ Todas estas rutas se acotan al **Drive personal del solicitante** y tratan un ar
 
 ## Facturación: historial y renovación [v0.5]
 
-- `GET /billing/operations` (solo `tenant_admin`) → `{ "items": [{ "id", "type": "charge" | "renewal", "planName", "amount", "simulated": true, "occurredAt" }] }`, más recientes primero, máximo 100. `amount` es USD (número). Se resuelve por la suscripción de la organización del token.
-- `POST /subscriptions/activate` escribe una operación `charge` (monto del plan) cuando **crea** una suscripción. Reactivar el mismo plan no escribe nada. El alta de la organización escribe un `charge` de US$0 (Demo). La reducción de plan sigue respondiendo `422 STORAGE_QUOTA_EXCEEDED` (no existe `DOWNGRADE_STORAGE_EXCEEDED`).
+- `GET /billing/operations` (solo `tenant_admin`) → `{ "items": [{ "id", "type": "charge" | "renewal", "planName", "amount", "simulated": true, "occurredAt" }] }`, más recientes primero, máximo 100. `amount` es USD (número; el mapper convierte el `numeric` de PostgreSQL, que llega como cadena). Se resuelve por la suscripción de la organización del token.
+- `POST /subscriptions/activate` escribe una operación `charge` (monto del plan) cuando **crea** una suscripción. Reactivar el mismo plan no escribe nada. Todo cambio de plan crea una suscripción nueva y por tanto escribe un `charge` con el precio del plan destino, incluso US$0 (por ejemplo, bajar de Team a Demo). El hook `demo-subscription` del alta de la organización escribe un `charge` de US$0 dentro de la transacción del registro. La reducción de plan sigue respondiendo `422 STORAGE_QUOTA_EXCEEDED` (no existe `DOWNGRADE_STORAGE_EXCEEDED`).
 - `POST /subscriptions/renew` (solo `tenant_admin`, sin cuerpo): extiende la vigencia de la suscripción vigente en `validityDays` desde `max(hoy, fin actual)` y escribe una operación `renewal`. No crea otra suscripción. Respuesta igual a `activate` (`{ subscriptionId, status: "active", simulated: true, startDate, endDate }`). `422 NO_ACTIVE_SUBSCRIPTION` sin suscripción vigente; `422 PLAN_NOT_RENEWABLE` para planes sin vigencia (Demo).
 
 ## Auditoría [v0.5]
@@ -224,6 +227,7 @@ Catálogo común. El filtro emite `VALIDATION_ERROR` para cualquier `400` de val
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | Entrada inválida. |
 | 400 | `INVALID_OR_EXPIRED_TOKEN` | Token de recuperación inválido, vencido o usado. |
+| 401 | `UNAUTHORIZED` | Sin sesión válida (token ausente, inválido o vencido). |
 | 403 | `FORBIDDEN_ROLE` | Rol insuficiente. |
 | 403 | `EMAIL_NOT_VERIFIED` | Login sin correo verificado (v0.4). |
 | 404 | `NOT_FOUND` | Recurso inexistente o ajeno. |
@@ -242,4 +246,4 @@ Documentan lo que el código ya devuelve (arreglo de tamaño de carpetas, SPEC-0
 - IAM implementa identidad, cookies, refresh y el contexto autenticado; Billing implementa catálogo y persistencia de suscripción; Files implementa objetos, versiones, uso y reservas; Víctor implementa Dashboard, coordinador de activación y frontend.
 - Las migraciones compartidas se consolidan en una sola ubicación y se presentan en un solo PR integrador, según `CONTRIBUTING.md`.
 - La ubicación canónica es `database/migrations/` en la raíz del repositorio. Los PR de dominio entregan sus cambios de esquema al integrador; no dupliquen la misma migración en `apps/db/database/migrations/`.
-- MFA/TOTP queda fuera del alcance actual. **[v0.5]** Recuperación de contraseña y RBAC entran en el corte del 80% según las secciones siguientes.
+- MFA/TOTP queda fuera del alcance actual. **[v0.5]** Recuperación de contraseña y RBAC entran en el corte del 80% según las secciones marcadas **[v0.5]**.

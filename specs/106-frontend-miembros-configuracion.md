@@ -12,7 +12,7 @@
 | **Dependencias** | SPEC-102 y SPEC-104 (API). Puede avanzar con un mock del contrato v0.5. |
 | **Hito Objetivo** | Corte 80% (30-Oct-2026) |
 | **Estimación** | 1.5 h |
-| **Estado** | En revisión (reescrita 2026-10-27 según ADR-007) |
+| **Estado** | Aprobada (2026-10-28, Víctor Chán) |
 
 ---
 
@@ -24,7 +24,7 @@ Reemplazar el `PlaceholderPage` de `/configuracion` por una pantalla con la secc
 
 ## 3. Fuera de Alcance (YAGNI)
 
-- Editar, suspender o eliminar miembros; reenviar invitaciones.
+- Editar, suspender o eliminar miembros; reenviar invitaciones (por eso el escenario 6 solo informa la salida por recuperación de contraseña).
 - Otras secciones de configuración (preferencias, organización).
 
 ---
@@ -50,6 +50,10 @@ Escenario 4: Colaborador
 
 Escenario 5: Estados
   Entonces existen cargando, vacío (solo el administrador), error con reintento y datos
+
+Escenario 6: Invitación vencida
+  Dado que la invitación de una persona caducó (24 h) sin que defina su contraseña
+  Entonces la pantalla indica, junto a la tabla o al formulario, que esa persona puede usar "Olvidé mi contraseña" para recibir un enlace nuevo (el administrador no puede reinvitar: MEMBER_ALREADY_EXISTS)
 ```
 
 ---
@@ -69,6 +73,8 @@ No aplica.
 ## 7. Interfaz de Usuario
 
 - Ruta `/configuracion`, dentro de `AppShell`. Insignias de rol según `docs/IDENTIDAD_VISUAL.md`.
+- El selector de rol del formulario ofrece "Administrador" (`tenant_admin`) y "Colaborador" (`colaborador`).
+- Texto de ayuda permanente: "Si el enlace de invitación vence (24 h), la persona puede usar «Olvidé mi contraseña» para recibir uno nuevo." (CONTRACTS v0.5, "Miembros de la organización").
 - Mostrar el conteo y el límite que devuelve la API; el cliente no calcula cupos ni decide permisos (solo oculta lo administrativo según `session.role`).
 
 ---
@@ -92,7 +98,7 @@ No aplica.
 
 | Criterio | Tipo | Verificación |
 |---|---|---|
-| Escenarios 1–5 | Manual | Con un administrador y un colaborador reales; agregar hasta alcanzar el límite de Demo (5) y comprobar `USER_LIMIT_EXCEEDED` |
+| Escenarios 1–6 | Manual | Con un administrador y un colaborador reales; agregar hasta alcanzar el límite de Demo (5) y comprobar `USER_LIMIT_EXCEEDED` |
 
 ---
 
@@ -113,4 +119,5 @@ Ninguna.
 | Fecha | Autor | Descripción |
 |---|---|---|
 | 2026-10-27 | Víctor Chán | Versión inicial. |
+| 2026-10-28 | Revisión | Escenario 6 y texto de ayuda por invitación vencida (CONTRACTS v0.5 aprobado); selector de rol explícito. |
 | 2026-10-27 | Revisión | Campos del contrato (`fullName`, `userLimit`); vista para `colaborador`; errores de negocio; dependencia explícita de 104. |
