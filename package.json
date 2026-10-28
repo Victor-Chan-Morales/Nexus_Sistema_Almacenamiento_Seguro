@@ -15,6 +15,8 @@
     "build:api": "cd apps/api && npm run build",
     "start:api": "cd apps/api && npm run start",
     "install:api": "cd apps/api && npm install",
+    "test:api": "cd apps/api && npm test --",
+    "test:cov": "cd apps/api && npm test -- --coverage",
 
     "infra:up": "docker compose up -d postgres seaweedfs",
     "infra:down": "docker compose down",
