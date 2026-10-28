@@ -26,7 +26,8 @@ export class EmailVerificationService {
    */
   async issue(tx: TransactionContext, user: Pick<User, 'id' | 'email' | 'fullName'>): Promise<string> {
     const { rawToken, expiresAt } = await this.tokens.issue(tx, user.id);
-    return this.outbox.enqueueVerification(tx, {
+    return this.outbox.enqueue(tx, {
+      kind: 'email_verification',
       userId: user.id,
       recipientEmail: user.email,
       recipientName: user.fullName,

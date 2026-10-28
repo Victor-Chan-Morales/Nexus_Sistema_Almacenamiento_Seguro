@@ -124,7 +124,7 @@ Pantallas en SPEC-105.
 ## 9. Plan de Tareas
 
 - [x] **T1**: migración del outbox, creada y verificada contra Postgres 16 (up, down y re-up). Falta aplicarla en cada entorno local (`npm run migration:run`).
-- [ ] **T2 (Víctor, 40 min; asignado a Víctor para quitar carga a la ruta crítica de IAM)**: generalizar `EmailOutboxService` + `VerificationMailer`/`EmailService` + constantes (`password_reset`, `member_invitation`). **Abrir este PR primero: SPEC-102 depende de él.**
+- [x] **T2 (Víctor, 40 min; asignado a Víctor para quitar carga a la ruta crítica de IAM)**: generalizar `EmailOutboxService` + `VerificationMailer`/`EmailService` + constantes (`password_reset`, `member_invitation`). **Abrir este PR primero: SPEC-102 depende de él.**
 - [ ] **T3 (35 min)**: `PasswordResetService`; reutiliza `SessionRepository.revokeAllActiveOf`, que ya existe.
 - [ ] **T4 (15 min)**: rutas y DTOs (`ForgotPasswordDto`, `ResetPasswordDto` con la política de `RegisterDto`) en `IamController`.
 - [ ] **T5 (50 min)**: pruebas (escenarios 1–6; revocación de sesiones; invalidación de tokens previos; no consumir token con contraseña débil).
@@ -144,7 +144,7 @@ Pantallas en SPEC-105.
 ## 11. Impacto en Documentación
 
 - [x] `CONTRACTS.md` v0.5.
-- [ ] `docs/modules/IAM.md`: documentar los tres `kind`.
+- [x] `docs/modules/IAM.md`: documentar los tres `kind`.
 - [ ] `ENTS_REGISTRY.md`: sin entidad nueva.
 
 ---

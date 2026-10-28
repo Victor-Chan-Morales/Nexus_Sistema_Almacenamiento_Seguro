@@ -22,6 +22,12 @@ class FakeEmailService {
     if (this.failing) throw new Error('SMTP caído');
     this.sent.push({ to, token });
   }
+  async sendPasswordReset(to: string, _name: string, token: string) {
+    return this.sendVerification(to, _name, token);
+  }
+  async sendMemberInvitation(to: string, _name: string, token: string) {
+    return this.sendVerification(to, _name, token);
+  }
   tokenFor(to: string): string {
     const found = [...this.sent].reverse().find((m) => m.to === to);
     if (!found) throw new Error(`sin correo para ${to}`);

@@ -146,7 +146,7 @@ describe('EmailVerificationService (token de un solo uso, 15 minutos, propósito
     const users = { markEmailVerified: jest.fn() };
     const opaque = { hash: jest.fn((t: string) => `h(${t})`), generate: jest.fn().mockReturnValue('raw') };
     const uow = { run: jest.fn((work: (tx: unknown) => unknown) => work('tx')) };
-    const outbox = { enqueueVerification: jest.fn().mockResolvedValue('out-1') };
+    const outbox = { enqueue: jest.fn().mockResolvedValue('out-1') };
     // VerificationTokenService real: emitir el token es parte del comportamiento que se verifica aquí.
     const tokens = new VerificationTokenService(tokensRepo as never, opaque as never);
     const service = new EmailVerificationService(
@@ -197,7 +197,7 @@ describe('EmailVerificationService (token de un solo uso, 15 minutos, propósito
       purpose: string;
       expiresAt: Date;
     };
-    expect(t.outbox.enqueueVerification).toHaveBeenCalledWith('tx', expect.objectContaining({ rawToken: 'raw' }));
+    expect(t.outbox.enqueue).toHaveBeenCalledWith('tx', expect.objectContaining({ rawToken: 'raw' }));
     expect(data.tokenHash).toBe('h(raw)');
     expect(data.tokenHash).not.toBe('raw');
     expect(data.purpose).toBe('email_verification');
