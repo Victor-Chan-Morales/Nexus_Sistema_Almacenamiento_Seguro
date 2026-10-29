@@ -9,6 +9,7 @@ import { DataSource, EntityManager } from 'typeorm';
 import { BillingService } from '../billing/billing.service';
 import { FilesService } from '../files/files.service';
 import { Subscription, SubscriptionStatus } from '../billing/entities/subscription.entity';
+import { BillingOperationType } from '../billing/entities/billing-operation.entity';
 
 /**
  * SubscriptionCoordinator — Coordinador de Integración entre Billing y Files
@@ -111,6 +112,13 @@ export class SubscriptionCoordinator {
 
         const saved = await manager.save(newSubscription);
         saved.plan = targetPlan;
+        const amountUsd = (targetPlan.priceCents || 0) / 100;
+        await this.billingService.recordOperation(
+          manager,
+          saved,
+          BillingOperationType.CHARGE,
+          amountUsd,
+        );
         return saved;
       } catch (dbError: any) {
         // Manejo específico de colisión con el índice único parcial de PostgreSQL

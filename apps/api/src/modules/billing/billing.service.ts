@@ -3,11 +3,17 @@ import {
   NotFoundException,
   ConflictException,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Plan } from './entities/plan.entity';
 import { Subscription, SubscriptionStatus } from './entities/subscription.entity';
+import {
+  BillingOperation,
+  BillingOperationType,
+} from './entities/billing-operation.entity';
+import { BillingOperationItemResponse } from './billing.dto';
 
 /**
  * BillingService — Lógica de dominio para planes, cuotas y persistencia de suscripciones.
@@ -27,6 +33,10 @@ export class BillingService implements OnModuleInit {
     private readonly subscriptionRepo: Repository<Subscription>,
 
     private readonly dataSource: DataSource,
+
+    @Optional()
+    @InjectRepository(BillingOperation)
+    private readonly billingOperationRepo?: Repository<BillingOperation>,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -70,6 +80,47 @@ export class BillingService implements OnModuleInit {
     return demo;
   }
 
+  // ── Historial de Operaciones de Facturación Simulada (SPEC-301) ───────────
+
+  async recordOperation(
+    manager: EntityManager,
+    subscription: Subscription,
+    type: BillingOperationType,
+    amount: number,
+  ): Promise<BillingOperation> {
+    const operation = manager.create(BillingOperation, {
+      subscriptionId: subscription.id,
+      type,
+      amount: Number(amount),
+      simulatedAt: new Date(),
+    });
+    return manager.save(operation);
+  }
+
+  async listOperations(organizationId: string): Promise<BillingOperationItemResponse[]> {
+    const repo = this.billingOperationRepo ?? this.dataSource.getRepository(BillingOperation);
+    const operations = await repo
+      .createQueryBuilder('op')
+      .innerJoinAndSelect('op.subscription', 'sub')
+      .innerJoinAndSelect('sub.plan', 'plan')
+      .where('sub.organizationId = :organizationId', { organizationId })
+      .orderBy('op.simulatedAt', 'DESC')
+      .take(100)
+      .getMany();
+
+    return operations.map((op) => ({
+      id: op.id,
+      type: op.type,
+      planName: op.subscription?.plan?.name ?? '',
+      amount: Number(op.amount ?? 0),
+      simulated: true as const,
+      occurredAt:
+        op.simulatedAt instanceof Date
+          ? op.simulatedAt.toISOString()
+          : new Date(op.simulatedAt).toISOString(),
+    }));
+  }
+
   // ── Provisión Inicial Atómica (Hook de Registro de IAM) ───────────────────
 
   /**
@@ -106,6 +157,7 @@ export class BillingService implements OnModuleInit {
 
       const saved = await manager.save(subscription);
       saved.plan = demoPlan;
+      await this.recordOperation(manager, saved, BillingOperationType.CHARGE, 0);
       return saved;
     };
 
@@ -201,6 +253,8 @@ export class BillingService implements OnModuleInit {
 
         const saved = await manager.save(newSubscription);
         saved.plan = targetPlan;
+        const amountUsd = (targetPlan.priceCents || 0) / 100;
+        await this.recordOperation(manager, saved, BillingOperationType.CHARGE, amountUsd);
         return saved;
       } catch (error: any) {
         if (error?.code === '23505' || error?.driverError?.code === '23505') {

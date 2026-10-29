@@ -5,11 +5,13 @@ import { ConflictException } from '@nestjs/common';
 import { BillingService } from './billing.service';
 import { Plan, StorageLocation } from './entities/plan.entity';
 import { Subscription, SubscriptionStatus } from './entities/subscription.entity';
+import { BillingOperation, BillingOperationType } from './entities/billing-operation.entity';
 
 describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
   let service: BillingService;
   let planRepo: jest.Mocked<Partial<Repository<Plan>>>;
   let subscriptionRepo: jest.Mocked<Partial<Repository<Subscription>>>;
+  let billingOperationRepo: jest.Mocked<Partial<Repository<BillingOperation>>>;
   let dataSource: Partial<DataSource>;
 
   const mockDemoPlan: Plan = {
@@ -52,6 +54,10 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
       save: jest.fn((entity: any) => Promise.resolve({ id: 'sub-new-uuid', createdAt: new Date(), ...entity } as any)) as any,
     };
 
+    billingOperationRepo = {
+      createQueryBuilder: jest.fn(),
+    };
+
     dataSource = {
       transaction: jest.fn(async (callback: any) => {
         const mockManager = {
@@ -68,6 +74,7 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
         BillingService,
         { provide: getRepositoryToken(Plan), useValue: planRepo },
         { provide: getRepositoryToken(Subscription), useValue: subscriptionRepo },
+        { provide: getRepositoryToken(BillingOperation), useValue: billingOperationRepo },
         { provide: DataSource, useValue: dataSource },
       ],
     }).compile();
@@ -97,7 +104,7 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
   });
 
   describe('2. Provisión inicial en registro (Hook atómico de IAM)', () => {
-    it('debe provisionar Plan Demo con status active, simulated true y expiresAt null', async () => {
+    it('debe provisionar Plan Demo con status active, simulated true, expiresAt null y operación charge de amount 0 (Escenario 1)', async () => {
       const mockManager = {
         findOne: jest.fn().mockImplementation((_entity, options) => {
           if (options?.where?.name === 'Demo') return Promise.resolve(mockDemoPlan);
@@ -114,7 +121,15 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
       expect(result.status).toBe(SubscriptionStatus.ACTIVE);
       expect(result.simulated).toBe(true);
       expect(result.expiresAt).toBeNull(); // Demo es permanente
-      expect(mockManager.save).toHaveBeenCalled();
+      expect(mockManager.create).toHaveBeenCalledWith(
+        BillingOperation,
+        expect.objectContaining({
+          subscriptionId: 'initial-sub-id',
+          type: BillingOperationType.CHARGE,
+          amount: 0,
+        }),
+      );
+      expect(mockManager.save).toHaveBeenCalledTimes(2);
     });
 
     it('debe ser idempotente si la organización ya tiene Demo activo', async () => {
@@ -140,6 +155,25 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
 
       const result = await service.provisionInitialSubscription('org-123', mockManager as any);
       expect(result.id).toBe('existing-sub-id');
+    });
+
+    it('Escenario 7 (Atomicidad): si falla la escritura de la operación, revierte la creación de la suscripción', async () => {
+      const mockManager = {
+        findOne: jest.fn().mockImplementation((_entity, options) => {
+          if (options?.where?.name === 'Demo') return Promise.resolve(mockDemoPlan);
+          if (options?.where?.status === SubscriptionStatus.ACTIVE) return Promise.resolve(null);
+          return Promise.resolve(null);
+        }),
+        create: jest.fn((_cls, entity) => entity),
+        save: jest
+          .fn()
+          .mockResolvedValueOnce({ id: 'initial-sub-id', createdAt: new Date() })
+          .mockRejectedValueOnce(new Error('Fallo en billing_operation')),
+      };
+
+      await expect(
+        service.provisionInitialSubscription('org-123', mockManager as never),
+      ).rejects.toThrow('Fallo en billing_operation');
     });
   });
 
@@ -236,6 +270,46 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
 
       const result = await service.getSubscription('org-123');
       expect(result).toBe(activeDemo);
+    });
+  });
+
+  describe('5. Historial de operaciones simuladas (listOperations — Escenarios 4 y 5)', () => {
+    it('debe listar las operaciones de la organización ordenadas por simulatedAt DESC (máx. 100) y convertir amount a number', async () => {
+      const qb = {
+        innerJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([
+          {
+            id: 'op-team-uuid',
+            subscriptionId: 'sub-team',
+            type: BillingOperationType.CHARGE,
+            amount: '19.99' as unknown as number,
+            simulatedAt: new Date('2026-10-29T18:00:00.000Z'),
+            subscription: { id: 'sub-team', organizationId: 'org-123', plan: mockTeamPlan },
+          },
+        ]),
+      };
+      (billingOperationRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      const items = await service.listOperations('org-123');
+
+      expect(qb.where).toHaveBeenCalledWith('sub.organizationId = :organizationId', {
+        organizationId: 'org-123',
+      });
+      expect(qb.orderBy).toHaveBeenCalledWith('op.simulatedAt', 'DESC');
+      expect(qb.take).toHaveBeenCalledWith(100);
+      expect(items).toEqual([
+        {
+          id: 'op-team-uuid',
+          type: 'charge',
+          planName: 'Team',
+          amount: 19.99,
+          simulated: true,
+          occurredAt: '2026-10-29T18:00:00.000Z',
+        },
+      ]);
     });
   });
 });

@@ -10,6 +10,7 @@ import { BillingService } from '../billing/billing.service';
 import { FilesService } from '../files/files.service';
 import { Plan, StorageLocation } from '../billing/entities/plan.entity';
 import { Subscription, SubscriptionStatus } from '../billing/entities/subscription.entity';
+import { BillingOperation, BillingOperationType } from '../billing/entities/billing-operation.entity';
 
 describe('SubscriptionCoordinator — Pruebas de orquestación, concurrencia y fail-safe', () => {
   let coordinator: SubscriptionCoordinator;
@@ -46,6 +47,13 @@ describe('SubscriptionCoordinator — Pruebas de orquestación, concurrencia y f
   beforeEach(async () => {
     billingService = {
       findPlanById: jest.fn(),
+      recordOperation: jest.fn().mockResolvedValue({
+        id: 'op-simulated-uuid',
+        type: BillingOperationType.CHARGE,
+        amount: 0,
+        simulatedAt: new Date(),
+        simulated: true,
+      } as BillingOperation),
     };
 
     filesService = {
@@ -76,7 +84,7 @@ describe('SubscriptionCoordinator — Pruebas de orquestación, concurrencia y f
   });
 
   describe('1. Idempotencia y Transaccionalidad', () => {
-    it('debe ser idempotente si ya existe suscripción activa al mismo plan (no recrea filas)', async () => {
+    it('debe ser idempotente si ya existe suscripción activa al mismo plan (no recrea filas ni operación — Escenario 3)', async () => {
       (billingService.findPlanById as jest.Mock).mockResolvedValue(mockTeamPlan);
 
       const existingActive: Subscription = {
@@ -101,6 +109,35 @@ describe('SubscriptionCoordinator — Pruebas de orquestación, concurrencia y f
 
       expect(result.id).toBe('existing-active-team');
       expect(mockManager.save).not.toHaveBeenCalled();
+      expect(billingService.recordOperation).not.toHaveBeenCalled();
+    });
+
+    it('Escenario 2: al activar un plan nuevo (Team US$19.99) escribe una operación charge con amount 19.99 en la misma transacción', async () => {
+      (billingService.findPlanById as jest.Mock).mockResolvedValue(mockTeamPlan);
+      (filesService.getTotalStorageUsage as jest.Mock).mockResolvedValue({
+        usedBytes: BigInt(0),
+        reservedBytes: BigInt(0),
+        totalBytes: BigInt(0),
+      });
+
+      const mockManager = {
+        findOne: jest.fn().mockResolvedValue(null),
+        create: jest.fn((_cls: unknown, entity: unknown) => entity),
+        save: jest.fn((entity: Record<string, unknown>) =>
+          Promise.resolve({ id: 'new-team-sub', createdAt: new Date(), ...entity }),
+        ),
+      };
+      (dataSource.transaction as jest.Mock).mockImplementation((cb: (m: unknown) => Promise<unknown>) => cb(mockManager));
+
+      const result = await coordinator.activateSubscription('org-test-uuid', mockTeamPlan.id);
+
+      expect(result.id).toBe('new-team-sub');
+      expect(billingService.recordOperation).toHaveBeenCalledWith(
+        mockManager,
+        expect.objectContaining({ id: 'new-team-sub', planId: mockTeamPlan.id }),
+        BillingOperationType.CHARGE,
+        19.99,
+      );
     });
   });
 
@@ -151,7 +188,7 @@ describe('SubscriptionCoordinator — Pruebas de orquestación, concurrencia y f
       expect(mockManager.save).not.toHaveBeenCalled();
     });
 
-    it('debe permitir el downgrade si usedBytes + reservedBytes cabe dentro del límite', async () => {
+    it('debe permitir el downgrade si usedBytes + reservedBytes cabe dentro del límite y registrar charge con amount 0 (Escenario 2b)', async () => {
       // Intenta cambiar a Demo (5 GB)
       (billingService.findPlanById as jest.Mock).mockResolvedValue(mockDemoPlan);
 
@@ -188,6 +225,12 @@ describe('SubscriptionCoordinator — Pruebas de orquestación, concurrencia y f
       // Se canceló la anterior
       expect(activeTeam.status).toBe(SubscriptionStatus.CANCELLED);
       expect(mockManager.save).toHaveBeenCalledTimes(2); // cancel anterior + insert nueva
+      expect(billingService.recordOperation).toHaveBeenCalledWith(
+        mockManager,
+        expect.objectContaining({ id: 'new-demo-sub', planId: mockDemoPlan.id }),
+        BillingOperationType.CHARGE,
+        0,
+      );
     });
 
     it('Falla Segura: si FilesModule arroja un error, aborta la transacción y NUNCA asume 0 bytes', async () => {
