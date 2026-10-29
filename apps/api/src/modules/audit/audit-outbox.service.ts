@@ -1,17 +1,14 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { DataSource, In } from 'typeorm';
+import { OUTBOX_POLL_INTERVAL_MS, outboxBackoffSeconds, outboxHorizonPassed } from '../../common/outbox-policy';
 import { AuditChainWriter, ResolvedAuditEvent } from './audit-chain-writer';
 import { errorCode } from './audit-error-code';
 import { AuditOutbox, AuditOutboxStatus } from './entities/audit-outbox.entity';
 import { AuditAction, AuditResource } from './audit.types';
 
-const POLL_INTERVAL_MS = 30_000;
 /** Arrendamiento de un lote. Holgado: si vence antes de terminar, el dedupe evita duplicar el evento. */
 const LEASE_SECONDS = 300;
 const BATCH_SIZE = 20;
-const MAX_BACKOFF_SECONDS = 30 * 60;
-/** Tiempo máximo que se insiste con un evento desde su captura; después queda 'dead'. */
-const RETRY_HORIZON_MS = 24 * 60 * 60 * 1000;
 /** Errores de Postgres que no mejoran reintentando: FK, NOT NULL, tipo de dato y CHECK. */
 const PERMANENT_ERROR_CODES = new Set(['23503', '23502', '22P02', '23514']);
 
@@ -31,7 +28,7 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
-    this.timer = setInterval(() => void this.dispatchDue(), POLL_INTERVAL_MS);
+    this.timer = setInterval(() => void this.dispatchDue(), OUTBOX_POLL_INTERVAL_MS);
     this.timer.unref();
   }
 
@@ -106,11 +103,7 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async process(row: AuditOutbox): Promise<void> {
-    if (this.horizonPassed(row, Date.now())) {
-      await this.markDead(row, 'HORIZON');
-      return;
-    }
-
+    // Se intenta siempre: una BD recuperada registra el evento aunque lleve más de 24 h capturado.
     try {
       // Con dedupe: si un intento anterior sí llegó a confirmarse, no se inserta de nuevo.
       await this.dataSource.transaction((manager) =>
@@ -132,10 +125,11 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
 
   private async scheduleRetry(row: AuditOutbox, code: string): Promise<void> {
     const attempts = row.attempts + 1;
-    const backoffSeconds = Math.min(60 * 2 ** attempts, MAX_BACKOFF_SECONDS);
+    const backoffSeconds = outboxBackoffSeconds(attempts);
     const nextAttemptAt = new Date(Date.now() + backoffSeconds * 1000);
 
-    if (this.horizonPassed(row, nextAttemptAt.getTime())) {
+    // Solo un fallo transitorio cuenta contra el horizonte: si el próximo intento ya cae fuera de él, se abandona.
+    if (outboxHorizonPassed(row.occurredAt, nextAttemptAt.getTime())) {
       await this.markDead(row, code);
       return;
     }
@@ -155,11 +149,6 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
     );
     // Marcador fijo para alertar sobre el evento: el log no incluye datos del evento.
     this.logger.error(`[AUDIT_OUTBOX_DEAD] evento ${row.eventId} abandonado (${code})`);
-  }
-
-  /** El horizonte se cuenta desde la captura del evento (`occurred_at`), no desde el encolado. */
-  private horizonPassed(row: AuditOutbox, at: number): boolean {
-    return row.occurredAt.getTime() + RETRY_HORIZON_MS <= at;
   }
 
   private toResolved(row: AuditOutbox): ResolvedAuditEvent {

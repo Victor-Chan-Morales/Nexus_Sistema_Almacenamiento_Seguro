@@ -23,7 +23,8 @@ export class AuditService {
 
   /** Nunca lanza: un fallo de auditoría no debe romper la operación del usuario. */
   async logEvent(input: AuditEventInput): Promise<void> {
-    // Identificadores y momento de captura fijados antes del intento: el reintento usa exactamente los mismos.
+    // Identificadores fijados antes del intento: el reintento usa exactamente los mismos.
+    // `capturedAt` solo viaja al outbox; en la ruta directa la cadena fija `occurred_at` dentro del lock.
     const eventId = randomUUID();
     const correlationId = input.correlationId ?? randomUUID();
     const capturedAt = new Date();

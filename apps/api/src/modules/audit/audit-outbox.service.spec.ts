@@ -173,13 +173,25 @@ describe('AuditOutboxService — reintento de eventos de auditoría (issue #17)'
     expect(messages.join(' ')).not.toContain(ORG_ID);
   });
 
-  it('superadas 24 h desde la captura, el evento pasa a dead sin intentar más', async () => {
+  it('con la BD sana, un evento de más de 24 h desde la captura se registra igualmente', async () => {
     await service.enqueue(event);
     jest.setSystemTime(new Date(T0.getTime() + 25 * 60 * MINUTE));
 
     await service.dispatchDue();
 
-    expect(db.outbox.get(EVENT_ID)).toMatchObject({ status: 'dead', lastError: 'HORIZON' });
+    expect(db.chain).toHaveLength(1);
+    expect(db.chain[0]).toMatchObject({ eventId: EVENT_ID, occurredAt: T0 });
+    expect(db.outbox.size).toBe(0);
+  });
+
+  it('superadas 24 h desde la captura, un fallo transitorio deja el evento dead sin reintentar', async () => {
+    await service.enqueue(event);
+    db.failures.push(transient());
+    jest.setSystemTime(new Date(T0.getTime() + 25 * 60 * MINUTE));
+
+    await service.dispatchDue();
+
+    expect(db.outbox.get(EVENT_ID)).toMatchObject({ status: 'dead', lastError: '40P01' });
     expect(db.chain).toHaveLength(0);
   });
 
@@ -237,11 +249,12 @@ describe('AuditOutboxService — reintento de eventos de auditoría (issue #17)'
   it('el horizonte de 24 h se cuenta desde la captura, no desde el encolado', async () => {
     jest.setSystemTime(new Date(T0.getTime() + 10 * 60 * MINUTE));
     await service.enqueue({ ...event, occurredAt: T0 });
+    db.failures.push(transient());
 
     jest.setSystemTime(new Date(T0.getTime() + 25 * 60 * MINUTE));
     await service.dispatchDue();
 
-    expect(db.outbox.get(EVENT_ID)).toMatchObject({ status: 'dead', lastError: 'HORIZON' });
+    expect(db.outbox.get(EVENT_ID)).toMatchObject({ status: 'dead', lastError: '40P01' });
   });
 
   it('un error de BD al actualizar una fila no hace fallar dispatchDue ni se propaga al proceso', async () => {
