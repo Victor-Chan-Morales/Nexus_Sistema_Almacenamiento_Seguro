@@ -25,7 +25,7 @@ CREATE INDEX ix_audit_outbox_due ON audit.audit_outbox (status, next_attempt_at)
 
 COMMENT ON TABLE audit.audit_outbox IS 'Eventos de auditoría pendientes de registrar en la cadena; el worker reintenta los fallos transitorios.';
 COMMENT ON COLUMN audit.audit_outbox.event_id IS 'Identificador del evento; la PK impide encolar dos veces el mismo evento.';
-COMMENT ON COLUMN audit.audit_outbox.status IS 'pending: se reintenta. dead: agotó el horizonte o falló de forma permanente; se conserva para revisión.';
+COMMENT ON COLUMN audit.audit_outbox.status IS 'pending: se reintenta. dead: falló de forma permanente (FK, NOT NULL, tipo, CHECK); se conserva para revisión. Los fallos transitorios nunca pasan a dead, se reintentan sin límite.';
 COMMENT ON COLUMN audit.audit_outbox.last_error IS 'Código del último error (nunca el mensaje del motor ni datos del evento).';
 
 -- migrate:down
