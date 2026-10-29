@@ -15,6 +15,7 @@ Este registro es operativo. Actualícelo cuando cambie un responsable, ruta, int
 | Web común | Víctor | Víctor | Layout, navegación, rutas, componentes visuales, consumo tipado de API y ajuste a Figma | Reglas de autorización, SQL, credenciales SeaweedFS |
 | IAM | Sebastián | Víctor | Registro, login, hash, sesión/JWT y asociación inicial usuario-organización | Pantallas duplicadas, Billing, archivos |
 | Billing | Anthony | Víctor | Catálogo y activación simulada por organización | Cobro real, pantallas paralelas, cuota de Files |
+| Audit | Anthony | Víctor | `AuditService.logEvent` con cadena de hashes por organización (SPEC-401); lectura en SPEC-402 | Edición o borrado de eventos, lógica de IAM/Files/Billing (cada dueño engancha sus eventos en SPEC-405) |
 | Files + Storage | Miguel | Víctor | Carpetas, metadatos, primera carga/descarga, cliente `StorageService` (S3/SeaweedFS) | UI paralela, login, cobro |
 | Integración | Víctor | Víctor | Contratos compartidos, estructura web, Compose/migraciones consolidadas y validación del recorrido | Reescritura silenciosa de la lógica de un dueño |
 
