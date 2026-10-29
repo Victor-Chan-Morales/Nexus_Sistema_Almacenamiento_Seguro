@@ -57,6 +57,10 @@ export class AuditEvent {
   @Column({ name: 'prev_hash', type: 'varchar', length: 128, nullable: true })
   prevHash!: string | null;
 
+  /** Posición en la cadena de la organización. `bigint` llega como string desde pg. */
+  @Column({ name: 'chain_seq', type: 'bigint' })
+  chainSeq!: string;
+
   @Column({ name: 'record_hash', type: 'varchar', length: 128 })
   recordHash!: string;
 

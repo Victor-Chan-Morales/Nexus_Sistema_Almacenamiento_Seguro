@@ -27,6 +27,6 @@ export interface AuditEventInput {
   action: AuditAction;
   resourceType?: AuditResource;
   resourceId?: string;
-  /** Si falta, se genera un UUID por llamada. */
+  /** Si falta, se genera un UUID por llamada. Las operaciones con varios eventos deben pasar el mismo valor. */
   correlationId?: string;
 }

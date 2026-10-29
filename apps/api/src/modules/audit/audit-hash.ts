@@ -4,6 +4,7 @@ import { AuditActorType, AuditResult } from './entities/audit-event.entity';
 /** Campos que entran en el hash. Incluye `prevHash` para encadenar eventos de la misma organización. */
 export interface AuditHashFields {
   prevHash: string | null;
+  chainSeq: string;
   eventId: string;
   organizationId: string;
   actorType: AuditActorType;
@@ -16,10 +17,14 @@ export interface AuditHashFields {
   occurredAt: Date;
 }
 
-/** Función pura: el mismo evento siempre produce el mismo hash. */
+/**
+ * Función pura: el mismo evento siempre produce el mismo hash.
+ * Se serializa con JSON, no con un separador: un valor que contenga `|` no puede confundirse con otro campo.
+ */
 export function computeRecordHash(fields: AuditHashFields): string {
-  const payload = [
+  const payload = JSON.stringify([
     fields.prevHash ?? '',
+    fields.chainSeq,
     fields.eventId,
     fields.organizationId,
     fields.actorType,
@@ -30,7 +35,7 @@ export function computeRecordHash(fields: AuditHashFields): string {
     fields.result,
     fields.correlationId,
     fields.occurredAt.toISOString(),
-  ].join('|');
+  ]);
 
   return createHash('sha256').update(payload, 'utf8').digest('hex');
 }

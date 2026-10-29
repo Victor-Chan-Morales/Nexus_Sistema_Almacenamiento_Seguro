@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TerminusModule } from '@nestjs/terminus';
+import { AuditOutboxIndicator } from './audit-outbox.indicator';
 import { HealthController } from './health.controller';
 
 /**
@@ -12,5 +13,6 @@ import { HealthController } from './health.controller';
 @Module({
   imports: [TerminusModule],
   controllers: [HealthController],
+  providers: [AuditOutboxIndicator],
 })
 export class HealthModule {}
