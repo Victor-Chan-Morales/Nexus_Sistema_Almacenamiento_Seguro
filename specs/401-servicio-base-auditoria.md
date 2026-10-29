@@ -122,10 +122,10 @@ No aplica.
 
 ## 9. Plan de Tareas
 
-- [ ] **T1 (30 min)**: entidad (esquema `audit`), enums de acción/recurso y `AuditModule` global registrado en `AppModule`.
-- [ ] **T2 (50 min)**: `AuditService.logEvent` con bloqueo, cadena y `try/catch`; `computeRecordHash`.
-- [ ] **T3 (50 min)**: pruebas (escenarios 1–6; hash determinista; cadena por organización; el error no se propaga).
-- [ ] **T4 (20 min)**: documentar los eventos en el README del módulo y avisar a Sebastián y Miguel que ya pueden engancharlos (SPEC-405).
+- [x] **T1 (30 min)**: entidad (esquema `audit`), enums de acción/recurso y `AuditModule` global registrado en `AppModule`.
+- [x] **T2 (50 min)**: `AuditService.logEvent` con bloqueo, cadena y `try/catch`; `computeRecordHash`.
+- [x] **T3 (50 min)**: pruebas (escenarios 1–6; hash determinista; cadena por organización; el error no se propaga). Escenarios 3 y 6 verificados contra Postgres 16; en el 6, TRUNCATE lo bloquea primero la FK de `audit_chain_checkpoint` (0A000) y el trigger (23001) se comprobó aparte en una transacción revertida.
+- [ ] **T4 (20 min)**: documentar los eventos en el README del módulo (hecho en `docs/modules/AUDIT.md`) y avisar a Sebastián y Miguel que ya pueden engancharlos (SPEC-405). **Pendiente: el aviso.**
 
 ---
 
@@ -140,8 +140,8 @@ No aplica.
 
 ## 11. Impacto en Documentación
 
-- [ ] `ENTS_REGISTRY.md`: añadir el módulo Audit y su dueño.
-- [ ] `docs/modules/`: README del módulo de auditoría con la lista de eventos.
+- [x] `ENTS_REGISTRY.md`: añadir el módulo Audit y su dueño.
+- [x] `docs/modules/`: README del módulo de auditoría con la lista de eventos.
 - [x] `CONTRACTS.md` v0.5.
 
 ---
@@ -158,3 +158,4 @@ Ninguna. Decisión: ADR-007 §8.
 |---|---|---|
 | 2026-10-27 | Víctor Chán | Versión inicial. |
 | 2026-10-27 | Revisión | Entidad alineada con `audit.audit_event` (la anterior no coincidía con ninguna columna salvo la organización); `record_hash`/`prev_hash` desde la v1 (NOT NULL y ADR-003); módulo global sin editar IAM/Files; bloqueo por organización; registro tras el commit. |
+| 2026-10-29 | Víctor Chán | Implementación de T1–T3 y documentación de T4 (falta el aviso a Sebastián y Miguel). Verificación de concurrencia e inmutabilidad contra Postgres 16. Código en `ecc99e9`. |
