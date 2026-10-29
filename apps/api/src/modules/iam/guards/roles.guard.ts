@@ -8,7 +8,8 @@ import { AuthUser } from '../interfaces/auth-user.interface';
 /**
  * Autoriza por rol de la membresía activa (req.user.role, que JwtStrategy lee de la BD en cada request).
  * Debe ir DESPUÉS del guard JWT: @UseGuards(JwtAuthGuard, RolesGuard).
- * Falla cerrada: con @Roles presente, sin usuario o con un rol desconocido responde 403 FORBIDDEN_ROLE.
+ * Falla cerrada: sin usuario responde 403 FORBIDDEN_ROLE aunque el endpoint no tenga @Roles, y lo mismo
+ * ocurre con un @Roles() vacío, con metadatos que no son un array o con un rol que no está en la lista.
  * El cuerpo del 403 no revela los roles requeridos (CONTRACTS.md v0.5).
  */
 @Injectable()
@@ -21,10 +22,13 @@ export class RolesGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ]);
-    if (!required || required.length === 0) return true;
 
     const { user } = context.switchToHttp().getRequest<{ user?: AuthUser }>();
-    if (!user || !required.includes(user.role as Role)) throw IamErrors.forbiddenRole();
+    if (!user) throw IamErrors.forbiddenRole();
+    if (required === undefined) return true;
+
+    // Un @Roles() vacío no concede acceso a nadie: [] no contiene ningún rol.
+    if (!Array.isArray(required) || !required.includes(user.role)) throw IamErrors.forbiddenRole();
     return true;
   }
 }

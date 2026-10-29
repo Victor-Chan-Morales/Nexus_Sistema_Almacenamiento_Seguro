@@ -62,9 +62,31 @@ describe('RolesGuard (SPEC-101)', () => {
     expect(guard.canActivate(ctx)).toBe(true);
   });
 
-  it('Escenario 3b: @Roles() vacío se trata como sin restricción', () => {
-    const reflector = { getAllAndOverride: jest.fn().mockReturnValue([]) };
-    expect(new RolesGuard(reflector as never).canActivate(contextOf(colaborador))).toBe(true);
+  it('Escenario 3b: @Roles() vacío en el método no abre un endpoint restringido por la clase', () => {
+    class EmptyOverride {
+      @Roles()
+      handler() {}
+    }
+    @Roles(Role.TENANT_ADMIN)
+    class AdminClassEmptyOverride {
+      @Roles()
+      override() {}
+    }
+    const onMethod = AdminClassEmptyOverride.prototype.override;
+    expect(forbidden(() => guard.canActivate(contextOf(admin, onMethod, AdminClassEmptyOverride))).getStatus()).toBe(403);
+    expect(forbidden(() => guard.canActivate(contextOf(colaborador, onMethod, AdminClassEmptyOverride))).getStatus()).toBe(403);
+    expect(forbidden(() => guard.canActivate(contextOf(admin, EmptyOverride.prototype.handler, EmptyOverride))).getStatus()).toBe(403);
+  });
+
+  it('Escenario 3c: sin req.user y sin @Roles → 403 (el guard no deja pasar sin autenticación)', () => {
+    const ctx = contextOf(undefined, Undecorated.prototype.handler, Undecorated);
+    expect(forbidden(() => guard.canActivate(ctx)).getResponse()).toMatchObject({ code: 'FORBIDDEN_ROLE' });
+  });
+
+  it('Escenario 3d: metadatos que no son un array → 403 (no hay búsqueda de subcadena)', () => {
+    const reflector = { getAllAndOverride: jest.fn().mockReturnValue('TENANT_ADMIN') };
+    const ctx = contextOf(admin);
+    expect(forbidden(() => new RolesGuard(reflector as never).canActivate(ctx)).getStatus()).toBe(403);
   });
 
   it('Escenario 4: falla cerrada sin req.user', () => {

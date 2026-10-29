@@ -12,7 +12,6 @@ import { IamRole } from './entities/role.entity';
 import { Session } from './entities/session.entity';
 import { User } from './entities/user.entity';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { RolesGuard } from './guards/roles.guard';
 import { IamController } from './iam.controller';
 import { IamSettings } from './iam.settings';
 import { Argon2PasswordHasher } from './infrastructure/argon2-password-hasher';
@@ -86,7 +85,6 @@ function resolveJwtSecret(config: ConfigService): string {
     RegistrationHooks,
     JwtStrategy,
     JwtAuthGuard,
-    RolesGuard,
     // Puertos → implementaciones (DIP): cambiar una tecnología es cambiar solo una línea aquí
     { provide: UnitOfWork, useClass: TypeOrmUnitOfWork },
     { provide: UserRepository, useClass: TypeOrmUserRepository },
@@ -100,6 +98,6 @@ function resolveJwtSecret(config: ConfigService): string {
     { provide: OpaqueTokens, useClass: CryptoOpaqueTokens },
     { provide: VerificationMailer, useClass: EmailService },
   ],
-  exports: [AuthService, JwtModule, PassportModule, JwtAuthGuard, RolesGuard, RegistrationHooks],
+  exports: [AuthService, JwtModule, PassportModule, JwtAuthGuard, RegistrationHooks],
 })
 export class IamModule {}
