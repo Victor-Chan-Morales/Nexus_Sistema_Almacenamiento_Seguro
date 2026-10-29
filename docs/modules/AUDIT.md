@@ -50,12 +50,23 @@ await this.auditService.logEvent({
 - **Corte de formato:** el hash cambió dos veces en la rama (separador `|` → JSON, y luego `chain_seq` y `safe_reason`). Las filas escritas con un formato anterior no se pueden verificar con la función actual. La migración no recalcula hashes. Si una base de desarrollo tiene filas de `ecc99e9` o de un commit anterior a `c6c12fa`, reiniciarla (`docker compose down -v` y migrar de nuevo, según `database/README.md`) en vez de migrarla.
 - **Alcance del corte:** solo eventos `success` de actores `user`. Eventos fallidos, `visitor`/`system`, IP y agente de usuario quedan fuera (SPEC-401 §3).
 
+## Invariantes
+
+- **I1 Sin pérdida por reintento.** Un fallo transitorio se reintenta sin límite de tiempo. `dead` es solo para errores permanentes (FK, NOT NULL, tipo, CHECK) y toda fila `dead` es recuperable (ver abajo).
+- **I2 Orden = `chain_seq`.** `occurred_at` es el momento de captura y puede ser anterior al de inserción en la cadena (un evento reenviado desde el outbox). Quien verifique la cadena (SPEC-402, SPEC-404) debe recorrerla por `chain_seq` y `prev_hash`, nunca por `occurred_at`.
+- **I3 Una fila, un procesador.** Cada fila del outbox se reclama de una en una con un lease corto; dos instancias no la procesan a la vez.
+- **I4 Registro y baja atómicos.** El evento entra en la cadena y sale del outbox en la misma transacción.
+- **I5 Riesgo residual.** Si ni el INSERT directo ni el encolado funcionan (BD caída por completo), el evento se pierde y queda `[AUDIT_EVENT_LOST]` en el log.
+
 ## Reintento (outbox)
 
-Si el INSERT directo falla, `logEvent` guarda el evento en `audit.audit_outbox` con el mismo `event_id` y `correlation_id`. Un worker lo reintenta cada 30 s con espera creciente (2 min, tope 30 min) durante 24 h, y lo registra en la cadena cuando el fallo ya pasó. Si el mismo evento ya estaba en la cadena (el INSERT llegó pero el cliente vio un error), no se duplica.
+Si el INSERT directo falla, `logEvent` guarda el evento en `audit.audit_outbox` con el mismo `event_id` y `correlation_id`. Un worker lo reintenta cada 30 s con espera creciente (2 min, tope 30 min) hasta que entra en la cadena. Si el mismo evento ya estaba en la cadena (el INSERT llegó pero el cliente vio un error), no se duplica. A diferencia del outbox de correo, **no hay horizonte de abandono**.
 
-- **Eventos `dead`:** un error permanente (FK, NOT NULL, tipo o CHECK) o 24 h sin éxito. Se conservan en la tabla y se registran con `[AUDIT_OUTBOX_DEAD]` en el log. Revisarlos: `SELECT * FROM audit.audit_outbox WHERE status = 'dead';`
-- **Salud:** `GET /api/health` no expone datos de auditoría (es público y no requiere autenticación). Los eventos `dead` se revisan con la consulta de arriba o con el marcador `[AUDIT_OUTBOX_DEAD]` en el log. Un evento muerto requiere revisión, no un reinicio.
+- **Eventos `dead`:** solo un error permanente. Se conservan en la tabla y se registran con `[AUDIT_OUTBOX_DEAD]`. Revisarlos: `SELECT * FROM audit.audit_outbox WHERE status = 'dead';`
+- **Re-drive:** tras corregir la causa (p. ej. crear el actor que faltaba):
+  `UPDATE audit.audit_outbox SET status = 'pending', attempts = 0, next_attempt_at = now(), locked_until = NULL WHERE status = 'dead' AND event_id = '<id>';`
+- **Eventos atascados:** pasadas 24 h desde la captura, cada intento fallido registra `[AUDIT_OUTBOX_STALE]` pero la fila sigue `pending`. Es la señal para alertar.
+- **Salud:** `GET /api/health` no expone datos de auditoría (es público y no requiere autenticación). Se vigilan los marcadores `[AUDIT_OUTBOX_DEAD]`, `[AUDIT_OUTBOX_STALE]` y `[AUDIT_EVENT_LOST]` en el log.
 
 ## Riesgos conocidos
 
