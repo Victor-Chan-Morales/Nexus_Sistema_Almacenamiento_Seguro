@@ -12,6 +12,7 @@ export interface AuditHashFields {
   actionType: string;
   resourceType: string | null;
   resourceId: string | null;
+  safeReason: string | null;
   result: AuditResult;
   correlationId: string;
   occurredAt: Date;
@@ -32,6 +33,7 @@ export function computeRecordHash(fields: AuditHashFields): string {
     fields.actionType,
     fields.resourceType ?? '',
     fields.resourceId ?? '',
+    fields.safeReason ?? '',
     fields.result,
     fields.correlationId,
     fields.occurredAt.toISOString(),

@@ -46,7 +46,8 @@ await this.auditService.logEvent({
 
 - **Inmutabilidad:** el servicio solo inserta. Los triggers de la BD rechazan `UPDATE`, `DELETE` y `TRUNCATE` (SQLSTATE 23001).
 - **Orden de la cadena:** `chain_seq` (1, 2, 3… por organización). El último evento es el de mayor `chain_seq`. La BD rechaza dos eventos con el mismo `chain_seq` o con el mismo `prev_hash` dentro de una organización.
-- **Hash:** `record_hash = sha256` sobre `JSON.stringify` de `prev_hash`, `chain_seq`, `event_id`, organización, actor, acción, recurso, resultado, correlación y `occurred_at`. Ver `computeRecordHash` en `apps/api/src/modules/audit/audit-hash.ts`. Los eventos escritos con el formato anterior (separador `|`) no se pueden re-verificar con esta función.
+- **Hash:** `record_hash = sha256` sobre `JSON.stringify` de `prev_hash`, `chain_seq`, `event_id`, organización, actor, acción, recurso, `safe_reason`, resultado, correlación y `occurred_at`. Ver `computeRecordHash` en `apps/api/src/modules/audit/audit-hash.ts`.
+- **Corte de formato:** el hash cambió dos veces en la rama (separador `|` → JSON, y luego `chain_seq` y `safe_reason`). Las filas escritas con un formato anterior no se pueden verificar con la función actual. La migración no recalcula hashes. Si una base de desarrollo tiene filas de `ecc99e9` o de un commit anterior a `c6c12fa`, reiniciarla (`docker compose down -v` y migrar de nuevo, según `database/README.md`) en vez de migrarla.
 - **Alcance del corte:** solo eventos `success` de actores `user`. Eventos fallidos, `visitor`/`system`, IP y agente de usuario quedan fuera (SPEC-401 §3).
 
 ## Reintento (outbox)
