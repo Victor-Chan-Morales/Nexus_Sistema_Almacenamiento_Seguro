@@ -60,7 +60,7 @@ function createFakeDb() {
       limit: () => api,
       setLock: () => api,
       setOnLocked: () => api,
-      getMany: async () =>
+      getOne: async () =>
         [...outbox.values()]
           .filter(
             (row) =>
@@ -69,8 +69,7 @@ function createFakeDb() {
               (row.lockedUntil == null || row.lockedUntil.getTime() <= now.getTime()),
           )
           .sort((a, b) => a.nextAttemptAt.getTime() - b.nextAttemptAt.getTime())
-          .slice(0, 20)
-          .map((row) => ({ ...row })),
+          .map((row) => ({ ...row }))[0] ?? null,
     };
     return api;
   };
@@ -78,6 +77,7 @@ function createFakeDb() {
   const manager = {
     createQueryBuilder: () => claimBuilder(),
     update,
+    delete: remove,
     query: async () => undefined,
     exists: async (_entity: unknown, options: { where: { eventId: string } }) =>
       chain.some((row) => row.eventId === options.where.eventId),
@@ -95,21 +95,31 @@ function createFakeDb() {
   };
 
   const dataSource = {
-    transaction: async (callback: (m: typeof manager) => Promise<void> | Promise<unknown>) => callback(manager),
+    // Con rollback: si el callback lanza, la cadena y el outbox vuelven a como estaban.
+    transaction: async (callback: (m: typeof manager) => Promise<void> | Promise<unknown>) => {
+      const chainBefore = chain.map((row) => ({ ...row }));
+      const outboxBefore = [...outbox.entries()].map(([id, row]) => [id, { ...row }] as const);
+      try {
+        return await callback(manager);
+      } catch (error) {
+        chain.splice(0, chain.length, ...chainBefore);
+        outbox.clear();
+        outboxBefore.forEach(([id, row]) => outbox.set(id, row));
+        throw error;
+      }
+    },
     manager: { update, delete: remove },
     getRepository: () => ({
       insert: async (row: Record<string, any>) =>
         outbox.set(row.eventId, {
-          ...row,
           status: 'pending',
           attempts: 0,
           nextAttemptAt: new Date(),
           createdAt: new Date(),
           lastError: null,
           lockedUntil: null,
+          ...row,
         }),
-      countBy: async ({ status }: { status: string }) =>
-        [...outbox.values()].filter((row) => row.status === status).length,
     }),
   };
 
@@ -184,15 +194,33 @@ describe('AuditOutboxService — reintento de eventos de auditoría (issue #17)'
     expect(db.outbox.size).toBe(0);
   });
 
-  it('superadas 24 h desde la captura, un fallo transitorio deja el evento dead sin reintentar', async () => {
+  it('superadas 24 h desde la captura, un fallo transitorio sigue pending y registra el marcador de atascado (I1)', async () => {
     await service.enqueue(event);
     db.failures.push(transient());
     jest.setSystemTime(new Date(T0.getTime() + 25 * 60 * MINUTE));
 
     await service.dispatchDue();
 
-    expect(db.outbox.get(EVENT_ID)).toMatchObject({ status: 'dead', lastError: '40P01' });
-    expect(db.chain).toHaveLength(0);
+    expect(db.outbox.get(EVENT_ID)).toMatchObject({ status: 'pending', attempts: 1, lastError: '40P01' });
+    const messages = loggerError.mock.calls.map((call) => call[0] as string);
+    expect(messages.some((m) => m.startsWith('[AUDIT_OUTBOX_STALE]'))).toBe(true);
+    expect(messages.some((m) => m.startsWith('[AUDIT_OUTBOX_DEAD]'))).toBe(false);
+    expect(messages.join(' ')).not.toContain(ORG_ID);
+
+    jest.setSystemTime(new Date(T0.getTime() + 25 * 60 * MINUTE + 3 * MINUTE));
+    await service.dispatchDue();
+    expect(db.chain).toHaveLength(1);
+    expect(db.outbox.size).toBe(0);
+  });
+
+  it('antes de 24 h un fallo transitorio no registra el marcador de atascado', async () => {
+    await service.enqueue(event);
+    db.failures.push(transient());
+
+    await service.dispatchDue();
+
+    const messages = loggerError.mock.calls.map((call) => call[0] as string);
+    expect(messages.some((m) => m.startsWith('[AUDIT_OUTBOX_STALE]'))).toBe(false);
   });
 
   it('la espera crece con cada intento y se topa en 30 minutos', async () => {
@@ -212,13 +240,25 @@ describe('AuditOutboxService — reintento de eventos de auditoría (issue #17)'
     expect(db.outbox.get(EVENT_ID)!.attempts).toBe(8);
   });
 
-  it('counts informa pendientes y abandonados para el health check', async () => {
-    await service.enqueue(event);
-    expect(await service.counts()).toEqual({ pending: 1, dead: 0 });
+  it('enqueue con código permanente guarda la fila como dead y registra el marcador', async () => {
+    await service.enqueue(event, '23503');
 
-    db.failures.push(permanent());
+    expect(db.outbox.get(EVENT_ID)).toMatchObject({ status: 'dead', lastError: '23503' });
+    const messages = loggerError.mock.calls.map((call) => call[0] as string);
+    expect(messages.some((m) => m.startsWith('[AUDIT_OUTBOX_DEAD]') && m.includes('23503'))).toBe(true);
+
     await service.dispatchDue();
-    expect(await service.counts()).toEqual({ pending: 0, dead: 1 });
+    expect(db.chain).toHaveLength(0);
+  });
+
+  it('una fila dead recuperada con el re-drive documentado se registra en la cadena', async () => {
+    await service.enqueue(event, '23503');
+    Object.assign(db.outbox.get(EVENT_ID)!, { status: 'pending', attempts: 0, nextAttemptAt: new Date(), lockedUntil: null });
+
+    await service.dispatchDue();
+
+    expect(db.chain).toHaveLength(1);
+    expect(db.outbox.size).toBe(0);
   });
 
   it('enqueue nunca lanza: si no puede guardar, registra el código y termina', async () => {
@@ -227,10 +267,11 @@ describe('AuditOutboxService — reintento de eventos de auditoría (issue #17)'
     });
 
     await expect(service.enqueue(event)).resolves.toBeUndefined();
+    expect(loggerError).toHaveBeenCalledWith(expect.stringContaining('[AUDIT_EVENT_LOST]'));
     expect(loggerError).toHaveBeenCalledWith(expect.stringContaining('código UNKNOWN'));
   });
 
-  it('un lote arrendado por otro proceso no se vuelve a tomar hasta que el arrendamiento vence', async () => {
+  it('una fila arrendada por otro proceso no se vuelve a tomar hasta que el arrendamiento vence', async () => {
     await service.enqueue(event);
     db.outbox.get(EVENT_ID)!.lockedUntil = new Date(T0.getTime() + 5 * MINUTE);
 
@@ -246,7 +287,7 @@ describe('AuditOutboxService — reintento de eventos de auditoría (issue #17)'
     expect(db.outbox.size).toBe(0);
   });
 
-  it('el horizonte de 24 h se cuenta desde la captura, no desde el encolado', async () => {
+  it('el marcador de atascado se cuenta desde la captura, no desde el encolado', async () => {
     jest.setSystemTime(new Date(T0.getTime() + 10 * 60 * MINUTE));
     await service.enqueue({ ...event, occurredAt: T0 });
     db.failures.push(transient());
@@ -254,7 +295,86 @@ describe('AuditOutboxService — reintento de eventos de auditoría (issue #17)'
     jest.setSystemTime(new Date(T0.getTime() + 25 * 60 * MINUTE));
     await service.dispatchDue();
 
-    expect(db.outbox.get(EVENT_ID)).toMatchObject({ status: 'dead', lastError: '40P01' });
+    expect(db.outbox.get(EVENT_ID)).toMatchObject({ status: 'pending' });
+    const messages = loggerError.mock.calls.map((call) => call[0] as string);
+    expect(messages.some((m) => m.startsWith('[AUDIT_OUTBOX_STALE]'))).toBe(true);
+  });
+
+  it('si la baja del outbox falla, el evento tampoco queda en la cadena (I4)', async () => {
+    await service.enqueue(event);
+    jest.spyOn(db.dataSource.manager, 'delete');
+    const failingDelete = jest.fn().mockRejectedValueOnce(Object.assign(new Error('caída'), { code: '40P01' }));
+    const original = db.dataSource.transaction;
+    jest.spyOn(db.dataSource, 'transaction').mockImplementation((callback: any) =>
+      original((manager: any) => callback({ ...manager, delete: failingDelete })),
+    );
+
+    await service.dispatchDue();
+
+    expect(db.chain).toHaveLength(0);
+    expect(db.outbox.get(EVENT_ID)).toMatchObject({ status: 'pending', attempts: 1, lastError: '40P01' });
+  });
+
+  it('cada fila se reclama con su propio arrendamiento: la segunda no queda cubierta por el de la primera (I3)', async () => {
+    const other = { ...event, eventId: '88888888-8888-4888-8888-888888888888', correlationId: '99999999-9999-4999-8999-999999999999' };
+    await service.enqueue(event);
+    await service.enqueue(other);
+    const claimed: string[] = [];
+    const update = db.dataSource.manager.update;
+    const original = db.dataSource.transaction;
+    jest.spyOn(db.dataSource, 'transaction').mockImplementation((callback: any) =>
+      original((manager: any) =>
+        callback({
+          ...manager,
+          update: async (entity: unknown, criteria: { eventId: string }, values: Record<string, unknown>) => {
+            if (values.lockedUntil) claimed.push(criteria.eventId);
+            return update(entity, criteria, values);
+          },
+        }),
+      ),
+    );
+
+    await service.dispatchDue();
+
+    expect(claimed).toEqual([EVENT_ID, other.eventId]);
+    expect(db.chain.map((row) => row.eventId)).toEqual([EVENT_ID, other.eventId]);
+  });
+
+  it('un evento reenviado conserva su occurred_at de captura aunque su chain_seq sea posterior (I2)', async () => {
+    await service.enqueue(event);
+    db.failures.push(transient());
+    await service.dispatchDue();
+
+    jest.setSystemTime(new Date(T0.getTime() + MINUTE));
+    await db.dataSource.transaction((m) =>
+      new AuditChainWriter().append(
+        m as any,
+        { ...event, eventId: '88888888-8888-4888-8888-888888888888', occurredAt: new Date(T0.getTime() + MINUTE) },
+        { dedupe: false },
+      ),
+    );
+    jest.setSystemTime(new Date(T0.getTime() + 3 * MINUTE));
+    await service.dispatchDue();
+
+    expect(db.chain.map((row) => [row.chainSeq, row.eventId])).toEqual([
+      ['1', '88888888-8888-4888-8888-888888888888'],
+      ['2', EVENT_ID],
+    ]);
+    expect(db.chain[1].occurredAt.getTime()).toBeLessThan(db.chain[0].occurredAt.getTime());
+  });
+
+  it('chain_seq no pierde precisión por encima de 2^53', async () => {
+    db.chain.push({
+      eventId: '88888888-8888-4888-8888-888888888888',
+      organizationId: ORG_ID,
+      chainSeq: '9007199254740993',
+      recordHash: 'a'.repeat(64),
+    });
+    await service.enqueue(event);
+
+    await service.dispatchDue();
+
+    expect(db.chain[1].chainSeq).toBe('9007199254740994');
   });
 
   it('un error de BD al actualizar una fila no hace fallar dispatchDue ni se propaga al proceso', async () => {

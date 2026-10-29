@@ -279,6 +279,14 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
       });
     });
 
+    it('un fallo permanente se encola directamente como dead, con su código', async () => {
+      manager.insert.mockRejectedValueOnce(Object.assign(new Error('FK'), { code: '23503' }));
+
+      await service.logEvent({ organizationId: ORG_ID, actorId: ACTOR_ID, action: AuditAction.FILE_PURGE });
+
+      expect(outbox.enqueue).toHaveBeenCalledWith(expect.objectContaining({ organizationId: ORG_ID }), '23503');
+    });
+
     it('no encola cuando el registro directo funciona', async () => {
       await service.logEvent({ organizationId: ORG_ID, actorId: ACTOR_ID, action: AuditAction.AUTH_LOGIN });
 

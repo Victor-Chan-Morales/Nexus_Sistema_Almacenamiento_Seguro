@@ -1,21 +1,25 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { DataSource, In } from 'typeorm';
-import { OUTBOX_POLL_INTERVAL_MS, outboxBackoffSeconds, outboxHorizonPassed } from '../../common/outbox-policy';
+import { DataSource } from 'typeorm';
+import { OUTBOX_POLL_INTERVAL_MS, outboxBackoffSeconds } from '../../common/outbox-policy';
 import { AuditChainWriter, ResolvedAuditEvent } from './audit-chain-writer';
-import { errorCode } from './audit-error-code';
+import { errorCode, isPermanentError } from './audit-error-code';
 import { AuditOutbox, AuditOutboxStatus } from './entities/audit-outbox.entity';
 import { AuditAction, AuditResource } from './audit.types';
 
-/** Arrendamiento de un lote. Holgado: si vence antes de terminar, el dedupe evita duplicar el evento. */
-const LEASE_SECONDS = 300;
+/**
+ * Arrendamiento de una fila. Corto porque se reclama de una en una: si vence antes de terminar, el dedupe y el
+ * borrado en la misma transacción hacen que un segundo procesador no duplique ni deje la fila a medias (I3, I4).
+ */
+const LEASE_SECONDS = 60;
 const BATCH_SIZE = 20;
-/** Errores de Postgres que no mejoran reintentando: FK, NOT NULL, tipo de dato y CHECK. */
-const PERMANENT_ERROR_CODES = new Set(['23503', '23502', '22P02', '23514']);
+/** Pasado este tiempo desde la captura, cada fallo se marca como atascado. No se abandona nunca (I1). */
+const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Respaldo de eventos de auditoría que no entraron en la cadena (SPEC-401, issue #17).
  * `enqueue` se llama tras un fallo del INSERT directo. `dispatchDue` reintenta con espera creciente:
  * el evento conserva su `event_id`, así que reintentar nunca lo duplica ni altera la cadena.
+ * No hay horizonte de abandono: solo un error permanente deja un evento en `dead` (SPEC-401, I1).
  */
 @Injectable()
 export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
@@ -46,8 +50,11 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  /** Nunca lanza: si tampoco se puede encolar, el evento se pierde y queda constancia en el log. */
-  async enqueue(event: ResolvedAuditEvent & { occurredAt: Date }): Promise<void> {
+  /**
+   * Nunca lanza: si tampoco se puede encolar, el evento se pierde y queda constancia en el log (I5).
+   * `deadCode` encola directamente como `dead` un evento cuyo fallo ya se sabe permanente.
+   */
+  async enqueue(event: ResolvedAuditEvent & { occurredAt: Date }, deadCode?: string): Promise<void> {
     try {
       await this.dataSource.getRepository(AuditOutbox).insert({
         eventId: event.eventId,
@@ -58,41 +65,20 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
         resourceId: event.resourceId ?? null,
         correlationId: event.correlationId,
         occurredAt: event.occurredAt,
+        ...(deadCode ? { status: AuditOutboxStatus.DEAD, lastError: deadCode } : {}),
       });
     } catch (error) {
-      this.logger.error(`No se pudo encolar el evento de auditoría (código ${errorCode(error)})`);
+      this.logger.error(`[AUDIT_EVENT_LOST] no se pudo encolar el evento de auditoría (código ${errorCode(error)})`);
+      return;
     }
+    if (deadCode) this.logger.error(`[AUDIT_OUTBOX_DEAD] evento ${event.eventId} abandonado (${deadCode})`);
   }
 
   /** Reintenta los eventos pendientes cuyo momento de reintento ya llegó. Nunca lanza. */
   async dispatchDue(): Promise<void> {
-    const now = new Date();
-    let claimed: AuditOutbox[];
-    try {
-      claimed = await this.dataSource.transaction(async (manager) => {
-        const rows = await manager
-          .createQueryBuilder(AuditOutbox, 'o')
-          .where('o.status = :pending', { pending: AuditOutboxStatus.PENDING })
-          .andWhere('o.nextAttemptAt <= :now', { now })
-          .andWhere('(o.lockedUntil IS NULL OR o.lockedUntil <= :now)', { now })
-          .orderBy('o.nextAttemptAt', 'ASC')
-          .limit(BATCH_SIZE)
-          .setLock('pessimistic_write')
-          .setOnLocked('skip_locked')
-          .getMany();
-        if (rows.length === 0) return [];
-
-        // El arrendamiento evita que otra instancia tome el mismo evento mientras se procesa.
-        const lockedUntil = new Date(now.getTime() + LEASE_SECONDS * 1000);
-        await manager.update(AuditOutbox, { eventId: In(rows.map((row) => row.eventId)) }, { lockedUntil });
-        return rows;
-      });
-    } catch (error) {
-      this.logger.error(`No se pudo reclamar el outbox de auditoría (código ${errorCode(error)})`);
-      return;
-    }
-
-    for (const row of claimed) {
+    for (let i = 0; i < BATCH_SIZE; i++) {
+      const row = await this.claimNext();
+      if (!row) return;
       // Una caída de BD a mitad de una fila no debe tumbar el proceso: el arrendamiento vence y la fila se reintenta.
       try {
         await this.process(row);
@@ -102,35 +88,49 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Estado para el health check. */
-  async counts(): Promise<{ pending: number; dead: number }> {
-    const repository = this.dataSource.getRepository(AuditOutbox);
-    const [pending, dead] = await Promise.all([
-      repository.countBy({ status: AuditOutboxStatus.PENDING }),
-      repository.countBy({ status: AuditOutboxStatus.DEAD }),
-    ]);
-    return { pending, dead };
+  /** Reclama una sola fila con su propio arrendamiento (I3). `undefined` si no hay ninguna o no se pudo reclamar. */
+  private async claimNext(): Promise<AuditOutbox | undefined> {
+    const now = new Date();
+    try {
+      return await this.dataSource.transaction(async (manager) => {
+        const row = await manager
+          .createQueryBuilder(AuditOutbox, 'o')
+          .where('o.status = :pending', { pending: AuditOutboxStatus.PENDING })
+          .andWhere('o.nextAttemptAt <= :now', { now })
+          .andWhere('(o.lockedUntil IS NULL OR o.lockedUntil <= :now)', { now })
+          .orderBy('o.nextAttemptAt', 'ASC')
+          .limit(1)
+          .setLock('pessimistic_write')
+          .setOnLocked('skip_locked')
+          .getOne();
+        if (!row) return undefined;
+
+        const lockedUntil = new Date(now.getTime() + LEASE_SECONDS * 1000);
+        await manager.update(AuditOutbox, { eventId: row.eventId }, { lockedUntil });
+        return row;
+      });
+    } catch (error) {
+      this.logger.error(`No se pudo reclamar el outbox de auditoría (código ${errorCode(error)})`);
+      return undefined;
+    }
   }
 
   private async process(row: AuditOutbox): Promise<void> {
-    // Se intenta siempre: una BD recuperada registra el evento aunque lleve más de 24 h capturado.
     try {
-      // Con dedupe: si un intento anterior sí llegó a confirmarse, no se inserta de nuevo.
-      await this.dataSource.transaction((manager) =>
-        this.writer.append(manager, this.toResolved(row), { dedupe: true }),
-      );
+      // Registro y baja del outbox en una sola transacción (I4). Con dedupe: si un intento anterior sí llegó a
+      // confirmarse, no se inserta de nuevo y solo se da de baja la fila.
+      await this.dataSource.transaction(async (manager) => {
+        await this.writer.append(manager, this.toResolved(row), { dedupe: true });
+        await manager.delete(AuditOutbox, { eventId: row.eventId });
+      });
     } catch (error) {
       const code = errorCode(error);
-      if (PERMANENT_ERROR_CODES.has(code)) {
+      if (isPermanentError(code)) {
         await this.markDead(row, code);
       } else {
         await this.scheduleRetry(row, code);
       }
-      return;
     }
-
-    // Si esta borrado falla después de confirmar el INSERT, el siguiente intento lo detiene el dedupe.
-    await this.dataSource.manager.delete(AuditOutbox, { eventId: row.eventId });
   }
 
   private async scheduleRetry(row: AuditOutbox, code: string): Promise<void> {
@@ -138,17 +138,16 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
     const backoffSeconds = outboxBackoffSeconds(attempts);
     const nextAttemptAt = new Date(Date.now() + backoffSeconds * 1000);
 
-    // Solo un fallo transitorio cuenta contra el horizonte: si el próximo intento ya cae fuera de él, se abandona.
-    if (outboxHorizonPassed(row.occurredAt, nextAttemptAt.getTime())) {
-      await this.markDead(row, code);
-      return;
-    }
     await this.dataSource.manager.update(
       AuditOutbox,
       { eventId: row.eventId },
       { attempts, nextAttemptAt, lastError: code, lockedUntil: null },
     );
     this.logger.error(`Fallo al registrar el evento de auditoría ${row.eventId} (intento ${attempts}): ${code}`);
+    // Nunca se abandona (I1): pasado el plazo solo se marca para alertar a una persona.
+    if (row.occurredAt.getTime() + STALE_AFTER_MS <= Date.now()) {
+      this.logger.error(`[AUDIT_OUTBOX_STALE] evento ${row.eventId} sin registrar tras más de 24 h (${code})`);
+    }
   }
 
   private async markDead(row: AuditOutbox, code: string): Promise<void> {

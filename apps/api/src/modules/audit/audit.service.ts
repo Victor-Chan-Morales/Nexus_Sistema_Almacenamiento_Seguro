@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import { AuditChainWriter } from './audit-chain-writer';
-import { errorCode } from './audit-error-code';
+import { errorCode, isPermanentError } from './audit-error-code';
 import { AuditOutboxService } from './audit-outbox.service';
 import { AuditEventInput } from './audit.types';
 
@@ -42,9 +42,13 @@ export class AuditService {
       await this.dataSource.transaction((manager) => this.writer.append(manager, event, { dedupe: false }));
     } catch (error) {
       // Solo el código de error: el mensaje y los parámetros de pg pueden contener datos del evento.
-      this.logger.error(`No se pudo registrar el evento de auditoría (código ${errorCode(error)}), se encola para reintento`);
-      // `enqueue` no lanza: por eso no hace falta un segundo try aquí.
-      await this.outbox.enqueue({ ...event, occurredAt: capturedAt });
+      const code = errorCode(error);
+      this.logger.error(`No se pudo registrar el evento de auditoría (código ${code}), se encola para reintento`);
+      // `enqueue` no lanza: por eso no hace falta un segundo try aquí. Un fallo permanente no mejora
+      // reintentando: se conserva directamente como `dead` para revisión.
+      const queued = { ...event, occurredAt: capturedAt };
+      if (isPermanentError(code)) await this.outbox.enqueue(queued, code);
+      else await this.outbox.enqueue(queued);
     }
   }
 }

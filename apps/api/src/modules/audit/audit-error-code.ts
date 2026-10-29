@@ -6,3 +6,10 @@ export function errorCode(error: unknown): string {
   const code = (error as { code?: unknown } | null)?.code;
   return typeof code === 'string' && SAFE_CODE.test(code) ? code : 'UNKNOWN';
 }
+
+/** Errores de Postgres que no mejoran reintentando: FK, NOT NULL, tipo de dato y CHECK. */
+const PERMANENT_ERROR_CODES = new Set(['23503', '23502', '22P02', '23514']);
+
+export function isPermanentError(code: string): boolean {
+  return PERMANENT_ERROR_CODES.has(code);
+}
