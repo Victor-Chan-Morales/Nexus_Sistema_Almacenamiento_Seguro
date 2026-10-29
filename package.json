@@ -16,6 +16,7 @@
     "start:api": "cd apps/api && npm run start",
     "install:api": "cd apps/api && npm install",
     "lint:api": "cd apps/api && npm run lint",
+    "lint:api:fix": "cd apps/api && npm run lint:fix",
     "test:api": "cd apps/api && npm test --",
     "test:cov": "cd apps/api && npm test -- --coverage",
 

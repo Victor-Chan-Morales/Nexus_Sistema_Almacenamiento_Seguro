@@ -4,12 +4,26 @@ import { AppModule } from './app.module';
 import { ApiExceptionFilter } from './common/filters/api-exception.filter';
 
 const logger = new Logger('Bootstrap');
-// Se declara fuera de bootstrap para poder cerrarla si el arranque falla después de crearla.
-let app: INestApplication | undefined;
+
+// Tiempo máximo para cerrar la app tras un fallo de arranque; un cierre colgado no debe dejar el proceso vivo.
+const CLOSE_TIMEOUT_MS = 5000;
 
 async function bootstrap() {
-  app = await NestFactory.create(AppModule);
+  // abortOnError: false hace que un fallo dentro de create (p. ej. BD inaccesible) se propague
+  // como rechazo; por defecto Nest llama a process.exit(1) y se salta el manejo de abajo.
+  const app = await NestFactory.create(AppModule, { abortOnError: false });
+  try {
+    await configureAndListen(app);
+  } catch (error: unknown) {
+    // Si el proceso terminara solo durante el cierre, saldría igualmente con error.
+    process.exitCode = 1;
+    // Cerrar la app libera el pool de conexiones antes de salir.
+    await closeWithTimeout(app);
+    throw error;
+  }
+}
 
+async function configureAndListen(app: INestApplication) {
   // Prefijo global para todas las rutas del API
   app.setGlobalPrefix('api');
 
@@ -41,17 +55,13 @@ async function bootstrap() {
   logger.log(`Nexus API corriendo en http://localhost:${port}/api`);
 }
 
-// Tiempo máximo para cerrar la app tras un fallo de arranque; un cierre colgado no debe dejar el proceso vivo.
-const CLOSE_TIMEOUT_MS = 5000;
-
-// Si el arranque falla (puerto ocupado, BD inaccesible), el proceso debe terminar con un error visible.
-bootstrap().catch(async (error: unknown) => {
-  logger.error('No se pudo iniciar la API', error instanceof Error ? error.stack : error);
+async function closeWithTimeout(app: INestApplication) {
+  let timer: NodeJS.Timeout | undefined;
   try {
-    // Cerrar la app libera el pool de conexiones antes de salir.
+    // El temporizador no usa unref(): mantiene vivo el proceso hasta que el catch final llame a process.exit(1).
     await Promise.race([
-      app?.close(),
-      new Promise((resolve) => setTimeout(resolve, CLOSE_TIMEOUT_MS).unref()),
+      app.close(),
+      new Promise((resolve) => (timer = setTimeout(resolve, CLOSE_TIMEOUT_MS))),
     ]);
   } catch (closeError: unknown) {
     logger.error(
@@ -59,6 +69,12 @@ bootstrap().catch(async (error: unknown) => {
       closeError instanceof Error ? closeError.stack : closeError,
     );
   } finally {
-    process.exit(1);
+    clearTimeout(timer);
   }
+}
+
+// Si el arranque falla (puerto ocupado, BD inaccesible), el proceso debe terminar con un error visible.
+bootstrap().catch((error: unknown) => {
+  logger.error('No se pudo iniciar la API', error instanceof Error ? error.stack : error);
+  process.exit(1);
 });

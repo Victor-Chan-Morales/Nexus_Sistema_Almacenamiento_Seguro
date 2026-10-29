@@ -8,7 +8,8 @@ export default tseslint.config(
   {
     languageOptions: {
       parserOptions: {
-        projectService: true,
+        // tsconfig.eslint.json incluye src y los tests e2e (que tsconfig.json no compila): un único programa para todo.
+        project: './tsconfig.eslint.json',
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -19,13 +20,6 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-require-imports': 'warn',
       'no-control-regex': 'warn',
-    },
-  },
-  {
-    // Los tests e2e no están en tsconfig.json: se lintan con tsconfig.eslint.json, que sí los incluye.
-    files: ['test/**/*.ts'],
-    languageOptions: {
-      parserOptions: { projectService: false, project: './tsconfig.eslint.json' },
     },
   },
   {
