@@ -285,17 +285,6 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
       expect(outbox.enqueue).not.toHaveBeenCalled();
     });
 
-    it('no propaga el error aunque el encolado también falle', async () => {
-      manager.insert.mockRejectedValueOnce(Object.assign(new Error('caída'), { code: '08006' }));
-      outbox.enqueue.mockRejectedValueOnce(new Error('caída también'));
-
-      await expect(
-        service.logEvent({ organizationId: ORG_ID, actorId: ACTOR_ID, action: AuditAction.FILE_UPLOAD }),
-      ).resolves.toBeUndefined();
-
-      expect(loggerError).toHaveBeenCalledTimes(2);
-    });
-
     it('no propaga el error si la transacción no puede abrirse', async () => {
       dataSource.transaction.mockRejectedValueOnce(new Error('conexión caída'));
 

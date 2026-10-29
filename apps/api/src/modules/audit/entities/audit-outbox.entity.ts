@@ -46,6 +46,10 @@ export class AuditOutbox {
   @Column({ name: 'next_attempt_at', type: 'timestamptz', default: () => 'now()' })
   nextAttemptAt!: Date;
 
+  /** Arrendamiento del worker que procesa la fila. Vencido, otra instancia puede tomarla. */
+  @Column({ name: 'locked_until', type: 'timestamptz', nullable: true })
+  lockedUntil!: Date | null;
+
   /** Solo el código del error, nunca el mensaje del motor ni datos del evento. */
   @Column({ name: 'last_error', type: 'varchar', length: 100, nullable: true })
   lastError!: string | null;

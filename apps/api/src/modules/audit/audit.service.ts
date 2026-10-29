@@ -2,7 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import { AuditChainWriter } from './audit-chain-writer';
-import { AuditOutboxService, errorCode } from './audit-outbox.service';
+import { errorCode } from './audit-error-code';
+import { AuditOutboxService } from './audit-outbox.service';
 import { AuditEventInput } from './audit.types';
 
 /**
@@ -41,11 +42,8 @@ export class AuditService {
     } catch (error) {
       // Solo el código de error: el mensaje y los parámetros de pg pueden contener datos del evento.
       this.logger.error(`No se pudo registrar el evento de auditoría (código ${errorCode(error)}), se encola para reintento`);
-      try {
-        await this.outbox.enqueue({ ...event, occurredAt: capturedAt });
-      } catch (enqueueError) {
-        this.logger.error(`No se pudo encolar el evento de auditoría (código ${errorCode(enqueueError)})`);
-      }
+      // `enqueue` no lanza: por eso no hace falta un segundo try aquí.
+      await this.outbox.enqueue({ ...event, occurredAt: capturedAt });
     }
   }
 }

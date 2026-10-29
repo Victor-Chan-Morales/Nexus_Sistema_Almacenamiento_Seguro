@@ -1,22 +1,19 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { DataSource, In } from 'typeorm';
 import { AuditChainWriter, ResolvedAuditEvent } from './audit-chain-writer';
+import { errorCode } from './audit-error-code';
 import { AuditOutbox, AuditOutboxStatus } from './entities/audit-outbox.entity';
 import { AuditAction, AuditResource } from './audit.types';
 
 const POLL_INTERVAL_MS = 30_000;
-const LEASE_SECONDS = 120;
+/** Arrendamiento de un lote. Holgado: si vence antes de terminar, el dedupe evita duplicar el evento. */
+const LEASE_SECONDS = 300;
 const BATCH_SIZE = 20;
 const MAX_BACKOFF_SECONDS = 30 * 60;
-/** Tiempo máximo que se insiste con un evento; después queda 'dead'. */
+/** Tiempo máximo que se insiste con un evento desde su captura; después queda 'dead'. */
 const RETRY_HORIZON_MS = 24 * 60 * 60 * 1000;
 /** Errores de Postgres que no mejoran reintentando: FK, NOT NULL, tipo de dato y CHECK. */
 const PERMANENT_ERROR_CODES = new Set(['23503', '23502', '22P02', '23514']);
-
-/** Código de error seguro para log y para `last_error`. Puede lanzarse cualquier valor. */
-export function errorCode(error: unknown): string {
-  return (error as { code?: string } | null)?.code ?? 'UNKNOWN';
-}
 
 /**
  * Respaldo de eventos de auditoría que no entraron en la cadena (SPEC-401, issue #17).
@@ -70,6 +67,7 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
           .createQueryBuilder(AuditOutbox, 'o')
           .where('o.status = :pending', { pending: AuditOutboxStatus.PENDING })
           .andWhere('o.nextAttemptAt <= :now', { now })
+          .andWhere('(o.lockedUntil IS NULL OR o.lockedUntil <= :now)', { now })
           .orderBy('o.nextAttemptAt', 'ASC')
           .limit(BATCH_SIZE)
           .setLock('pessimistic_write')
@@ -78,8 +76,8 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
         if (rows.length === 0) return [];
 
         // El arrendamiento evita que otra instancia tome el mismo evento mientras se procesa.
-        const leaseUntil = new Date(now.getTime() + LEASE_SECONDS * 1000);
-        await manager.update(AuditOutbox, { eventId: In(rows.map((row) => row.eventId)) }, { nextAttemptAt: leaseUntil });
+        const lockedUntil = new Date(now.getTime() + LEASE_SECONDS * 1000);
+        await manager.update(AuditOutbox, { eventId: In(rows.map((row) => row.eventId)) }, { lockedUntil });
         return rows;
       });
     } catch (error) {
@@ -88,7 +86,12 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
     }
 
     for (const row of claimed) {
-      await this.process(row);
+      // Una caída de BD a mitad de una fila no debe tumbar el proceso: el arrendamiento vence y la fila se reintenta.
+      try {
+        await this.process(row);
+      } catch (error) {
+        this.logger.error(`No se pudo procesar el evento de auditoría ${row.eventId} (código ${errorCode(error)})`);
+      }
     }
   }
 
@@ -139,7 +142,7 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
     await this.dataSource.manager.update(
       AuditOutbox,
       { eventId: row.eventId },
-      { attempts, nextAttemptAt, lastError: code },
+      { attempts, nextAttemptAt, lastError: code, lockedUntil: null },
     );
     this.logger.error(`Fallo al registrar el evento de auditoría ${row.eventId} (intento ${attempts}): ${code}`);
   }
@@ -148,14 +151,15 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
     await this.dataSource.manager.update(
       AuditOutbox,
       { eventId: row.eventId },
-      { status: AuditOutboxStatus.DEAD, lastError: code },
+      { status: AuditOutboxStatus.DEAD, lastError: code, lockedUntil: null },
     );
     // Marcador fijo para alertar sobre el evento: el log no incluye datos del evento.
     this.logger.error(`[AUDIT_OUTBOX_DEAD] evento ${row.eventId} abandonado (${code})`);
   }
 
+  /** El horizonte se cuenta desde la captura del evento (`occurred_at`), no desde el encolado. */
   private horizonPassed(row: AuditOutbox, at: number): boolean {
-    return row.createdAt.getTime() + RETRY_HORIZON_MS <= at;
+    return row.occurredAt.getTime() + RETRY_HORIZON_MS <= at;
   }
 
   private toResolved(row: AuditOutbox): ResolvedAuditEvent {
