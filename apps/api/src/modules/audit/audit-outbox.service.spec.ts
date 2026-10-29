@@ -62,7 +62,12 @@ function createFakeDb() {
       setOnLocked: () => api,
       getMany: async () =>
         [...outbox.values()]
-          .filter((row) => row.status === 'pending' && row.nextAttemptAt.getTime() <= now.getTime())
+          .filter(
+            (row) =>
+              row.status === 'pending' &&
+              row.nextAttemptAt.getTime() <= now.getTime() &&
+              (row.lockedUntil == null || row.lockedUntil.getTime() <= now.getTime()),
+          )
           .sort((a, b) => a.nextAttemptAt.getTime() - b.nextAttemptAt.getTime())
           .slice(0, 20)
           .map((row) => ({ ...row })),
@@ -101,6 +106,7 @@ function createFakeDb() {
           nextAttemptAt: new Date(),
           createdAt: new Date(),
           lastError: null,
+          lockedUntil: null,
         }),
       countBy: async ({ status }: { status: string }) =>
         [...outbox.values()].filter((row) => row.status === status).length,
@@ -210,5 +216,42 @@ describe('AuditOutboxService — reintento de eventos de auditoría (issue #17)'
 
     await expect(service.enqueue(event)).resolves.toBeUndefined();
     expect(loggerError).toHaveBeenCalledWith(expect.stringContaining('código UNKNOWN'));
+  });
+
+  it('un lote arrendado por otro proceso no se vuelve a tomar hasta que el arrendamiento vence', async () => {
+    await service.enqueue(event);
+    db.outbox.get(EVENT_ID)!.lockedUntil = new Date(T0.getTime() + 5 * MINUTE);
+
+    await service.dispatchDue();
+
+    expect(db.chain).toHaveLength(0);
+    expect(db.outbox.get(EVENT_ID)!.attempts).toBe(0);
+
+    jest.setSystemTime(new Date(T0.getTime() + 6 * MINUTE));
+    await service.dispatchDue();
+
+    expect(db.chain).toHaveLength(1);
+    expect(db.outbox.size).toBe(0);
+  });
+
+  it('el horizonte de 24 h se cuenta desde la captura, no desde el encolado', async () => {
+    jest.setSystemTime(new Date(T0.getTime() + 10 * 60 * MINUTE));
+    await service.enqueue({ ...event, occurredAt: T0 });
+
+    jest.setSystemTime(new Date(T0.getTime() + 25 * 60 * MINUTE));
+    await service.dispatchDue();
+
+    expect(db.outbox.get(EVENT_ID)).toMatchObject({ status: 'dead', lastError: 'HORIZON' });
+  });
+
+  it('un error de BD al actualizar una fila no hace fallar dispatchDue ni se propaga al proceso', async () => {
+    await service.enqueue(event);
+    db.failures.push(transient());
+    jest.spyOn(db.dataSource.manager, 'update').mockRejectedValueOnce(new Error('conexión caída'));
+
+    await expect(service.dispatchDue()).resolves.toBeUndefined();
+
+    expect(loggerError).toHaveBeenCalledWith(expect.stringContaining('código UNKNOWN'));
+    expect(db.chain).toHaveLength(0);
   });
 });
