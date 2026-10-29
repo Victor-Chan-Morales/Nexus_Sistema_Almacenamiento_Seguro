@@ -21,6 +21,7 @@ const PERMANENT_ERROR_CODES = new Set(['23503', '23502', '22P02', '23514']);
 export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AuditOutboxService.name);
   private timer?: ReturnType<typeof setInterval>;
+  private inFlight?: Promise<void>;
 
   constructor(
     private readonly dataSource: DataSource,
@@ -28,12 +29,21 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
-    this.timer = setInterval(() => void this.dispatchDue(), OUTBOX_POLL_INTERVAL_MS);
+    this.timer = setInterval(() => this.tick(), OUTBOX_POLL_INTERVAL_MS);
     this.timer.unref();
   }
 
-  onModuleDestroy(): void {
+  /** Espera el lote en curso para no procesar filas contra un DataSource que se está cerrando. */
+  async onModuleDestroy(): Promise<void> {
     clearInterval(this.timer);
+    await this.inFlight;
+  }
+
+  /** Un lote a la vez: si el anterior sigue en marcha, este ciclo no se solapa con él. */
+  private tick(): void {
+    this.inFlight ??= this.dispatchDue().finally(() => {
+      this.inFlight = undefined;
+    });
   }
 
   /** Nunca lanza: si tampoco se puede encolar, el evento se pierde y queda constancia en el log. */

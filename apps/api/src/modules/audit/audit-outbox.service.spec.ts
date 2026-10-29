@@ -267,4 +267,30 @@ describe('AuditOutboxService — reintento de eventos de auditoría (issue #17)'
     expect(loggerError).toHaveBeenCalledWith(expect.stringContaining('código UNKNOWN'));
     expect(db.chain).toHaveLength(0);
   });
+
+  it('onModuleDestroy espera el lote en curso antes de resolver', async () => {
+    const writer = new AuditChainWriter();
+    const appendOriginal = writer.append.bind(writer);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    jest.spyOn(writer, 'append').mockImplementationOnce(async (manager, row, options) => {
+      await gate;
+      return appendOriginal(manager, row, options);
+    });
+    const outbox = new AuditOutboxService(db.dataSource as unknown as DataSource, writer);
+    await outbox.enqueue(event);
+    outbox.onModuleInit();
+
+    jest.advanceTimersByTime(30_000);
+    const destroyed = outbox.onModuleDestroy();
+    let finished = false;
+    void destroyed.then(() => (finished = true));
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(finished).toBe(false);
+
+    release();
+    await destroyed;
+    expect(db.chain).toHaveLength(1);
+    expect(db.outbox.size).toBe(0);
+  });
 });
