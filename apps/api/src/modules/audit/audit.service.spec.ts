@@ -2,6 +2,8 @@ import { Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { computeRecordHash, AuditHashFields } from './audit-hash';
 import { AuditService } from './audit.service';
+import { AuditChainWriter } from './audit-chain-writer';
+import { AuditOutboxService } from './audit-outbox.service';
 import { AuditEvent, AuditActorType, AuditResult } from './entities/audit-event.entity';
 import { AuditAction, AuditResource } from './audit.types';
 
@@ -19,6 +21,7 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
     insert: jest.Mock;
   };
   let dataSource: { transaction: jest.Mock };
+  let outbox: { enqueue: jest.Mock };
   let loggerError: jest.SpyInstance;
 
   beforeEach(() => {
@@ -30,7 +33,12 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
     dataSource = {
       transaction: jest.fn(async (callback: (m: typeof manager) => Promise<void>) => callback(manager)),
     };
-    service = new AuditService(dataSource as unknown as DataSource);
+    outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    service = new AuditService(
+      dataSource as unknown as DataSource,
+      new AuditChainWriter(),
+      outbox as unknown as AuditOutboxService,
+    );
     loggerError = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
   });
 
@@ -84,30 +92,33 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
 
   describe('Escenario 2: encadenamiento', () => {
     it('toma el record_hash del último evento de la organización como prev_hash', async () => {
-      manager.findOne.mockResolvedValueOnce({ recordHash: 'hash-anterior' });
+      manager.findOne.mockResolvedValueOnce({ recordHash: 'hash-anterior', chainSeq: '4' });
 
       await service.logEvent({ organizationId: ORG_ID, actorId: ACTOR_ID, action: AuditAction.FILE_DELETE });
 
       expect(insertedRow().prevHash).toBe('hash-anterior');
+      expect(insertedRow().chainSeq).toBe('5');
     });
 
-    it('consulta el último evento filtrando por la organización del evento', async () => {
+    it('consulta el último evento por chain_seq filtrando por la organización del evento', async () => {
       await service.logEvent({ organizationId: OTHER_ORG_ID, actorId: ACTOR_ID, action: AuditAction.FILE_DELETE });
 
       expect(manager.findOne).toHaveBeenCalledWith(AuditEvent, {
         where: { organizationId: OTHER_ORG_ID },
-        order: { occurredAt: 'DESC', eventId: 'DESC' },
+        select: { recordHash: true, chainSeq: true },
+        order: { chainSeq: 'DESC' },
       });
     });
 
-    it('otra organización sin eventos empieza su propia cadena con prev_hash nulo', async () => {
-      manager.findOne.mockResolvedValueOnce({ recordHash: 'hash-de-la-primera-org' });
+    it('otra organización sin eventos empieza su propia cadena con prev_hash nulo y chain_seq 1', async () => {
+      manager.findOne.mockResolvedValueOnce({ recordHash: 'hash-de-la-primera-org', chainSeq: '1' });
       await service.logEvent({ organizationId: ORG_ID, actorId: ACTOR_ID, action: AuditAction.FILE_DELETE });
 
       manager.findOne.mockResolvedValueOnce(null);
       await service.logEvent({ organizationId: OTHER_ORG_ID, actorId: ACTOR_ID, action: AuditAction.FILE_DELETE });
 
       expect(manager.insert.mock.calls[1][1].prevHash).toBeNull();
+      expect(manager.insert.mock.calls[1][1].chainSeq).toBe('1');
     });
   });
 
@@ -135,6 +146,98 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
     });
   });
 
+  describe('Escenario 3b: cadena lineal con eventos concurrentes en el mismo milisegundo', () => {
+    const SAME_MILLISECOND = new Date('2026-10-29T12:00:00.000Z');
+
+    beforeEach(() => {
+      jest.useFakeTimers({ now: SAME_MILLISECOND });
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('20 registros simultáneos de una organización forman una sola cadena sin bifurcaciones', async () => {
+      const chain = createInMemoryChain();
+      const concurrentService = new AuditService(
+        chain.dataSource as unknown as DataSource,
+        new AuditChainWriter(),
+        { enqueue: jest.fn() } as unknown as AuditOutboxService,
+      );
+
+      await Promise.all(
+        Array.from({ length: 20 }, () =>
+          concurrentService.logEvent({ organizationId: ORG_ID, actorId: ACTOR_ID, action: AuditAction.FILE_DOWNLOAD }),
+        ),
+      );
+
+      // Si la lectura del último evento ocurriera sin el bloqueo, dos eventos compartirían padre y la BD fallaría.
+      expect(loggerError).not.toHaveBeenCalled();
+      expect(chain.rows).toHaveLength(20);
+      expect(new Set(chain.rows.map((row) => row.occurredAt.getTime())).size).toBe(1);
+
+      const ordered = [...chain.rows].sort((a, b) => Number(a.chainSeq) - Number(b.chainSeq));
+      expect(ordered.map((row) => Number(row.chainSeq))).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
+      expect(ordered[0].prevHash).toBeNull();
+      for (let i = 1; i < ordered.length; i++) {
+        expect(ordered[i].prevHash).toBe(ordered[i - 1].recordHash);
+      }
+    });
+  });
+
+  /**
+   * Fake en memoria de `audit.audit_event`: el bloqueo consultivo serializa las transacciones y las
+   * restricciones únicas de la migración 20261029090000 rechazan cualquier bifurcación.
+   */
+  function createInMemoryChain() {
+    const rows: Array<Record<string, any>> = [];
+    let lockTail: Promise<void> = Promise.resolve();
+
+    const uniqueViolation = () => Object.assign(new Error('duplicate key'), { code: '23505' });
+
+    const openManager = () => {
+      let releaseLock: () => void = () => undefined;
+      return {
+        releaseLock: () => releaseLock(),
+        query: async () => {
+          const previous = lockTail;
+          lockTail = new Promise<void>((resolve) => (releaseLock = resolve));
+          await previous;
+        },
+        findOne: async (_entity: unknown, options: { where: { organizationId: string } }) => {
+          const own = rows.filter((row) => row.organizationId === options.where.organizationId);
+          return own.reduce<Record<string, any> | null>(
+            (max, row) => (!max || Number(row.chainSeq) > Number(max.chainSeq) ? row : max),
+            null,
+          );
+        },
+        insert: async (_entity: unknown, row: Record<string, any>) => {
+          const sameOrg = rows.filter((other) => other.organizationId === row.organizationId);
+          const clashes =
+            sameOrg.some((other) => other.chainSeq === row.chainSeq) ||
+            (row.prevHash === null
+              ? sameOrg.some((other) => other.prevHash === null)
+              : sameOrg.some((other) => other.prevHash === row.prevHash));
+          if (clashes) throw uniqueViolation();
+          rows.push({ ...row });
+        },
+      };
+    };
+
+    const dataSource = {
+      transaction: async (callback: (m: ReturnType<typeof openManager>) => Promise<void>) => {
+        const transactional = openManager();
+        try {
+          await callback(transactional);
+        } finally {
+          transactional.releaseLock();
+        }
+      },
+    };
+
+    return { rows, dataSource };
+  }
+
   describe('Escenario 4: nunca bloquea la operación', () => {
     it('no propaga el error si el INSERT falla y registra solo el código, sin datos del evento', async () => {
       manager.insert.mockRejectedValueOnce(Object.assign(new Error(`Key (organization_id)=(${ORG_ID})`), { code: '23503' }));
@@ -150,6 +253,49 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
       expect(message).not.toContain('FILE_PURGE');
     });
 
+    it('si el INSERT falla, encola el evento con el mismo event_id y correlation_id que intentó', async () => {
+      manager.insert.mockRejectedValueOnce(Object.assign(new Error('conexión caída'), { code: '40P01' }));
+
+      await service.logEvent({
+        organizationId: ORG_ID,
+        actorId: ACTOR_ID,
+        action: AuditAction.FILE_DOWNLOAD,
+        resourceType: AuditResource.FILE,
+        resourceId: RESOURCE_ID,
+        correlationId: '55555555-5555-4555-8555-555555555555',
+      });
+
+      expect(outbox.enqueue).toHaveBeenCalledTimes(1);
+      const attempted = manager.insert.mock.calls[0][1];
+      expect(outbox.enqueue).toHaveBeenCalledWith({
+        eventId: attempted.eventId,
+        organizationId: ORG_ID,
+        actorId: ACTOR_ID,
+        action: AuditAction.FILE_DOWNLOAD,
+        resourceType: AuditResource.FILE,
+        resourceId: RESOURCE_ID,
+        correlationId: '55555555-5555-4555-8555-555555555555',
+        occurredAt: expect.any(Date),
+      });
+    });
+
+    it('no encola cuando el registro directo funciona', async () => {
+      await service.logEvent({ organizationId: ORG_ID, actorId: ACTOR_ID, action: AuditAction.AUTH_LOGIN });
+
+      expect(outbox.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('no propaga el error aunque el encolado también falle', async () => {
+      manager.insert.mockRejectedValueOnce(Object.assign(new Error('caída'), { code: '08006' }));
+      outbox.enqueue.mockRejectedValueOnce(new Error('caída también'));
+
+      await expect(
+        service.logEvent({ organizationId: ORG_ID, actorId: ACTOR_ID, action: AuditAction.FILE_UPLOAD }),
+      ).resolves.toBeUndefined();
+
+      expect(loggerError).toHaveBeenCalledTimes(2);
+    });
+
     it('no propaga el error si la transacción no puede abrirse', async () => {
       dataSource.transaction.mockRejectedValueOnce(new Error('conexión caída'));
 
@@ -158,6 +304,16 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
       ).resolves.toBeUndefined();
 
       expect(loggerError).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([undefined, null])('no propaga un fallo lanzado como %s', async (thrown) => {
+      dataSource.transaction.mockRejectedValueOnce(thrown);
+
+      await expect(
+        service.logEvent({ organizationId: ORG_ID, actorId: ACTOR_ID, action: AuditAction.PLAN_ACTIVATED }),
+      ).resolves.toBeUndefined();
+
+      expect(loggerError).toHaveBeenCalledWith(expect.stringContaining('código UNKNOWN'));
     });
   });
 
@@ -170,6 +326,7 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
           'actionType',
           'actorId',
           'actorType',
+          'chainSeq',
           'correlationId',
           'eventId',
           'occurredAt',
@@ -188,6 +345,7 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
 describe('computeRecordHash', () => {
   const base: AuditHashFields = {
     prevHash: null,
+    chainSeq: '1',
     eventId: '66666666-6666-4666-8666-666666666666',
     organizationId: ORG_ID,
     actorType: AuditActorType.USER,
@@ -210,6 +368,7 @@ describe('computeRecordHash', () => {
 
   it.each([
     ['prevHash', 'otro-hash'],
+    ['chainSeq', '2'],
     ['eventId', '88888888-8888-4888-8888-888888888888'],
     ['organizationId', OTHER_ORG_ID],
     ['actorId', '99999999-9999-4999-8999-999999999999'],
@@ -220,6 +379,13 @@ describe('computeRecordHash', () => {
     ['occurredAt', new Date('2026-10-30T10:00:00.001Z')],
   ] as const)('cambia cuando cambia %s', (field, value) => {
     expect(computeRecordHash({ ...base, [field]: value })).not.toBe(computeRecordHash(base));
+  });
+
+  it('no colisiona cuando un valor contiene el separador que usaba la versión anterior', () => {
+    const withPipeInAction = computeRecordHash({ ...base, actionType: 'X|', resourceType: null });
+    const withPipeInResource = computeRecordHash({ ...base, actionType: 'X', resourceType: '|' });
+
+    expect(withPipeInAction).not.toBe(withPipeInResource);
   });
 
   it('trata prevHash nulo y vacío igual y distinto de un hash real', () => {
