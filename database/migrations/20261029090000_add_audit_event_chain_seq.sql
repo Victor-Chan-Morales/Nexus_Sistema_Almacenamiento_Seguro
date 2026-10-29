@@ -7,18 +7,29 @@
 
 ALTER TABLE audit.audit_event ADD COLUMN chain_seq bigint;
 
+-- El backfill recorre la cadena desde la raíz (prev_hash NULL) siguiendo prev_hash -> record_hash, en vez de ordenar
+-- por occurred_at: dos eventos del mismo milisegundo pueden tener el orden de cadena opuesto al de su reloj.
+-- Si hubiera una bifurcación, dos hijos recibirían el mismo chain_seq y la UNIQUE de abajo falla; un evento que no
+-- cuelga de ninguna raíz queda sin chain_seq y falla el NOT NULL. En ambos casos la migración no se aplica.
+--
 -- El trigger de inmutabilidad rechaza UPDATE. Se deshabilita solo para este backfill; dbmate ejecuta la migración
--- dentro de una transacción. Si la tabla ya tuviera una bifurcación, la UNIQUE sobre prev_hash de abajo falla y
--- la migración no se aplica.
+-- dentro de una transacción.
 ALTER TABLE audit.audit_event DISABLE TRIGGER trg_audit_event_reject_update_delete;
+WITH RECURSIVE chain AS (
+  SELECT event_id, organization_id, record_hash, 1::bigint AS seq
+    FROM audit.audit_event
+   WHERE prev_hash IS NULL
+  UNION ALL
+  SELECT e.event_id, e.organization_id, e.record_hash, c.seq + 1
+    FROM audit.audit_event AS e
+    JOIN chain AS c
+      ON c.organization_id = e.organization_id
+     AND c.record_hash = e.prev_hash
+)
 UPDATE audit.audit_event AS e
-   SET chain_seq = s.seq
-  FROM (
-    SELECT event_id,
-           row_number() OVER (PARTITION BY organization_id ORDER BY occurred_at, event_id) AS seq
-      FROM audit.audit_event
-  ) AS s
- WHERE e.event_id = s.event_id;
+   SET chain_seq = chain.seq
+  FROM chain
+ WHERE e.event_id = chain.event_id;
 ALTER TABLE audit.audit_event ENABLE TRIGGER trg_audit_event_reject_update_delete;
 
 ALTER TABLE audit.audit_event ALTER COLUMN chain_seq SET NOT NULL;
