@@ -7,10 +7,54 @@
 
 ALTER TABLE audit.audit_event ADD COLUMN chain_seq bigint;
 
+-- Antes de tocar nada se comprueba que la cadena existente es lineal. Una bifurcación (dos raíces o dos hijos del
+-- mismo padre) o un evento que no cuelga de ninguna raíz haría fallar más abajo la UNIQUE o el NOT NULL con un
+-- mensaje que no dice qué organización arreglar. Aquí la migración se detiene antes de deshabilitar el trigger y
+-- nombra las organizaciones afectadas. Remedio: reparar esas cadenas a mano (o reiniciar una base de desarrollo,
+-- ver database/README.md) y volver a migrar.
+--
+-- lock_timeout evita esperar sin límite el ACCESS EXCLUSIVE de DISABLE TRIGGER si hay escrituras en curso.
+-- DISABLE TRIGGER exige ser propietario de la tabla: dbmate usa el rol de migraciones, que lo es.
+SET LOCAL lock_timeout = '10s';
+
+DO $$
+DECLARE
+  affected text;
+BEGIN
+  SELECT string_agg(DISTINCT organization_id::text, ', ') INTO affected FROM (
+    SELECT organization_id FROM audit.audit_event
+     WHERE prev_hash IS NULL GROUP BY organization_id HAVING count(*) > 1
+    UNION ALL
+    SELECT organization_id FROM audit.audit_event
+     WHERE prev_hash IS NOT NULL GROUP BY organization_id, prev_hash HAVING count(*) > 1
+  ) AS forked;
+  IF affected IS NOT NULL THEN
+    RAISE EXCEPTION 'Cadena de auditoría bifurcada (varias raíces o hijos del mismo padre) en organizaciones: %', affected;
+  END IF;
+
+  WITH RECURSIVE chain AS (
+    SELECT event_id, organization_id, record_hash
+      FROM audit.audit_event
+     WHERE prev_hash IS NULL
+    UNION ALL
+    SELECT e.event_id, e.organization_id, e.record_hash
+      FROM audit.audit_event AS e
+      JOIN chain AS c
+        ON c.organization_id = e.organization_id
+       AND c.record_hash = e.prev_hash
+  )
+  SELECT string_agg(DISTINCT e.organization_id::text, ', ') INTO affected
+    FROM audit.audit_event AS e
+    LEFT JOIN chain AS c ON c.event_id = e.event_id
+   WHERE c.event_id IS NULL;
+  IF affected IS NOT NULL THEN
+    RAISE EXCEPTION 'Eventos de auditoría que no cuelgan de ninguna raíz en organizaciones: %', affected;
+  END IF;
+END $$;
+
 -- El backfill recorre la cadena desde la raíz (prev_hash NULL) siguiendo prev_hash -> record_hash, en vez de ordenar
 -- por occurred_at: dos eventos del mismo milisegundo pueden tener el orden de cadena opuesto al de su reloj.
--- Si hubiera una bifurcación, dos hijos recibirían el mismo chain_seq y la UNIQUE de abajo falla; un evento que no
--- cuelga de ninguna raíz queda sin chain_seq y falla el NOT NULL. En ambos casos la migración no se aplica.
+-- No hay riesgo de ciclo: cerrarlo exigiría una colisión de SHA-256.
 --
 -- El trigger de inmutabilidad rechaza UPDATE. Se deshabilita solo para este backfill; dbmate ejecuta la migración
 -- dentro de una transacción.
