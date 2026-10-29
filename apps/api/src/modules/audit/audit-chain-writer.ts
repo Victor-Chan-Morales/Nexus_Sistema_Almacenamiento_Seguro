@@ -37,7 +37,9 @@ export class AuditChainWriter {
       order: { chainSeq: 'DESC' },
     });
 
-    // Sin occurredAt explícito, se fija dentro del bloqueo para que el orden temporal coincida con la cadena.
+    // `occurred_at` es el momento de captura. Un evento reenviado desde el outbox lo conserva, así que puede ser
+    // anterior al de eventos ya encadenados: el orden de la cadena es `chain_seq`, no `occurred_at`. Sin valor
+    // explícito se fija dentro del bloqueo.
     const fields = {
       eventId: event.eventId,
       organizationId: event.organizationId,
@@ -52,7 +54,7 @@ export class AuditChainWriter {
       correlationId: event.correlationId,
       occurredAt: event.occurredAt ?? new Date(),
       prevHash: last?.recordHash ?? null,
-      chainSeq: String((last ? Number(last.chainSeq) : 0) + 1),
+      chainSeq: String((last ? BigInt(last.chainSeq) : 0n) + 1n),
     };
 
     await manager.insert(AuditEvent, {
