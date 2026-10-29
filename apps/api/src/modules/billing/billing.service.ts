@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  UnprocessableEntityException,
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
@@ -284,6 +285,73 @@ export class BillingService implements OnModuleInit {
   ): Promise<Subscription> {
     const targetPlan = await this.findPlanById(planId);
     return this.persistSubscription(organizationId, targetPlan, transactionalManager);
+  }
+
+  /**
+   * Extiende la vigencia de la suscripción activa en `validityDays` desde max(hoy, fin actual)
+   * y registra una operación simulada `renewal` en la misma transacción (SPEC-302).
+   */
+  async renewSubscription(
+    organizationId: string,
+    transactionalManager?: EntityManager,
+  ): Promise<Subscription> {
+    const execute = async (manager: EntityManager): Promise<Subscription> => {
+      const activeSub = await manager.findOne(Subscription, {
+        where: { organizationId, status: SubscriptionStatus.ACTIVE },
+        lock: { mode: 'pessimistic_write' },
+        loadEagerRelations: false,
+      });
+
+      if (!activeSub) {
+        throw new UnprocessableEntityException({
+          code: 'NO_ACTIVE_SUBSCRIPTION',
+          message: 'La organización no tiene una suscripción activa vigente para renovar.',
+        });
+      }
+
+      const todayUtcStr = new Date().toISOString().slice(0, 10);
+      const currentEndStr = activeSub.expiresAt
+        ? activeSub.expiresAt.toISOString().slice(0, 10)
+        : null;
+
+      if (currentEndStr && currentEndStr <= todayUtcStr) {
+        throw new UnprocessableEntityException({
+          code: 'NO_ACTIVE_SUBSCRIPTION',
+          message: 'La suscripción actual ya ha vencido; activa nuevamente un plan.',
+        });
+      }
+
+      const plan =
+        activeSub.plan ?? (await manager.findOne(Plan, { where: { id: activeSub.planId } }));
+      if (!plan || !plan.validityDays || plan.validityDays <= 0) {
+        throw new UnprocessableEntityException({
+          code: 'PLAN_NOT_RENEWABLE',
+          message: 'El plan actual no tiene vencimiento y no es renovable.',
+        });
+      }
+
+      const todayUtcMs = Date.parse(`${todayUtcStr}T00:00:00.000Z`);
+      const currentEndMs = currentEndStr
+        ? Date.parse(`${currentEndStr}T00:00:00.000Z`)
+        : todayUtcMs;
+      const baseMs = Math.max(todayUtcMs, currentEndMs);
+
+      activeSub.expiresAt = new Date(baseMs + plan.validityDays * 86400000);
+      activeSub.plan = plan;
+
+      const saved = await manager.save(activeSub);
+      saved.plan = plan;
+
+      const amountUsd = (plan.priceCents || 0) / 100;
+      await this.recordOperation(manager, saved, BillingOperationType.RENEWAL, amountUsd);
+
+      return saved;
+    };
+
+    if (transactionalManager) {
+      return execute(transactionalManager);
+    }
+    return this.dataSource.transaction(execute);
   }
 
   // ── Gestión Centralizada de Cuota y Fallback de Estado ────────────────────

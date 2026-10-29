@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, UnprocessableEntityException } from '@nestjs/common';
 import { BillingService } from './billing.service';
 import { Plan, StorageLocation } from './entities/plan.entity';
 import { Subscription, SubscriptionStatus } from './entities/subscription.entity';
@@ -310,6 +310,114 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
           occurredAt: '2026-10-29T18:00:00.000Z',
         },
       ]);
+    });
+  });
+
+  describe('6. Renovación de suscripción (renewSubscription — SPEC-302 Escenarios 1, 2, 3, 5 y 6)', () => {
+    it('Escenario 1, 5 y 6: debe extender expiresAt en validityDays desde max(hoy, fin actual), conservar el mismo subscriptionId y registrar operación renewal con bloqueo pesimista', async () => {
+      const activeTeam: Subscription = {
+        id: 'sub-team-active',
+        organizationId: 'org-123',
+        planId: mockTeamPlan.id,
+        plan: mockTeamPlan,
+        status: SubscriptionStatus.ACTIVE,
+        simulated: true,
+        startDate: new Date('2026-10-11T00:00:00.000Z'),
+        expiresAt: new Date('2026-11-10T00:00:00.000Z'),
+        createdAt: new Date('2026-10-11T00:00:00.000Z'),
+      };
+
+      const mockManager = {
+        findOne: jest.fn().mockResolvedValue(activeTeam),
+        create: jest.fn((_cls: unknown, entity: unknown) => entity),
+        save: jest.fn((entity: unknown) => Promise.resolve(entity)),
+      };
+      (dataSource.transaction as jest.Mock).mockImplementation((cb: (m: unknown) => Promise<unknown>) => cb(mockManager));
+
+      const renewed = await service.renewSubscription('org-123');
+
+      expect(mockManager.findOne).toHaveBeenCalledWith(Subscription, {
+        where: { organizationId: 'org-123', status: SubscriptionStatus.ACTIVE },
+        lock: { mode: 'pessimistic_write' },
+        loadEagerRelations: false,
+      });
+      expect(renewed.id).toBe('sub-team-active');
+      expect(renewed.expiresAt?.toISOString()).toBe('2026-12-10T00:00:00.000Z');
+      expect(mockManager.create).toHaveBeenCalledWith(
+        BillingOperation,
+        expect.objectContaining({
+          subscriptionId: 'sub-team-active',
+          type: BillingOperationType.RENEWAL,
+          amount: 19.99,
+        }),
+      );
+      expect(mockManager.save).toHaveBeenCalledTimes(2);
+    });
+
+    it('Escenario 2: debe rechazar con 422 PLAN_NOT_RENEWABLE si el plan no tiene vigencia (Demo)', async () => {
+      const activeDemo: Subscription = {
+        id: 'sub-demo-active',
+        organizationId: 'org-123',
+        planId: mockDemoPlan.id,
+        plan: mockDemoPlan,
+        status: SubscriptionStatus.ACTIVE,
+        simulated: true,
+        expiresAt: null,
+        createdAt: new Date(),
+      };
+
+      const mockManager = {
+        findOne: jest.fn().mockResolvedValue(activeDemo),
+        create: jest.fn(),
+        save: jest.fn(),
+      };
+      (dataSource.transaction as jest.Mock).mockImplementation((cb: (m: unknown) => Promise<unknown>) => cb(mockManager));
+
+      const error = await service.renewSubscription('org-123').catch((err: unknown) => err);
+
+      expect(error).toBeInstanceOf(UnprocessableEntityException);
+      expect((error as UnprocessableEntityException).getStatus()).toBe(422);
+      expect((error as UnprocessableEntityException).getResponse()).toMatchObject({
+        code: 'PLAN_NOT_RENEWABLE',
+      });
+      expect(mockManager.save).not.toHaveBeenCalled();
+    });
+
+    it('Escenario 3: debe rechazar con 422 NO_ACTIVE_SUBSCRIPTION si no existe suscripción activa o si ya venció', async () => {
+      const mockManagerNoSub = {
+        findOne: jest.fn().mockResolvedValue(null),
+        save: jest.fn(),
+      };
+      (dataSource.transaction as jest.Mock).mockImplementation((cb: (m: unknown) => Promise<unknown>) => cb(mockManagerNoSub));
+
+      const errNoSub = await service.renewSubscription('org-123').catch((err: unknown) => err);
+      expect(errNoSub).toBeInstanceOf(UnprocessableEntityException);
+      expect((errNoSub as UnprocessableEntityException).getResponse()).toMatchObject({
+        code: 'NO_ACTIVE_SUBSCRIPTION',
+      });
+
+      const expiredTeam: Subscription = {
+        id: 'sub-team-expired',
+        organizationId: 'org-123',
+        planId: mockTeamPlan.id,
+        plan: mockTeamPlan,
+        status: SubscriptionStatus.ACTIVE,
+        simulated: true,
+        expiresAt: new Date('2020-01-01T00:00:00.000Z'),
+        createdAt: new Date('2019-12-01T00:00:00.000Z'),
+      };
+      const mockManagerExpired = {
+        findOne: jest.fn().mockResolvedValue(expiredTeam),
+        save: jest.fn(),
+      };
+      (dataSource.transaction as jest.Mock).mockImplementation((cb: (m: unknown) => Promise<unknown>) => cb(mockManagerExpired));
+
+      const errExpired = await service.renewSubscription('org-123').catch((err: unknown) => err);
+      expect(errExpired).toBeInstanceOf(UnprocessableEntityException);
+      expect((errExpired as UnprocessableEntityException).getResponse()).toMatchObject({
+        code: 'NO_ACTIVE_SUBSCRIPTION',
+      });
+      expect(mockManagerExpired.save).not.toHaveBeenCalled();
     });
   });
 });
