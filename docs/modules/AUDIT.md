@@ -55,7 +55,7 @@ await this.auditService.logEvent({
 Si el INSERT directo falla, `logEvent` guarda el evento en `audit.audit_outbox` con el mismo `event_id` y `correlation_id`. Un worker lo reintenta cada 30 s con espera creciente (2 min, tope 30 min) durante 24 h, y lo registra en la cadena cuando el fallo ya pasó. Si el mismo evento ya estaba en la cadena (el INSERT llegó pero el cliente vio un error), no se duplica.
 
 - **Eventos `dead`:** un error permanente (FK, NOT NULL, tipo o CHECK) o 24 h sin éxito. Se conservan en la tabla y se registran con `[AUDIT_OUTBOX_DEAD]` en el log. Revisarlos: `SELECT * FROM audit.audit_outbox WHERE status = 'dead';`
-- **Health:** `GET /api/health` incluye `audit_outbox` con `pending` y `dead`. Nunca marca el servicio como caído: un evento muerto requiere revisión, no un reinicio.
+- **Salud:** `GET /api/health` no expone datos de auditoría (es público y no requiere autenticación). Los eventos `dead` se revisan con la consulta de arriba o con el marcador `[AUDIT_OUTBOX_DEAD]` en el log. Un evento muerto requiere revisión, no un reinicio.
 
 ## Riesgos conocidos
 
