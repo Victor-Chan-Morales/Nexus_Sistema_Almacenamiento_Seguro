@@ -325,6 +325,7 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
           'resourceId',
           'resourceType',
           'result',
+          'safeReason',
         ].sort(),
       );
     });
@@ -342,6 +343,7 @@ describe('computeRecordHash', () => {
     actionType: 'FILE_UPLOAD',
     resourceType: 'file',
     resourceId: RESOURCE_ID,
+    safeReason: null,
     result: AuditResult.SUCCESS,
     correlationId: '77777777-7777-4777-8777-777777777777',
     occurredAt: new Date('2026-10-30T10:00:00.000Z'),
@@ -364,6 +366,7 @@ describe('computeRecordHash', () => {
     ['actionType', 'FILE_DELETE'],
     ['resourceType', 'membership'],
     ['resourceId', '12121212-1212-4121-8121-121212121212'],
+    ['safeReason', 'motivo-de-prueba'],
     ['correlationId', '13131313-1313-4131-8131-131313131313'],
     ['occurredAt', new Date('2026-10-30T10:00:00.001Z')],
   ] as const)('cambia cuando cambia %s', (field, value) => {

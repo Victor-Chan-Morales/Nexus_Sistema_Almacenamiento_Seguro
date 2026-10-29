@@ -46,6 +46,8 @@ export class AuditChainWriter {
       actionType: event.action,
       resourceType: event.resourceType ?? null,
       resourceId: event.resourceId ?? null,
+      // Ningún evento de este corte registra motivo; la columna entra en el hash para que no sea manipulable.
+      safeReason: null,
       result: AuditResult.SUCCESS,
       correlationId: event.correlationId,
       occurredAt: event.occurredAt ?? new Date(),
