@@ -39,9 +39,17 @@ function createFakeDb() {
     const value = criteria.eventId;
     return Array.isArray(value?.value) ? value.value : [value];
   };
-  const update = async (_entity: unknown, criteria: { eventId: any }, values: Record<string, unknown>) => {
+  const update = async (
+    _entity: unknown,
+    criteria: { eventId: any; lockedUntil?: Date },
+    values: Record<string, unknown>,
+  ) => {
     for (const id of idsOf(criteria)) {
-      if (outbox.has(id)) Object.assign(outbox.get(id)!, values);
+      const row = outbox.get(id);
+      if (!row) continue;
+      // Un criterio lockedUntil actúa como guarda: solo actualiza si el arrendamiento sigue siendo ese.
+      if (criteria.lockedUntil && row.lockedUntil?.getTime() !== criteria.lockedUntil.getTime()) continue;
+      Object.assign(row, values);
     }
   };
   const remove = async (_entity: unknown, criteria: { eventId: string }) => {
@@ -298,6 +306,26 @@ describe('AuditOutboxService — reintento de eventos de auditoría (issue #17)'
     expect(db.outbox.get(EVENT_ID)).toMatchObject({ status: 'pending' });
     const messages = loggerError.mock.calls.map((call) => call[0] as string);
     expect(messages.some((m) => m.startsWith('[AUDIT_OUTBOX_STALE]'))).toBe(true);
+  });
+
+  it('si el arrendamiento venció y otra instancia tomó la fila, un fallo tardío no pisa su estado (I3)', async () => {
+    await service.enqueue(event);
+    db.failures.push(transient());
+    const original = db.dataSource.transaction;
+    jest.spyOn(db.dataSource, 'transaction').mockImplementation(async (callback: any) => {
+      try {
+        return await original(callback);
+      } catch (error) {
+        // La otra instancia toma la fila con un arrendamiento nuevo justo después de que este intento falle.
+        const row = db.outbox.get(EVENT_ID)!;
+        if (row.lockedUntil) row.lockedUntil = new Date(row.lockedUntil.getTime() + 5 * MINUTE);
+        throw error;
+      }
+    });
+
+    await service.dispatchDue();
+
+    expect(db.outbox.get(EVENT_ID)).toMatchObject({ attempts: 0, lastError: null });
   });
 
   it('si la baja del outbox falla, el evento tampoco queda en la cadena (I4)', async () => {

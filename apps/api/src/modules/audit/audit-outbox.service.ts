@@ -77,11 +77,12 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
   /** Reintenta los eventos pendientes cuyo momento de reintento ya llegó. Nunca lanza. */
   async dispatchDue(): Promise<void> {
     for (let i = 0; i < BATCH_SIZE; i++) {
-      const row = await this.claimNext();
-      if (!row) return;
+      const claim = await this.claimNext();
+      if (!claim) return;
+      const { row, lease } = claim;
       // Una caída de BD a mitad de una fila no debe tumbar el proceso: el arrendamiento vence y la fila se reintenta.
       try {
-        await this.process(row);
+        await this.process(row, lease);
       } catch (error) {
         this.logger.error(`No se pudo procesar el evento de auditoría ${row.eventId} (código ${errorCode(error)})`);
       }
@@ -89,7 +90,7 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Reclama una sola fila con su propio arrendamiento (I3). `undefined` si no hay ninguna o no se pudo reclamar. */
-  private async claimNext(): Promise<AuditOutbox | undefined> {
+  private async claimNext(): Promise<{ row: AuditOutbox; lease: Date } | undefined> {
     const now = new Date();
     try {
       return await this.dataSource.transaction(async (manager) => {
@@ -105,9 +106,9 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
           .getOne();
         if (!row) return undefined;
 
-        const lockedUntil = new Date(now.getTime() + LEASE_SECONDS * 1000);
-        await manager.update(AuditOutbox, { eventId: row.eventId }, { lockedUntil });
-        return row;
+        const lease = new Date(now.getTime() + LEASE_SECONDS * 1000);
+        await manager.update(AuditOutbox, { eventId: row.eventId }, { lockedUntil: lease });
+        return { row, lease };
       });
     } catch (error) {
       this.logger.error(`No se pudo reclamar el outbox de auditoría (código ${errorCode(error)})`);
@@ -115,7 +116,7 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async process(row: AuditOutbox): Promise<void> {
+  private async process(row: AuditOutbox, lease: Date): Promise<void> {
     try {
       // Registro y baja del outbox en una sola transacción (I4). Con dedupe: si un intento anterior sí llegó a
       // confirmarse, no se inserta de nuevo y solo se da de baja la fila.
@@ -126,21 +127,22 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       const code = errorCode(error);
       if (isPermanentError(code)) {
-        await this.markDead(row, code);
+        await this.markDead(row, code, lease);
       } else {
-        await this.scheduleRetry(row, code);
+        await this.scheduleRetry(row, code, lease);
       }
     }
   }
 
-  private async scheduleRetry(row: AuditOutbox, code: string): Promise<void> {
+  private async scheduleRetry(row: AuditOutbox, code: string, lease: Date): Promise<void> {
     const attempts = row.attempts + 1;
     const backoffSeconds = outboxBackoffSeconds(attempts);
     const nextAttemptAt = new Date(Date.now() + backoffSeconds * 1000);
 
+    // Solo si el arrendamiento sigue siendo el nuestro: si venció y otra instancia tomó la fila, no se pisa su estado.
     await this.dataSource.manager.update(
       AuditOutbox,
-      { eventId: row.eventId },
+      { eventId: row.eventId, lockedUntil: lease },
       { attempts, nextAttemptAt, lastError: code, lockedUntil: null },
     );
     this.logger.error(`Fallo al registrar el evento de auditoría ${row.eventId} (intento ${attempts}): ${code}`);
@@ -150,10 +152,10 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async markDead(row: AuditOutbox, code: string): Promise<void> {
+  private async markDead(row: AuditOutbox, code: string, lease: Date): Promise<void> {
     await this.dataSource.manager.update(
       AuditOutbox,
-      { eventId: row.eventId },
+      { eventId: row.eventId, lockedUntil: lease },
       { status: AuditOutboxStatus.DEAD, lastError: code, lockedUntil: null },
     );
     // Marcador fijo para alertar sobre el evento: el log no incluye datos del evento.
