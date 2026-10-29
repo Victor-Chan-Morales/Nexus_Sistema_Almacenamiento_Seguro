@@ -85,3 +85,82 @@ describe('FilesService — cuota y reservas de carga', () => {
     expect(storageService.put).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Tamaño de carpetas (CONTRACTS.md): suma de la versión actual de los archivos activos de la
+ * carpeta y de todas sus subcarpetas. La recursión vive en una CTE de PostgreSQL, así que aquí
+ * se verifica el contrato del servicio con la fila que devuelve esa consulta; el recorrido real
+ * del árbol necesita una prueba de integración contra PostgreSQL.
+ */
+describe('FilesService — tamaño de carpetas', () => {
+  const folderEntity = (id: string, parentId: string | null) => ({
+    id,
+    name: id,
+    parentId,
+    driveId: 'drive-1',
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+  });
+
+  const buildService = (sizeRows: Array<{ folderId: string; totalSizeBytes: string }>) => {
+    const dataSource = { query: jest.fn().mockResolvedValue(sizeRows) };
+    const folderRepository = {
+      find: jest.fn().mockResolvedValue([folderEntity('hija-a', 'raiz'), folderEntity('hija-b', 'raiz')]),
+    };
+    const fileRepository = { find: jest.fn().mockResolvedValue([]) };
+    const service = new FilesService(
+      fileRepository as never, folderRepository as never, {} as never,
+      dataSource as never, {} as never, {} as never, {} as never,
+    );
+    jest.spyOn(service, 'getOrCreateUserDrive').mockResolvedValue({
+      id: 'drive-1', name: 'Mi unidad', rootFolderId: 'raiz',
+    });
+    jest.spyOn(service as never as { requirePersonalFolder: () => unknown }, 'requirePersonalFolder')
+      .mockResolvedValue(folderEntity('raiz', null) as never);
+    return { service, dataSource };
+  };
+
+  it('getFolderItems expone el tamaño anidado como número y 0 para carpetas sin archivos', async () => {
+    // raiz agrega las subcarpetas (700 + 0) más sus propios archivos (300); hija-b está vacía.
+    const { service, dataSource } = buildService([
+      { folderId: 'raiz', totalSizeBytes: '1000' },
+      { folderId: 'hija-a', totalSizeBytes: '700' },
+    ]);
+
+    const result = await service.getFolderItems('org-1', 'user-1', 'raiz');
+
+    expect(result.folder.sizeBytes).toBe(1000);
+    expect(result.folders.map((f) => [f.id, f.sizeBytes])).toEqual([
+      ['hija-a', 700],
+      ['hija-b', 0],
+    ]);
+    expect(typeof result.folder.sizeBytes).toBe('number');
+    // Una sola consulta para la carpeta y sus hijas, acotada a la organización.
+    expect(dataSource.query).toHaveBeenCalledTimes(1);
+    expect(dataSource.query).toHaveBeenCalledWith(
+      expect.stringContaining('WITH RECURSIVE'),
+      ['org-1', ['raiz', 'hija-a', 'hija-b']],
+    );
+  });
+
+  it('listFolders incluye createdAt y sizeBytes de cada carpeta', async () => {
+    const { service } = buildService([{ folderId: 'hija-a', totalSizeBytes: '2500' }]);
+
+    const result = await service.listFolders('org-1', 'user-1', 'raiz');
+
+    expect(result.items).toEqual([
+      expect.objectContaining({ id: 'hija-a', sizeBytes: 2500, createdAt: new Date('2026-01-01T00:00:00Z') }),
+      expect.objectContaining({ id: 'hija-b', sizeBytes: 0 }),
+    ]);
+  });
+
+  it('la consulta solo cuenta carpetas y archivos activos y no cae en ciclos', async () => {
+    const { service, dataSource } = buildService([]);
+    await service.listFolders('org-1', 'user-1', 'raiz');
+
+    const sql = dataSource.query.mock.calls[0][0] as string;
+    expect(sql).toContain('f.is_deleted = false');
+    expect(sql).toContain('current_version_id');
+    // UNION (sin ALL) descarta pares repetidos y evita la recursión infinita ante un ciclo.
+    expect(sql).not.toContain('UNION ALL');
+  });
+});

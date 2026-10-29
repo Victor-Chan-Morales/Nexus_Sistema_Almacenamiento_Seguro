@@ -211,13 +211,13 @@ export class FilesService {
         SELECT folder_id, folder_id AS root_folder_id
         FROM files.folder
         WHERE organization_id = $1 AND is_deleted = false AND folder_id = ANY($2)
-        UNION ALL
+        UNION
         SELECT f.folder_id, ft.root_folder_id
         FROM files.folder f
         JOIN folder_tree ft ON f.parent_folder_id = ft.folder_id
         WHERE f.organization_id = $1 AND f.is_deleted = false
       )
-      SELECT 
+      SELECT
         ft.root_folder_id AS "folderId",
         COALESCE(SUM(v.size_bytes), 0)::text AS "totalSizeBytes"
       FROM folder_tree ft
