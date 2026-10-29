@@ -1,0 +1,13 @@
+{
+  // Solo para ESLint: incluye los tests e2e, que tsconfig.json (build) no compila.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "incremental": false
+  },
+  "include": [
+    "src/**/*",
+    "test/**/*"
+  ]
+}

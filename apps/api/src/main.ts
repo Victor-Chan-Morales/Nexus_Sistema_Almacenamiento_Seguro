@@ -1,10 +1,14 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { INestApplication, Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { ApiExceptionFilter } from './common/filters/api-exception.filter';
 
+const logger = new Logger('Bootstrap');
+// Se declara fuera de bootstrap para poder cerrarla si el arranque falla después de crearla.
+let app: INestApplication | undefined;
+
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  app = await NestFactory.create(AppModule);
 
   // Prefijo global para todas las rutas del API
   app.setGlobalPrefix('api');
@@ -38,7 +42,9 @@ async function bootstrap() {
 }
 
 // Si el arranque falla (puerto ocupado, BD inaccesible), el proceso debe terminar con un error visible.
-bootstrap().catch((error: unknown) => {
-  console.error('No se pudo iniciar la API:', error);
+bootstrap().catch(async (error: unknown) => {
+  logger.error('No se pudo iniciar la API', error instanceof Error ? error.stack : error);
+  // Cerrar la app libera el pool de conexiones antes de salir.
+  await app?.close();
   process.exit(1);
 });

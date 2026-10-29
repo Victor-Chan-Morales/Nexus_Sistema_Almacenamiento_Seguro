@@ -13,19 +13,20 @@ export default tseslint.config(
       },
     },
     rules: {
-      // Error: una promesa sin manejar puede rechazar sin que nadie lo vea (ver src/main.ts).
+      // Error: una promesa sin manejar puede rechazar sin que nadie lo vea.
       '@typescript-eslint/no-floating-promises': 'error',
-      // Advertencias por ahora: el código existente las incumple y corregirlas amplía este PR. Ver la descripción del PR.
+      // Advertencias por ahora: el código existente las incumple y corregirlas amplía el alcance de esta configuración inicial.
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-require-imports': 'warn',
       'no-control-regex': 'warn',
     },
   },
   {
-    // Los tests de e2e no están en tsconfig.json: se lintan sin información de tipos.
+    // Los tests e2e no están en tsconfig.json: se lintan con tsconfig.eslint.json, que sí los incluye.
     files: ['test/**/*.ts'],
-    languageOptions: { parserOptions: { projectService: false, project: null } },
-    rules: { '@typescript-eslint/no-floating-promises': 'off' },
+    languageOptions: {
+      parserOptions: { projectService: false, project: './tsconfig.eslint.json' },
+    },
   },
   {
     // TypeScript resuelve los identificadores globales; `no-undef` daría falsos positivos (describe, it, etc.).
