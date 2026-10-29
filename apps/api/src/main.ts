@@ -37,4 +37,8 @@ async function bootstrap() {
   console.log(`Nexus API corriendo en http://localhost:${port}/api`);
 }
 
-bootstrap();
+// Si el arranque falla (puerto ocupado, BD inaccesible), el proceso debe terminar con un error visible.
+bootstrap().catch((error: unknown) => {
+  console.error('No se pudo iniciar la API:', error);
+  process.exit(1);
+});
