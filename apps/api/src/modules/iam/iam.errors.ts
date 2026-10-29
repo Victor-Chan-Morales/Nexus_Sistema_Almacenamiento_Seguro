@@ -34,6 +34,11 @@ export const IamErrors = {
       code: 'MFA_NOT_SUPPORTED',
       message: 'La verificación en dos pasos aún no está disponible para esta cuenta',
     }),
+  forbiddenRole: () =>
+    new ForbiddenException({
+      code: 'FORBIDDEN_ROLE',
+      message: 'Tu rol no tiene permiso para esta acción.',
+    }),
   noActiveMembership: () =>
     new ForbiddenException({
       code: 'NO_ACTIVE_MEMBERSHIP',
