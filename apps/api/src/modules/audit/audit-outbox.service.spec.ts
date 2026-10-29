@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { AuditChainWriter, ResolvedAuditEvent } from './audit-chain-writer';
 import { AuditOutboxService } from './audit-outbox.service';
 import { AuditAction, AuditResource } from './audit.types';
@@ -26,22 +26,28 @@ const event: ResolvedAuditEvent & { occurredAt: Date } = {
 const transient = () => Object.assign(new Error('conexión caída'), { code: '40P01' });
 const permanent = () => Object.assign(new Error('FK'), { code: '23503' });
 
+type OutboxRow = { eventId: string; nextAttemptAt: Date; lockedUntil?: Date | null; [column: string]: unknown };
+type ChainRow = { eventId: string; occurredAt: Date; [column: string]: unknown };
+type FakeDb = ReturnType<typeof createFakeDb>;
+type TxCallback = Parameters<FakeDb['dataSource']['transaction']>[0];
+type FakeManager = Parameters<TxCallback>[0];
+
 /**
  * Fake en memoria de la BD: la tabla del outbox, la cadena de auditoría y fallos inyectables en el INSERT de la cadena.
  * Replica lo que usa el servicio: reclamo con lease, update por event_id, exists/findOne/insert de la cadena.
  */
 function createFakeDb() {
-  const outbox = new Map<string, Record<string, any>>();
-  const chain: Record<string, any>[] = [];
+  const outbox = new Map<string, OutboxRow>();
+  const chain: ChainRow[] = [];
   const failures: Error[] = [];
 
-  const idsOf = (criteria: { eventId: any }): string[] => {
+  const idsOf = (criteria: { eventId: string | { value: string[] } }): string[] => {
     const value = criteria.eventId;
-    return Array.isArray(value?.value) ? value.value : [value];
+    return typeof value === 'string' ? [value] : value.value;
   };
   const update = async (
     _entity: unknown,
-    criteria: { eventId: any; lockedUntil?: Date },
+    criteria: { eventId: string | { value: string[] }; lockedUntil?: Date },
     values: Record<string, unknown>,
   ) => {
     for (const id of idsOf(criteria)) {
@@ -92,11 +98,11 @@ function createFakeDb() {
     findOne: async (_entity: unknown, options: { where: { organizationId: string } }) =>
       chain
         .filter((row) => row.organizationId === options.where.organizationId)
-        .reduce<Record<string, any> | null>(
+        .reduce<ChainRow | null>(
           (max, row) => (!max || Number(row.chainSeq) > Number(max.chainSeq) ? row : max),
           null,
         ),
-    insert: async (_entity: unknown, row: Record<string, any>) => {
+    insert: async (_entity: unknown, row: ChainRow) => {
       if (failures.length > 0) throw failures.shift();
       chain.push({ ...row });
     },
@@ -118,7 +124,7 @@ function createFakeDb() {
     },
     manager: { update, delete: remove },
     getRepository: () => ({
-      insert: async (row: Record<string, any>) =>
+      insert: async (row: OutboxRow) =>
         outbox.set(row.eventId, {
           status: 'pending',
           attempts: 0,
@@ -169,7 +175,7 @@ describe('AuditOutboxService — reintento de eventos de auditoría (issue #17)'
   });
 
   it('si el evento ya estaba en la cadena (el INSERT llegó pero el cliente vio error), no se duplica ni altera la cadena', async () => {
-    await db.dataSource.transaction((m) => new AuditChainWriter().append(m as any, event, { dedupe: false }));
+    await db.dataSource.transaction((m) => new AuditChainWriter().append(m as unknown as EntityManager, event, { dedupe: false }));
     await service.enqueue(event);
 
     await service.dispatchDue();
@@ -312,7 +318,7 @@ describe('AuditOutboxService — reintento de eventos de auditoría (issue #17)'
     await service.enqueue(event);
     db.failures.push(transient());
     const original = db.dataSource.transaction;
-    jest.spyOn(db.dataSource, 'transaction').mockImplementation(async (callback: any) => {
+    jest.spyOn(db.dataSource, 'transaction').mockImplementation(async (callback: TxCallback) => {
       try {
         return await original(callback);
       } catch (error) {
@@ -333,8 +339,8 @@ describe('AuditOutboxService — reintento de eventos de auditoría (issue #17)'
     jest.spyOn(db.dataSource.manager, 'delete');
     const failingDelete = jest.fn().mockRejectedValueOnce(Object.assign(new Error('caída'), { code: '40P01' }));
     const original = db.dataSource.transaction;
-    jest.spyOn(db.dataSource, 'transaction').mockImplementation((callback: any) =>
-      original((manager: any) => callback({ ...manager, delete: failingDelete })),
+    jest.spyOn(db.dataSource, 'transaction').mockImplementation((callback: TxCallback) =>
+      original((manager: FakeManager) => callback({ ...manager, delete: failingDelete })),
     );
 
     await service.dispatchDue();
@@ -350,8 +356,8 @@ describe('AuditOutboxService — reintento de eventos de auditoría (issue #17)'
     const claimed: string[] = [];
     const update = db.dataSource.manager.update;
     const original = db.dataSource.transaction;
-    jest.spyOn(db.dataSource, 'transaction').mockImplementation((callback: any) =>
-      original((manager: any) =>
+    jest.spyOn(db.dataSource, 'transaction').mockImplementation((callback: TxCallback) =>
+      original((manager: FakeManager) =>
         callback({
           ...manager,
           update: async (entity: unknown, criteria: { eventId: string }, values: Record<string, unknown>) => {
@@ -376,7 +382,7 @@ describe('AuditOutboxService — reintento de eventos de auditoría (issue #17)'
     jest.setSystemTime(new Date(T0.getTime() + MINUTE));
     await db.dataSource.transaction((m) =>
       new AuditChainWriter().append(
-        m as any,
+        m as unknown as EntityManager,
         { ...event, eventId: '88888888-8888-4888-8888-888888888888', occurredAt: new Date(T0.getTime() + MINUTE) },
         { dedupe: false },
       ),
@@ -396,6 +402,7 @@ describe('AuditOutboxService — reintento de eventos de auditoría (issue #17)'
       eventId: '88888888-8888-4888-8888-888888888888',
       organizationId: ORG_ID,
       chainSeq: '9007199254740993',
+      occurredAt: new Date(),
       recordHash: 'a'.repeat(64),
     });
     await service.enqueue(event);

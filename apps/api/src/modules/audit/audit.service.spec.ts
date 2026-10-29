@@ -12,6 +12,7 @@ const OTHER_ORG_ID = '22222222-2222-4222-8222-222222222222';
 const ACTOR_ID = '33333333-3333-4333-8333-333333333333';
 const RESOURCE_ID = '44444444-4444-4444-8444-444444444444';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+type Row = { occurredAt: Date; [column: string]: unknown };
 
 describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)', () => {
   let service: AuditService;
@@ -190,7 +191,7 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
    * restricciones únicas de la migración 20261029090000 rechazan cualquier bifurcación.
    */
   function createInMemoryChain() {
-    const rows: Array<Record<string, any>> = [];
+    const rows: Array<Row> = [];
     let lockTail: Promise<void> = Promise.resolve();
 
     const uniqueViolation = () => Object.assign(new Error('duplicate key'), { code: '23505' });
@@ -206,12 +207,12 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
         },
         findOne: async (_entity: unknown, options: { where: { organizationId: string } }) => {
           const own = rows.filter((row) => row.organizationId === options.where.organizationId);
-          return own.reduce<Record<string, any> | null>(
+          return own.reduce<Row | null>(
             (max, row) => (!max || Number(row.chainSeq) > Number(max.chainSeq) ? row : max),
             null,
           );
         },
-        insert: async (_entity: unknown, row: Record<string, any>) => {
+        insert: async (_entity: unknown, row: Row) => {
           const sameOrg = rows.filter((other) => other.organizationId === row.organizationId);
           const clashes =
             sameOrg.some((other) => other.chainSeq === row.chainSeq) ||
