@@ -38,13 +38,27 @@ async function bootstrap() {
 
   const port = process.env.API_PORT ?? 3001;
   await app.listen(port);
-  console.log(`Nexus API corriendo en http://localhost:${port}/api`);
+  logger.log(`Nexus API corriendo en http://localhost:${port}/api`);
 }
+
+// Tiempo máximo para cerrar la app tras un fallo de arranque; un cierre colgado no debe dejar el proceso vivo.
+const CLOSE_TIMEOUT_MS = 5000;
 
 // Si el arranque falla (puerto ocupado, BD inaccesible), el proceso debe terminar con un error visible.
 bootstrap().catch(async (error: unknown) => {
   logger.error('No se pudo iniciar la API', error instanceof Error ? error.stack : error);
-  // Cerrar la app libera el pool de conexiones antes de salir.
-  await app?.close();
-  process.exit(1);
+  try {
+    // Cerrar la app libera el pool de conexiones antes de salir.
+    await Promise.race([
+      app?.close(),
+      new Promise((resolve) => setTimeout(resolve, CLOSE_TIMEOUT_MS).unref()),
+    ]);
+  } catch (closeError: unknown) {
+    logger.error(
+      'No se pudo cerrar la API tras el fallo de arranque',
+      closeError instanceof Error ? closeError.stack : closeError,
+    );
+  } finally {
+    process.exit(1);
+  }
 });
