@@ -1,9 +1,10 @@
 /** Presentación de bytes; el contrato siempre transporta bytes. */
-export function formatBytes(bytes: number) {
-  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+export function formatBytes(bytes: number | string | bigint | null | undefined) {
+  const numeric = typeof bytes === "number" ? bytes : Number(bytes);
+  if (!Number.isFinite(numeric) || numeric <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
-  const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1000)));
-  const value = bytes / 1000 ** index;
+  const index = Math.min(units.length - 1, Math.floor(Math.log(numeric) / Math.log(1000)));
+  const value = numeric / 1000 ** index;
   return `${index === 0 ? value : Number(value.toFixed(value >= 10 ? 0 : 1))} ${units[index]}`;
 }
 
@@ -14,7 +15,10 @@ export function formatIsoDate(value: string | null | undefined) {
   return new Intl.DateTimeFormat("es-GT", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(date);
 }
 
-export function usagePercent(used: number, limit: number) {
-  if (limit <= 0) return 0;
-  return Math.min(100, Math.round((used / limit) * 100));
+export function usagePercent(used: number | string | null | undefined, limit: number | string | null | undefined) {
+  const numUsed = Number(used);
+  const numLimit = Number(limit);
+  if (!Number.isFinite(numLimit) || numLimit <= 0) return 0;
+  if (!Number.isFinite(numUsed) || numUsed <= 0) return 0;
+  return Math.min(100, Math.round((numUsed / numLimit) * 100));
 }

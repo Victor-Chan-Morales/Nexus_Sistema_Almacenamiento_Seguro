@@ -110,6 +110,8 @@ export type Folder = {
   name: string;
   parentFolderId: UUID | null;
   driveId: UUID;
+  sizeBytes?: number;
+  createdAt?: ISODateTime;
 };
 
 export type PersonalDrive = {

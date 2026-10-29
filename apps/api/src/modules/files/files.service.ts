@@ -59,7 +59,7 @@ export interface UploadedFileDto {
   id: string;
   name: string;
   mimeType: string;
-  sizeBytes: string;
+  sizeBytes: number;
   versionId: string;
   uploadedAt: Date;
 }
@@ -199,13 +199,46 @@ export class FilesService {
     return { destination, key };
   }
 
+  private async calculateFolderSizes(
+    organizationId: string,
+    folderIds: string[],
+  ): Promise<Map<string, number>> {
+    const folderSizes = new Map<string, number>();
+    if (!folderIds || folderIds.length === 0) return folderSizes;
+
+    const sizeRows = await this.dataSource.query(
+      `WITH RECURSIVE folder_tree AS (
+        SELECT folder_id, folder_id AS root_folder_id
+        FROM files.folder
+        WHERE organization_id = $1 AND is_deleted = false AND folder_id = ANY($2)
+        UNION
+        SELECT f.folder_id, ft.root_folder_id
+        FROM files.folder f
+        JOIN folder_tree ft ON f.parent_folder_id = ft.folder_id
+        WHERE f.organization_id = $1 AND f.is_deleted = false
+      )
+      SELECT
+        ft.root_folder_id AS "folderId",
+        COALESCE(SUM(v.size_bytes), 0)::text AS "totalSizeBytes"
+      FROM folder_tree ft
+      LEFT JOIN files.file f ON f.folder_id = ft.folder_id AND f.is_deleted = false
+      LEFT JOIN files.file_version v ON v.version_id = f.current_version_id
+      GROUP BY ft.root_folder_id`,
+      [organizationId, folderIds],
+    );
+    for (const row of sizeRows) {
+      folderSizes.set(row.folderId, Number(row.totalSizeBytes));
+    }
+    return folderSizes;
+  }
+
   async listFolders(
     organizationId: string,
     userId: string,
     parentId?: string,
   ): Promise<{
     drive: { id: string; name: string; rootFolderId: string };
-    items: Array<{ id: string; name: string; parentFolderId: string | null; driveId: string }>;
+    items: Array<{ id: string; name: string; parentFolderId: string | null; driveId: string; createdAt: Date; sizeBytes: number }>;
   }> {
     const drive = await this.getOrCreateUserDrive(organizationId, userId);
     const effectiveParentId = parentId || drive.rootFolderId;
@@ -220,6 +253,10 @@ export class FilesService {
       },
       order: { name: 'ASC' },
     });
+
+    const folderIds = folders.map((folder) => folder.id);
+    const folderSizes = await this.calculateFolderSizes(organizationId, folderIds);
+
     return {
       drive,
       items: folders.map((folder) => ({
@@ -227,6 +264,8 @@ export class FilesService {
         name: folder.name,
         parentFolderId: folder.parentId,
         driveId: folder.driveId,
+        createdAt: folder.createdAt,
+        sizeBytes: folderSizes.get(folder.id) ?? 0,
       })),
     };
   }
@@ -282,8 +321,8 @@ export class FilesService {
     userId: string,
     folderId: string,
   ): Promise<{
-    folder: { id: string; name: string; parentFolderId: string | null; driveId: string; createdAt: Date };
-    folders: Array<{ id: string; name: string; parentFolderId: string | null; driveId: string; createdAt: Date }>;
+    folder: { id: string; name: string; parentFolderId: string | null; driveId: string; createdAt: Date; sizeBytes: number };
+    folders: Array<{ id: string; name: string; parentFolderId: string | null; driveId: string; createdAt: Date; sizeBytes: number }>;
     files: UploadedFileDto[];
   }> {
     const drive = await this.getOrCreateUserDrive(organizationId, userId);
@@ -299,6 +338,10 @@ export class FilesService {
         order: { name: 'ASC' },
       }),
     ]);
+
+    const folderIds = [folder.id, ...folders.map((f) => f.id)];
+    const folderSizes = await this.calculateFolderSizes(organizationId, folderIds);
+
     return {
       folder: {
         id: folder.id,
@@ -306,6 +349,7 @@ export class FilesService {
         parentFolderId: folder.parentId,
         driveId: folder.driveId,
         createdAt: folder.createdAt,
+        sizeBytes: folderSizes.get(folder.id) ?? 0,
       },
       folders: folders.map((item) => ({
         id: item.id,
@@ -313,6 +357,7 @@ export class FilesService {
         parentFolderId: item.parentId,
         driveId: item.driveId,
         createdAt: item.createdAt,
+        sizeBytes: folderSizes.get(item.id) ?? 0,
       })),
       files: files.map((file) => this.toUploadedFileDto(file, file.versions ?? [])),
     };
@@ -344,7 +389,7 @@ export class FilesService {
       id: file.id,
       name: file.name,
       mimeType: file.mimeType || 'application/octet-stream',
-      sizeBytes: current?.sizeBytes ?? '0',
+      sizeBytes: Number(current?.sizeBytes ?? 0),
       versionId: current?.id ?? '',
       uploadedAt: current?.uploadedAt ?? file.createdAt,
     };
@@ -589,7 +634,7 @@ export class FilesService {
             id: fileRecord.id,
             name: fileRecord.name,
             mimeType: fileRecord.mimeType ?? mimeType,
-            sizeBytes: String(fileSize),
+            sizeBytes: Number(fileSize),
             versionId: savedVersion.id,
             uploadedAt: savedVersion.uploadedAt,
           };
@@ -648,7 +693,7 @@ export class FilesService {
                 id: savedFile.id,
                 name: savedFile.name,
                 mimeType: savedFile.mimeType ?? 'application/octet-stream',
-                sizeBytes: version.sizeBytes,
+                sizeBytes: Number(version.sizeBytes),
                 versionId: version.id,
                 uploadedAt: version.uploadedAt,
               },
