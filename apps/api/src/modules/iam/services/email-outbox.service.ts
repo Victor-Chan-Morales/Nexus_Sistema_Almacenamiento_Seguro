@@ -1,17 +1,14 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { OutboxKind } from '../constants';
+import { OUTBOX_POLL_INTERVAL_MS, outboxBackoffSeconds, outboxHorizonPassed } from '../../../common/outbox-policy';
 import { OutboxCipher } from '../infrastructure/outbox-cipher';
 import { EmailOutboxRepository, OutboxMessage } from '../ports/repositories';
 import { TransactionContext, UnitOfWork } from '../ports/transaction';
 import { VerificationMailer } from '../ports/verification-mailer';
 import { VerificationTokenService } from './verification-token.service';
 
-const POLL_INTERVAL_MS = 30_000;
 const LEASE_SECONDS = 120;
 const BATCH_SIZE = 20;
-const MAX_BACKOFF_SECONDS = 30 * 60;
-/** Tiempo máximo que se insiste con un mensaje; después se abandona. */
-const RETRY_HORIZON_MS = 24 * 60 * 60 * 1000;
 /** Si al token le queda menos que esto, se emite uno nuevo antes de enviar. */
 const TOKEN_RENEWAL_MARGIN_MS = 60_000;
 
@@ -37,7 +34,7 @@ export class EmailOutboxService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
-    this.timer = setInterval(() => void this.dispatchDue(), POLL_INTERVAL_MS);
+    this.timer = setInterval(() => void this.dispatchDue(), OUTBOX_POLL_INTERVAL_MS);
     this.timer.unref();
   }
 
@@ -104,7 +101,7 @@ export class EmailOutboxService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async send(message: OutboxMessage): Promise<void> {
-    if (this.horizonPassed(message, Date.now())) {
+    if (outboxHorizonPassed(message.createdAt, Date.now())) {
       await this.outbox.markExpired(message.id);
       this.logger.warn(`Mensaje ${message.id} abandonado: 24 h sin poder enviarse`);
       return;
@@ -159,19 +156,15 @@ export class EmailOutboxService implements OnModuleInit, OnModuleDestroy {
 
   private async scheduleRetry(message: OutboxMessage, errorName: string): Promise<void> {
     const attempts = message.attempts + 1;
-    const backoffSeconds = Math.min(60 * 2 ** attempts, MAX_BACKOFF_SECONDS);
+    const backoffSeconds = outboxBackoffSeconds(attempts);
     const nextAttemptAt = new Date(Date.now() + backoffSeconds * 1000);
 
-    if (this.horizonPassed(message, nextAttemptAt.getTime())) {
+    if (outboxHorizonPassed(message.createdAt, nextAttemptAt.getTime())) {
       await this.outbox.markExpired(message.id);
       this.logger.warn(`Mensaje ${message.id} abandonado tras ${attempts} intentos fallidos en 24 h`);
       return;
     }
     await this.outbox.markFailed(message.id, { attempts, nextAttemptAt, lastError: errorName });
     this.logger.error(`Fallo al enviar el mensaje ${message.id} (intento ${attempts}): ${errorName}`);
-  }
-
-  private horizonPassed(message: OutboxMessage, at: number): boolean {
-    return message.createdAt.getTime() + RETRY_HORIZON_MS <= at;
   }
 }
