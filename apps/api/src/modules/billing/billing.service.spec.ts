@@ -157,23 +157,31 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
       expect(result.id).toBe('existing-sub-id');
     });
 
-    it('Escenario 7 (Atomicidad): si falla la escritura de la operación, revierte la creación de la suscripción', async () => {
-      const mockManager = {
-        findOne: jest.fn().mockImplementation((_entity, options) => {
-          if (options?.where?.name === 'Demo') return Promise.resolve(mockDemoPlan);
-          if (options?.where?.status === SubscriptionStatus.ACTIVE) return Promise.resolve(null);
-          return Promise.resolve(null);
-        }),
-        create: jest.fn((_cls, entity) => entity),
-        save: jest
-          .fn()
-          .mockResolvedValueOnce({ id: 'initial-sub-id', createdAt: new Date() })
-          .mockRejectedValueOnce(new Error('Fallo en billing_operation')),
-      };
+    it('Escenario 7 (Atomicidad): si falla la escritura de la operación, la suscripción no queda persistida', async () => {
+      const persisted: unknown[] = [];
+      (dataSource.transaction as jest.Mock).mockImplementation(async (callback: (m: unknown) => Promise<unknown>) => {
+        // Simula COMMIT/ROLLBACK: lo escrito solo se persiste si el callback de la transacción resuelve
+        const staged: unknown[] = [];
+        const mockManager = {
+          findOne: jest.fn().mockImplementation((_entity, options) => {
+            if (options?.where?.name === 'Demo') return Promise.resolve(mockDemoPlan);
+            return Promise.resolve(null);
+          }),
+          create: jest.fn((_cls, entity) => entity),
+          save: jest.fn(async (entity: { subscriptionId?: string }) => {
+            if (entity.subscriptionId) throw new Error('Fallo en billing_operation');
+            const saved = { id: 'initial-sub-id', createdAt: new Date(), ...entity };
+            staged.push(saved);
+            return saved;
+          }),
+        };
+        const result = await callback(mockManager);
+        persisted.push(...staged);
+        return result;
+      });
 
-      await expect(
-        service.provisionInitialSubscription('org-123', mockManager as never),
-      ).rejects.toThrow('Fallo en billing_operation');
+      await expect(service.provisionInitialSubscription('org-123')).rejects.toThrow('Fallo en billing_operation');
+      expect(persisted).toHaveLength(0);
     });
   });
 
@@ -314,7 +322,14 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
   });
 
   describe('6. Renovación de suscripción (renewSubscription — SPEC-302 Escenarios 1, 2, 3, 5 y 6)', () => {
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
     it('Escenario 1, 5 y 6: debe extender expiresAt en validityDays desde max(hoy, fin actual), conservar el mismo subscriptionId y registrar operación renewal con bloqueo pesimista', async () => {
+      // Fija "hoy" para que el resultado no dependa de la fecha real del sistema
+      jest.useFakeTimers({ now: new Date('2026-10-29T12:00:00.000Z') });
+
       const activeTeam: Subscription = {
         id: 'sub-team-active',
         organizationId: 'org-123',
