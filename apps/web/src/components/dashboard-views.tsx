@@ -1,7 +1,6 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { ApiError } from "@/lib/api/client";
@@ -24,7 +23,18 @@ function formatStorage(bytes: number) {
 
 function LocalDate() {
   const [date, setDate] = useState("");
-  useEffect(() => setDate(new Intl.DateTimeFormat("es-GT", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date())), []);
+  useEffect(() => {
+    queueMicrotask(() => {
+      setDate(
+        new Intl.DateTimeFormat("es-GT", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        }).format(new Date()),
+      );
+    });
+  }, []);
   return <>{date}</>;
 }
 
@@ -43,7 +53,7 @@ type LoadState = { status: "loading" } | { status: "error"; message: string } | 
 /** Dashboard conectado a GET /api/dashboard. Todas las cifras llegan de la API en bytes. */
 export function DashboardView() {
   const { session, failSession } = useSession();
-  const router = useRouter();
+  //const router = useRouter();
   const [load, setLoad] = useState<LoadState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
   const token = session?.accessToken;
@@ -95,8 +105,12 @@ function LiveDashboard({ data }: { data: DashboardResponse }) {
 export function DashboardDemoView({ variant = "standard" }: { variant?: DashboardVariant }) {
   const [state, setState] = useState<DemoState | null>(null);
   const [billing, setBilling] = useState<DemoSubscription | null>(null);
-  useEffect(() => { setState(readDemo()); }, []);
-  useEffect(() => { setBilling(readSubscription()); }, []);
+  useEffect(() => {
+    queueMicrotask(() => {
+      setState(readDemo());
+      setBilling(readSubscription());
+    });
+  }, []);
   const currentState = state ?? initialDemo;
   const emptyMode = variant === "empty";
   const quotaMode = variant === "quota";

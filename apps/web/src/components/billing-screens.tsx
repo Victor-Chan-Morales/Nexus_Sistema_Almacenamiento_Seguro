@@ -5,14 +5,16 @@ import { useCallback, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { ApiError } from "@/lib/api/client";
-import { activateSubscription, getPlans } from "@/lib/api/billing";
+import { activateSubscription, getBillingOperations, getPlans, renewSubscription } from "@/lib/api/billing";
 import { getDashboard } from "@/lib/api/dashboard";
-import type { ActivateSubscriptionResponse, DashboardResponse, Plan } from "@/lib/api/types";
-import { formatBytes, formatIsoDate, usagePercent } from "@/lib/format";
+import type { ActivateSubscriptionResponse, BillingOperationsResponse, DashboardResponse, Plan } from "@/lib/api/types";
+import { formatBytes, formatIsoDate, formatUsd, isExpired, usagePercent } from "@/lib/format";
 import { RequireSession, useSession } from "@/lib/session";
 import { useLoad } from "@/lib/use-load";
 import { Brand } from "@/components/brand";
 import { UiIcon } from "@/components/ui-icon";
+
+
 
 function BillingFrame({ title, subtitle, children, wide = false }: { title: string; subtitle: string; children: React.ReactNode; wide?: boolean }) {
   return <main className="billing-page"><Link className="billing-logo-link" href="/" aria-label="Nexus, página principal"><Brand /></Link><section className={`billing-card ${wide ? "billing-card-wide" : ""}`}><header className="billing-heading"><h1>{title}</h1><p>{subtitle}</p></header>{children}</section></main>;
@@ -142,29 +144,256 @@ export function ContractFailure() {
   return <Suspense fallback={null}><FailureContent /></Suspense>;
 }
 
+export function BillingHistoryTable({ token }: { token?: string }) {
+  const fetcher = useCallback(
+    (signal: AbortSignal) => getBillingOperations(token ?? "", { signal }),
+    [token],
+  );
+  const { state, reload } = useLoad<BillingOperationsResponse>(
+    fetcher,
+    Boolean(token),
+    "No pudimos cargar el historial de facturación. Inténtalo de nuevo.",
+  );
+
+  return (
+    <section className="billing-history-section" aria-label="Historial de operaciones">
+      <h2 style={{ fontSize: "1.1rem", fontWeight: 600, marginTop: "2rem", marginBottom: "1rem" }}>
+        Historial de operaciones
+      </h2>
+      {state.status === "loading" && (
+        <p className="billing-reference-note" role="status">
+          Cargando historial…
+        </p>
+      )}
+      {state.status === "error" && (
+        <Notice
+          title="No se pudo cargar el historial"
+          message={state.message}
+          onRetry={reload}
+        />
+      )}
+      {state.status === "ready" &&
+        (state.data.items.length === 0 ? (
+          <p className="billing-reference-note">Aún no hay movimientos</p>
+        ) : (
+          <div className="billing-table-wrapper" style={{ overflowX: "auto" }}>
+            <table
+              className="billing-table"
+              style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}
+            >
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--border-color, #e2e8f0)" }}>
+                  <th style={{ padding: "8px 12px" }}>Fecha</th>
+                  <th style={{ padding: "8px 12px" }}>Plan</th>
+                  <th style={{ padding: "8px 12px" }}>Tipo</th>
+                  <th style={{ padding: "8px 12px" }}>Importe</th>
+                  <th style={{ padding: "8px 12px" }}>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {state.data.items.map((op) => (
+                  <tr
+                    key={op.id}
+                    style={{ borderBottom: "1px solid var(--border-color, #f1f5f9)" }}
+                  >
+                    <td style={{ padding: "8px 12px" }}>{formatIsoDate(op.occurredAt)}</td>
+                    <td style={{ padding: "8px 12px" }}>{op.planName}</td>
+                    <td style={{ padding: "8px 12px" }}>
+                      {op.type === "renewal" ? "Renovación" : "Cobro"}
+                    </td>
+                    <td style={{ padding: "8px 12px" }}>{formatUsd(op.amount)}</td>
+                    <td style={{ padding: "8px 12px" }}>
+                      <span
+                        className="badge"
+                        style={{
+                          fontSize: "0.75rem",
+                          padding: "2px 8px",
+                          borderRadius: "9999px",
+                          background: "#f1f5f9",
+                          color: "#475569",
+                        }}
+                      >
+                        Simulado
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+    </section>
+  );
+}
+
 function CurrentSubscriptionContent() {
   const { session } = useSession();
   const token = session?.accessToken;
-  const fetcher = useCallback((signal: AbortSignal) => getDashboard(token ?? "", { signal }), [token]);
-  const { state, reload } = useLoad<DashboardResponse>(fetcher, Boolean(token), "No pudimos cargar tu suscripción. Inténtalo de nuevo.");
+  const isAdmin = session?.role === "tenant_admin";
+  const fetcher = useCallback(
+    (signal: AbortSignal) => getDashboard(token ?? "", { signal }),
+    [token],
+  );
+  const { state, reload } = useLoad<DashboardResponse>(
+    fetcher,
+    Boolean(token),
+    "No pudimos cargar tu suscripción. Inténtalo de nuevo.",
+  );
+  const [historyKey, setHistoryKey] = useState(0);
 
-  return <BillingFrame wide title="Tu suscripción" subtitle="Consulta los detalles de tu plan actual.">
-    {state.status === "loading" && <p className="billing-reference-note" role="status">Cargando suscripción…</p>}
-    {state.status === "error" && <Notice title="No se pudo cargar la suscripción" message={state.message} onRetry={reload} />}
-    {state.status === "ready" && (state.data.plan ? <ActiveSubscription data={state.data} plan={state.data.plan} /> : <><div className="billing-error-box"><b>No hay un plan activo</b><p>Contrata un plan para definir el límite de almacenamiento de tu organización.</p></div><Link className="button button-primary billing-primary" href="/planes">Contratar un plan</Link></>)}
-  </BillingFrame>;
+  const handleRenewed = useCallback(() => {
+    reload();
+    setHistoryKey((k) => k + 1);
+  }, [reload]);
+
+  return (
+    <BillingFrame wide title="Tu suscripción" subtitle="Consulta los detalles de tu plan actual.">
+      {state.status === "loading" && (
+        <p className="billing-reference-note" role="status">
+          Cargando suscripción…
+        </p>
+      )}
+      {state.status === "error" && (
+        <Notice
+          title="No se pudo cargar la suscripción"
+          message={state.message}
+          onRetry={reload}
+        />
+      )}
+      {state.status === "ready" &&
+        (state.data.plan ? (
+          <ActiveSubscription
+            data={state.data}
+            plan={state.data.plan}
+            isAdmin={isAdmin}
+            token={token}
+            onRenewed={handleRenewed}
+            historyKey={historyKey}
+          />
+        ) : (
+          <>
+            <div className="billing-error-box">
+              <b>No hay un plan activo</b>
+              <p>Contrata un plan para definir el límite de almacenamiento de tu organización.</p>
+            </div>
+            {isAdmin ? (
+              <Link className="button button-primary billing-primary" href="/planes">
+                Contratar un plan
+              </Link>
+            ) : (
+              <p className="billing-reference-note" style={{ marginTop: "1rem" }}>
+                Solo los administradores gestionan la suscripción
+              </p>
+            )}
+          </>
+        ))}
+    </BillingFrame>
+  );
 }
 
-function ActiveSubscription({ data, plan }: { data: DashboardResponse; plan: NonNullable<DashboardResponse["plan"]> }) {
-  const expired = plan.expiresAt ? new Date(plan.expiresAt).getTime() < Date.now() : false;
+function ActiveSubscription({
+  data,
+  plan,
+  isAdmin,
+  token,
+  onRenewed,
+  historyKey,
+}: {
+  data: DashboardResponse;
+  plan: NonNullable<DashboardResponse["plan"]>;
+  isAdmin: boolean;
+  token?: string;
+  onRenewed: () => void;
+  historyKey: number;
+}) {
+  const expired = isExpired(plan.expiresAt);
   const pct = usagePercent(data.storageUsedBytes, data.storageLimitBytes);
-  return <>
-    <div className="billing-status"><span className="status-dot" /> {expired ? "Vencida" : "Activo"}</div>
-    <BillingRows rows={[["Plan actual", plan.name], ["Estado", expired ? "Vencida" : "Activo"], ["Vencimiento", formatIsoDate(plan.expiresAt)], ["Espacio incluido", formatBytes(plan.storageLimitBytes)], ["Espacio utilizado", formatBytes(data.storageUsedBytes)], ["Límite de usuarios", `Hasta ${plan.userLimit}`]]} />
-    <div className="billing-progress"><span style={{ width: `${pct}%` }} /></div><p className="billing-progress-label">{formatBytes(data.storageUsedBytes)} de {formatBytes(data.storageLimitBytes)} utilizados</p>
-    <div className="billing-actions"><Link className="button button-primary billing-primary" href="/planes">Contratar o cambiar de plan</Link></div>
-    <p className="billing-reference-note">Suscripción simulada: no hay cobros ni datos de tarjeta.</p>
-  </>;
+  const [renewing, setRenewing] = useState(false);
+  const [renewError, setRenewError] = useState<string | null>(null);
+
+  async function handleRenew() {
+    if (!token || renewing) return;
+    setRenewing(true);
+    setRenewError(null);
+    try {
+      await renewSubscription(token);
+      onRenewed();
+    } catch (err: unknown) {
+      const apiError = err instanceof ApiError ? err : null;
+      const code = apiError?.code;
+      if (code === "PLAN_NOT_RENEWABLE") {
+        setRenewError("Este plan no admite renovación.");
+      } else if (code === "NO_ACTIVE_SUBSCRIPTION") {
+        setRenewError("No hay una suscripción activa para renovar.");
+      } else if (err instanceof Error) {
+        setRenewError(err.message);
+      } else {
+        setRenewError("No se pudo renovar la suscripción.");
+      }
+    } finally {
+      setRenewing(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="billing-status">
+        <span className="status-dot" /> {expired ? "Vencida" : "Activo"}
+      </div>
+      <BillingRows
+        rows={[
+          ["Plan actual", plan.name],
+          ["Estado", expired ? "Vencida" : "Activo"],
+          ["Vencimiento", formatIsoDate(plan.expiresAt)],
+          ["Espacio incluido", formatBytes(plan.storageLimitBytes)],
+          ["Espacio utilizado", formatBytes(data.storageUsedBytes)],
+          ["Límite de usuarios", `Hasta ${plan.userLimit}`],
+        ]}
+      />
+      <div className="billing-progress">
+        <span style={{ width: `${pct}%` }} />
+      </div>
+      <p className="billing-progress-label">
+        {formatBytes(data.storageUsedBytes)} de {formatBytes(data.storageLimitBytes)} utilizados
+      </p>
+
+      {isAdmin ? (
+        <>
+          <div className="billing-actions">
+            <Link className="button button-primary billing-primary" href="/planes">
+              Contratar o cambiar de plan
+            </Link>
+            {plan.expiresAt && (
+              <button
+                type="button"
+                className="button button-secondary"
+                onClick={handleRenew}
+                disabled={renewing}
+              >
+                {renewing ? "Renovando…" : "Renovar"}
+              </button>
+            )}
+          </div>
+          {renewError && (
+            <Notice title="No se pudo renovar la suscripción" message={renewError} />
+          )}
+          <p className="billing-reference-note">
+            Suscripción simulada: no hay cobros ni datos de tarjeta.
+          </p>
+          <BillingHistoryTable key={historyKey} token={token} />
+        </>
+      ) : (
+        <>
+          <p className="billing-reference-note" style={{ marginTop: "1rem", fontWeight: 500 }}>
+            Solo los administradores gestionan la suscripción
+          </p>
+          <p className="billing-reference-note">
+            Suscripción simulada: no hay cobros ni datos de tarjeta.
+          </p>
+        </>
+      )}
+    </>
+  );
 }
 
 export function CurrentSubscription() {
