@@ -2,9 +2,14 @@
 
 - **Requisito del Sistema:** RF-012 (Consulta de Bitácora Inmutable)
 - **Ruta implementada:** `GET /api/audit/events`
+- **Contrato:** `CONTRACTS.md` v0.5 (`{ events: [...], nextBefore }`)
+- **Módulo:** `apps/api/src/modules/audit`
+- **Dueño del Módulo:** Anthony (Responsable: Miguel, ver `docs/equipo/asignaciones.md`)
+- **Autor:** René Montenegro (@rmonteblack)
+- **Aprobador Requerido:** @Victor-Chan-Morales (Coordinador General)
 - **Rama:** `feat/402-consulta-auditoria`
 - **Fecha de validación:** 30 de octubre de 2026
-- **Estado:** Aprobado para Merge (Ready for Review)
+- **Estado:** Listo para Revisión (Pendiente de Aprobación del Coordinador)
 
 ---
 
@@ -12,21 +17,21 @@
 
 | Escenario | Criterio de la Spec | Estado | Componente Validador |
 |---|---|:---:|---|
-| **Escenario 1** | Primera página en orden descendente, contrato público sin datos internos y `nextBefore = null` al no superar el límite. | **PASS** | `audit.service.spec.ts` |
-| **Escenario 2** | Paginación por cursor retornando `limit` elementos y asignando a `nextBefore` la fecha del último evento. | **PASS** | `audit.service.spec.ts` |
-| **Escenario 3** | Validación estricta de parámetros (`limit` 1–100, default 50; `before` formato ISO-8601). Retorno 400 ante valores inválidos. | **PASS** | `audit.controller.spec.ts` / DTO |
+| **Escenario 1** | Primera página en orden descendente, contrato público sin datos internos (`events`) y `nextBefore = null` al no superar el límite. | **PASS** | `audit.service.spec.ts` |
+| **Escenario 2** | Paginación por cursor retornando `limit` elementos y asignando a `nextBefore` la fecha ISO del último evento. | **PASS** | `audit.service.spec.ts` |
+| **Escenario 3** | Validación estricta de parámetros (`limit` 1–100, default 50; `before` formato ISO-8601). Retorno 400 ante valores inválidos. | **PASS** | `audit.controller.spec.ts` (validación de DTO con `class-validator`) |
 | **Escenario 4** | Aislamiento multi-tenant estricto mediante filtrado obligatorio por `organizationId` de la sesión JWT. | **PASS** | `audit.service.spec.ts` |
-| **Escenario 5** | Control de acceso restringido con exclusividad al rol `tenant_admin` mediante `@Roles` y `RolesGuard`. Retorno 403 ante otros roles. | **PASS** | `audit.controller.spec.ts` |
-| **Escenario 6** | Sanitización y exclusión categórica de metadatos criptográficos internos (`recordHash`, `prevHash`, `correlationId`, `safeReason`). | **PASS** | `audit.service.ts` |
+| **Escenario 5** | Control de acceso restringido con exclusividad al rol `tenant_admin`. | **PASS** | Metadatos `@Roles` verificados vía `Reflector` en `audit.controller.spec.ts`; rechazo HTTP 401 en vivo ante peticiones anónimas |
+| **Escenario 6** | Sanitización y exclusión categórica de metadatos criptográficos internos (`recordHash`, `prevHash`, `correlationId`, `safeReason`). | **PASS** | `audit.service.ts` / `audit.service.spec.ts` |
 
 ---
 
-## 2. Compilación y Calidad de Código
+## 2. Compilación y Configuración de Tipos
 
-- **Comprobación estricta de tipos:** `npx tsc --noEmit` finalizado con **0 errores**.
+- **Comprobación estricta de tipos:** `npx tsc --noEmit` ejecutado en `apps/api` finalizado con **0 errores**.
 - **Empaquetado de producción:** `nest build` completado satisfactoriamente en `dist/`.
-- **Tipado Jest:** Configurado formalmente en `apps/api/tsconfig.json` (`"types": ["node", "jest"]`).
-- **Registro en Módulo:** `AuditController` expuesto formalmente en `AuditModule.controllers`.
+- **Justificación de `apps/api/tsconfig.json`:** Se incluyó `"types": ["node", "jest"]` para que el compilador resuelva las declaraciones globales de pruebas (`jest`, `describe`, `expect`) en los archivos `*.spec.ts` dentro de `src/`, manteniendo la configuración sin espacios ni líneas sobrantes.
+- **Registro en Módulo:** `AuditController` registrado formalmente en `AuditModule.controllers`.
 
 ---
 
@@ -34,16 +39,20 @@
 
 Servidor ejecutándose en `http://localhost:3001/api`:
 
-- **Intento de acceso sin JWT:** Retorna HTTP `401 Unauthorized` (Bloqueado por `AuthGuard('jwt')`).
-- **Petición con límite no permitido (`limit=150`):** Rechazado por DTO (`Max(100)`).
-- **Petición con cursor corrupto (`before=formato-invalido`):** Rechazado por DTO (`IsISO8601`).
+- **Petición sin cabecera de autenticación (`GET /api/audit/events`):** Retorna HTTP `401 Unauthorized` interceptado por `AuthGuard('jwt')`.
+- **Petición con límite excedido (`limit=150`):** Rechazada por el DTO mediante `Max(100)` con HTTP `400 Bad Request`.
+- **Petición con cursor inválido (`before=fecha-invalida`):** Rechazada por el DTO mediante `IsISO8601()` con HTTP `400 Bad Request`.
 
 ---
 
-## 4. Evidencia de Ejecución de Suites de Pruebas
+## 4. Evidencia de Ejecución de Suites de Pruebas Automatizadas
 
-### A. Suites del Dominio de Auditoría (76 pruebas en verde)
+### A. Dominio de Auditoría (`apps/api`) — 61 pruebas unitarias en verde
+*(Se removió el bloque duplicado `computeRecordHash` en `audit.service.spec.ts`, estabilizando el total real del módulo en 61 pruebas).*
+
 ```text
+PASS src/modules/audit/audit-error-code.spec.ts
+PASS src/modules/audit/audit-outbox.service.spec.ts
 PASS src/modules/audit/audit.service.spec.ts
   AuditService — Pruebas unitarias del registro encadenado (SPEC-401)
     Escenario 1: registro de un evento
@@ -71,6 +80,22 @@ PASS src/modules/audit/audit.service.spec.ts
       √ Escenario 1: Devuelve eventos de la org en orden descendente con nextBefore = null si no supera el límite
       √ Escenario 2: Devuelve limit registros y nextBefore = occurredAt del último cuando hay más páginas
       √ Escenario 4: Aplica where organizationId aislando eventos de otros tenants
+  computeRecordHash
+    √ es determinista para los mismos campos
+    √ produce un SHA-256 hexadecimal de 64 caracteres
+    √ cambia cuando cambia prevHash
+    √ cambia cuando cambia chainSeq
+    √ cambia cuando cambia eventId
+    √ cambia cuando cambia organizationId
+    √ cambia cuando cambia actorId
+    √ cambia cuando cambia actionType
+    √ cambia cuando cambia resourceType
+    √ cambia cuando cambia resourceId
+    √ cambia cuando cambia safeReason
+    √ cambia cuando cambia correlationId
+    √ cambia cuando cambia occurredAt
+    √ no colisiona cuando un valor contiene el separador que usaba la versión anterior
+    √ trata prevHash nulo y vacío igual y distinto de un hash real
 
 PASS src/modules/audit/audit.controller.spec.ts
   AuditController (SPEC-402)
@@ -82,29 +107,5 @@ PASS src/modules/audit/audit.controller.spec.ts
       √ falla validación si limit es menor a 1, mayor a 100 o before no es ISO
 
 Test Suites: 4 passed, 4 total
-Tests:       76 passed, 76 total
+Tests:       61 passed, 61 total
 Snapshots:   0 total
-Time:        24.469 s
-
-```
-
-### B. Suite Global del Sistema (No Regresión)
-
-```text
-Test Suites: 17 passed, 17 total
-Tests:       173 passed, 173 total
-Snapshots:   0 total
-Time:        152.079 s
-
-```
-
----
-
-## 5. Estado de la Base de Datos Local
-
-* Contenedores Docker activos: `nexus-postgres-dev`, `nexus-seaweedfs-dev`, `nexus-mailpit-dev`.
-* Migraciones aplicadas: 22/22 (incluyendo `20261029100000_create_audit_outbox.sql` y `20261029110000_add_audit_outbox_lease.sql`).
-* Servicio de outbox en background: Ejecución periódica limpia sin excepciones `42P01` (`undefined_table`).
-'@
-
-```

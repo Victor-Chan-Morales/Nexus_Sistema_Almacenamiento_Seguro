@@ -7,24 +7,26 @@ export class ListAuditEventsQueryDto {
   @IsInt()
   @Min(1)
   @Max(100)
-  limit: number = 50;
+  limit?: number = 50;
 
   @IsOptional()
   @IsISO8601()
   before?: string;
 }
 
-export class AuditEventItemDto {
-  id!: string;
-  action!: string;
-  resourceType!: string | null;
-  resourceId!: string | null;
-  actorId!: string | null;
-  result!: string;
-  occurredAt!: string;
+export class AuditEventResponseDto {
+  id: string;
+  action: string;
+  resourceType: string | null;
+  resourceId: string | null;
+  actorId: string;
+  result: string;
+  occurredAt: string;
 }
 
 export class AuditEventsResponseDto {
-  items!: AuditEventItemDto[];
-  nextBefore!: string | null;
+  events: AuditEventResponseDto[];
+  nextBefore: string | null;
 }
+
+export type PaginatedAuditEventsResponseDto = AuditEventsResponseDto;

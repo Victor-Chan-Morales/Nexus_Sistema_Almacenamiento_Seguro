@@ -6,6 +6,7 @@ import { errorCode, isPermanentError } from './audit-error-code';
 import { AuditOutboxService } from './audit-outbox.service';
 import { AuditEventInput } from './audit.types';
 import {
+  AuditEventResponseDto,
   AuditEventsResponseDto,
   ListAuditEventsQueryDto,
 } from './dto/list-audit-events.dto';
@@ -65,14 +66,13 @@ export class AuditService {
    * SPEC-402: Consulta de eventos de auditoría por cursor para tenant_admin.
    * Filtra por organización y fecha previa si se especifica cursor 'before'.
    */
-  async listEvents(
+async listEvents(
     organizationId: string,
     query: ListAuditEventsQueryDto,
   ): Promise<AuditEventsResponseDto> {
     const limit = query.limit ?? 50;
-    const repo = this.dataSource.getRepository(AuditEvent);
-
-    const qb = repo
+    const qb = this.dataSource
+      .getRepository(AuditEvent)
       .createQueryBuilder('event')
       .where('event.organizationId = :organizationId', { organizationId })
       .orderBy('event.occurredAt', 'DESC')
@@ -85,32 +85,31 @@ export class AuditService {
       });
     }
 
-    const events = await qb.getMany();
-    const hasMore = events.length > limit;
-    const itemsToReturn = hasMore ? events.slice(0, limit) : events;
+    const rows = await qb.getMany();
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
 
-    const nextBefore =
-      hasMore && itemsToReturn.length > 0
-        ? new Date(
-            itemsToReturn[itemsToReturn.length - 1].occurredAt,
-          ).toISOString()
-        : null;
-
-    const items = itemsToReturn.map((event) => ({
-      id: event.eventId,
-      action: event.actionType,
-      resourceType: event.resourceType,
-      resourceId: event.resourceId,
-      actorId: event.actorId,
-      result: event.result,
+    const events: AuditEventResponseDto[] = pageRows.map((e) => ({
+      id: e.eventId,
+      action: e.actionType,
+      resourceType: e.resourceType ?? null,
+      resourceId: e.resourceId ?? null,
+      actorId: e.actorId,
+      result: e.result,
       occurredAt:
-        event.occurredAt instanceof Date
-          ? event.occurredAt.toISOString()
-          : new Date(event.occurredAt).toISOString(),
+        e.occurredAt instanceof Date
+          ? e.occurredAt.toISOString()
+          : new Date(e.occurredAt).toISOString(),
     }));
 
+    const nextBefore = hasMore
+      ? pageRows[pageRows.length - 1].occurredAt instanceof Date
+        ? pageRows[pageRows.length - 1].occurredAt.toISOString()
+        : new Date(pageRows[pageRows.length - 1].occurredAt).toISOString()
+      : null;
+
     return {
-      items,
+      events,
       nextBefore,
     };
   }

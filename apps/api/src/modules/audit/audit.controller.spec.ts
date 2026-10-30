@@ -23,7 +23,7 @@ describe('AuditController (SPEC-402)', () => {
           useValue: {
             listEvents: jest
               .fn()
-              .mockResolvedValue({ items: [], nextBefore: null }),
+              .mockResolvedValue({ events: [], nextBefore: null }),
           },
         },
         Reflector,
