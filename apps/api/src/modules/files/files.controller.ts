@@ -18,6 +18,9 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { pipeline } from 'stream/promises';
 import { FilesService } from './files.service';
+import { TrashResponseDto } from './dto/trash.dto';
+import { CurrentUser } from '../iam/decorators/current-user.decorator';
+import { AuthUser } from '../iam/interfaces/auth-user.interface';
 
 /**
  * FoldersController (/folders)
@@ -70,6 +73,15 @@ export class FoldersController {
 @UseGuards(AuthGuard('jwt'))
 export class FilesController {
   constructor(private readonly filesService: FilesService) {}
+
+  /**
+   * SPEC-202: Listado de archivos en papelera para el Drive personal del solicitante.
+   * Se ubica antes de rutas dinámicas con :id para evitar colisiones de enrutamiento.
+   */
+  @Get('trash')
+  async getTrash(@CurrentUser() user: AuthUser): Promise<TrashResponseDto> {
+    return this.filesService.listTrash(user.organizationId, user.userId);
+  }
 
   @Get()
   async listFiles(@Request() req: any, @Query('folderId') folderId?: string) {

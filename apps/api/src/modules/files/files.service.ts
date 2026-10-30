@@ -26,10 +26,13 @@ import { TenantEncryptionKey } from './entities/tenant-encryption-key.entity';
 import { TenantQuota } from './entities/tenant-quota.entity';
 import { Upload } from './entities/upload.entity';
 import { EncryptedFile, FilesCryptoService } from './files-crypto.service';
+import { TrashItemDto, TrashResponseDto } from './dto/trash.dto';
 
 const MAX_FILE_SIZE_BYTES = 100_000_000;
 const MAX_ACTIVE_UPLOADS_PER_USER = 3;
 const RESERVATION_TTL_MS = 24 * 60 * 60 * 1000;
+/** Días en papelera tras los que un archivo eliminado deja de contar para la cuota (SPEC-202). */
+const TRASH_RETENTION_DAYS = 30;
 
 const ALLOWED_MIME_BY_EXT: Record<string, string[]> = {
   '.pdf': ['application/pdf'],
@@ -97,6 +100,57 @@ export class FilesService {
     return this.dataSource.transaction((manager) =>
       this.ensureUserDrive(manager, organizationId, userId),
     );
+  }
+
+  /**
+   * SPEC-202: Listado de archivos en papelera para el Drive personal del solicitante.
+   */
+  async listTrash(organizationId: string, userId: string): Promise<TrashResponseDto> {
+    // 1. Buscar el Drive personal sin crearlo: un GET no debe escribir
+    const drive = await this.dataSource.getRepository(Drive).findOne({
+      where: { organizationId, ownerUserId: userId, teamId: IsNull(), type: 'personal' },
+      order: { createdAt: 'ASC' },
+    });
+
+    if (!drive) {
+      return { items: [], totalItems: 0 };
+    }
+
+    // 2. Archivos borrados lógicamente del Drive del solicitante, con su versión vigente en la misma consulta
+    const [files, totalItems] = (await this.fileRepository
+      .createQueryBuilder('file')
+      .innerJoin('file.folder', 'folder')
+      .leftJoinAndMapOne('file.currentVersion', FileVersion, 'version', 'version.id = file.currentVersionId')
+      .where('file.organizationId = :organizationId', { organizationId })
+      .andWhere('folder.driveId = :driveId', { driveId: drive.id })
+      .andWhere('file.isDeleted = :isDeleted', { isDeleted: true })
+      .andWhere('file.deletedAt IS NOT NULL')
+      .orderBy('file.deletedAt', 'DESC')
+      .addOrderBy('file.id', 'ASC')
+      .take(500)
+      .getManyAndCount()) as [Array<FileRecord & { currentVersion: FileVersion | null }>, number];
+
+    // 3. Mapear DTOs calculando retentionEndsAt (deletedAt + 30 días)
+    const items: TrashItemDto[] = files.map((file) => {
+      const deletedDate = new Date(file.deletedAt as Date);
+      const retentionDate = new Date(deletedDate.getTime() + TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+
+      const sizeNum = file.currentVersion?.sizeBytes ? Number(file.currentVersion.sizeBytes) : 0;
+
+      return {
+        id: file.id,
+        name: file.name,
+        mimeType: file.mimeType || 'application/octet-stream',
+        sizeBytes: sizeNum,
+        deletedAt: deletedDate.toISOString(),
+        retentionEndsAt: retentionDate.toISOString(),
+      };
+    });
+
+    return {
+      items,
+      totalItems,
+    };
   }
 
   private async ensureUserDrive(
@@ -402,7 +456,7 @@ export class FilesService {
       'FROM files.file_version version ' +
       'INNER JOIN files.file file ON file.file_id = version.file_id ' +
       'WHERE file.organization_id = $1 ' +
-      "AND (file.is_deleted = false OR file.deleted_at > now() - interval '30 days')",
+      `AND (file.is_deleted = false OR file.deleted_at > now() - interval '${TRASH_RETENTION_DAYS} days')`,
       [organizationId],
     );
     return BigInt(rows[0]?.usedBytes ?? 0);
@@ -428,7 +482,7 @@ export class FilesService {
       'FROM files.file_version version ' +
       'INNER JOIN files.file file ON file.file_id = version.file_id ' +
       'WHERE file.organization_id = $1 ' +
-      "AND (file.is_deleted = false OR file.deleted_at > now() - interval '30 days')",
+      `AND (file.is_deleted = false OR file.deleted_at > now() - interval '${TRASH_RETENTION_DAYS} days')`,
       [organizationId],
     );
     const reservedRows = await manager.query(
