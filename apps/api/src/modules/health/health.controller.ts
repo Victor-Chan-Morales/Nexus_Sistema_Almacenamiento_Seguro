@@ -5,8 +5,8 @@ import { HealthCheck, HealthCheckService, TypeOrmHealthIndicator } from '@nestjs
  * HealthController — endpoint de verificación del sistema.
  *
  * GET /api/health
- * Devuelve el estado del API y de la conexión a PostgreSQL.
- * Útil para Docker healthchecks y monitoreo básico.
+ * Devuelve el estado de la conexión a PostgreSQL. No expone datos de auditoría: este endpoint no requiere
+ * autenticación. Útil para Docker healthchecks y monitoreo básico.
  */
 @Controller('health')
 export class HealthController {

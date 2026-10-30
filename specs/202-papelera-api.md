@@ -72,7 +72,7 @@ Pantalla en SPEC-205.
 
 ## 8. Diseño Técnico
 
-- `FilesService.listTrash(organizationId, userId): Promise<TrashResponseDto>`. Reutilizar el patrón de `softDelete`/`downloadFileStream` (`getOrCreateUserDrive` + join con `folder.driveId`) para acotar al Drive del solicitante.
+- `FilesService.listTrash(organizationId, userId): Promise<TrashResponseDto>`. Acotar al Drive personal del solicitante con `folder.driveId` (join de `file` ⋈ `folder`). El Drive se busca con `findOne` y **no se crea**: un GET no escribe; si no existe, responde vacío. La versión vigente se une en la misma consulta (`leftJoinAndMapOne` sobre `file.currentVersionId`) y `totalItems` sale de `getManyAndCount`.
 - Declarar `@Get('trash')` en `FilesController` **antes** de cualquier ruta con `:id`.
 - DTOs `TrashItemDto` y `TrashResponseDto` en `modules/files/dto/trash.dto.ts` (nunca la entidad). `sizeBytes` como número; fechas ISO.
 - `retentionEndsAt` lo calcula el servidor (no el cliente). Es informativo: la cuota ya excluye los archivos eliminados hace más de 30 días (`readStorageUsage`), pero **no hay purga automática**.
@@ -81,10 +81,10 @@ Pantalla en SPEC-205.
 
 ## 9. Plan de Tareas
 
-- [ ] **T1 (15 min)**: DTOs.
-- [ ] **T2 (25 min)**: `listTrash` con el join por Drive.
-- [ ] **T3 (10 min)**: ruta `GET /files/trash`.
-- [ ] **T4 (10 min)**: pruebas (escenarios 1–4).
+- [x] **T1 (15 min)**: DTOs.
+- [x] **T2 (25 min)**: `listTrash` con el join por Drive.
+- [x] **T3 (10 min)**: ruta `GET /files/trash`.
+- [x] **T4 (10 min)**: pruebas (escenarios 1–4).
 
 ---
 
@@ -92,7 +92,7 @@ Pantalla en SPEC-205.
 
 | Criterio | Tipo | Archivo |
 |---|---|---|
-| Escenarios 1–4 | Unitaria | `modules/files/files.service.spec.ts` (o `files.trash.spec.ts`) |
+| Escenarios 1–4 | Unitaria | `modules/files/files.trash.spec.ts` |
 
 ---
 
@@ -114,40 +114,4 @@ Ninguna.
 |---|---|---|
 | 2026-10-27 | Víctor Chán | Versión inicial. |
 | 2026-10-27 | Revisión | `is_deleted`/`deleted_at` en vez de `status`; solo archivos; acotado al Drive del solicitante (antes mostraba toda la organización); añadido `retentionEndsAt`. |
-
-
-
-### Resumen de Cambios — SPEC-202
-
-#### 1. Archivos Modificados y Creados
-
-* **`apps/api/src/modules/files/dto/trash.dto.ts`** *(Creado)*: Define `TrashItemDto` y `TrashResponseDto` con cálculo de retención a 30 días (`retentionEndsAt`) y tamaño numérico (`sizeBytes`).
-* **`apps/api/src/modules/files/files.service.ts`** *(Modificado)*: Implementa `listTrash(orgId, userId)` filtrando por Drive personal (`folder.driveId`), `is_deleted = true`, límite de 500 registros y resolución de versiones por `currentVersionId`.
-* **`apps/api/src/modules/files/files.controller.ts`** *(Modificado)*: Registra la ruta `@Get('trash')` protegida con `JwtAuthGuard` antes de las rutas con `:id`.
-* **`specs/202-papelera-api.md`** *(Actualizado)*: Tareas marcadas como completadas y registro de cambios cerrado.
-
-#### 2. Ajustes de Infraestructura
-
-* **PostgreSQL (Docker):** Configurado en el puerto `5434` (para evitar colisión con el puerto local de Windows/WSL) con usuario `nexus_dev`.
-* **Tabla `billing.plan`:** Actualizada en el contenedor con las columnas requeridas (`description`, `validity_days`, `price_monthly`, `storage_limit_gb`, `user_limit`) para permitir el arranque limpio de `BillingService`.
-
-#### 3. Evidencia de Validación
-
-* **Compilación:** `Found 0 errors` en TypeScript.
-* **Prueba Funcional (PowerShell):**
-```powershell
-# Invocación autenticada a la API local
-$trash = Invoke-RestMethod -Uri "http://localhost:3001/api/files/trash" -Method Get -Headers @{ Authorization = "Bearer $token" }
-$trash | ConvertTo-Json -Depth 5
-
-```
-
-
-* **Respuesta obtenida (200 OK):**
-```json
-{
-  "items": [],
-  "totalItems": 0
-}
-
-```
+| 2026-10-29 | Revisión PR #14 | Implementación entregada: DTOs, `listTrash`, ruta `GET /files/trash` y pruebas (`files.trash.spec.ts`). Se excluyen filas con `deleted_at` nulo, orden estable por `deleted_at DESC, id` y retención de 30 días como constante compartida con `readStorageUsage`. Correcciones: `listTrash` ya no crea el Drive personal, `totalItems` es el total real (no `items.length`) y la versión vigente va en la misma consulta. |

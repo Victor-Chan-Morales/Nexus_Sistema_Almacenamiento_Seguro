@@ -53,6 +53,11 @@ Escenario 4: Falla cerrada
   Dado un endpoint decorado con @Roles(...) y una request sin req.user o con un rol desconocido
   Entonces responde 403 FORBIDDEN_ROLE (nunca permite por defecto)
 
+Escenario 4b: Falla cerrada sin @Roles o con @Roles() vacío
+  Dado una request sin req.user en un endpoint sin @Roles
+  O un endpoint con @Roles() vacío (en el método o en la clase)
+  Entonces responde 403 FORBIDDEN_ROLE
+
 Escenario 5: Decorador de clase y de método
   Dado un controlador decorado a nivel de clase y un método con otro @Roles
   Entonces prevalece el decorador del método
@@ -101,27 +106,28 @@ export class RolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
+    // El decorador del método prevalece sobre el de la clase.
     const required = this.reflector.getAllAndOverride<Role[] | undefined>(ROLES_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
-    if (!required || required.length === 0) return true;
 
     const { user } = context.switchToHttp().getRequest<{ user?: AuthUser }>();
-    if (!user || !required.includes(user.role as Role)) {
-      throw new ForbiddenException({
-        code: 'FORBIDDEN_ROLE',
-        message: 'Tu rol no tiene permiso para esta acción.',
-      });
-    }
+    if (!user) throw IamErrors.forbiddenRole();
+    if (required === undefined) return true;
+
+    // Un @Roles() vacío no concede acceso a nadie: [] no contiene ningún rol.
+    if (!Array.isArray(required) || !required.includes(user.role)) throw IamErrors.forbiddenRole();
     return true;
   }
 }
 ```
 
 - **Uso:** `@UseGuards(AuthGuard('jwt'), RolesGuard)` — el guard JWT va primero porque `RolesGuard` lee `req.user`.
-- **Tipos:** el parámetro de `@Roles` es el enum `Role` (no `string`): un error de escritura como `'collaborator'` no compila.
-- **Exportación:** registrar `RolesGuard` en `providers` y `exports` de `IamModule`.
+- **Tipos:** el parámetro de `@Roles` es el enum `Role` (no `string`): un error de escritura como `'collaborator'` no compila. `AuthUser.role` ya es `Role`, así que no hace falta cast.
+- **Errores:** `IamErrors.forbiddenRole()` en `iam.errors.ts`, junto al resto de errores de IAM.
+- **Falla cerrada:** sin `req.user` responde 403 aunque el endpoint no tenga `@Roles`. Un `@Roles()` vacío deniega a todos (no anula la restricción de la clase) y unos metadatos que no son array también se rechazan (evita que `includes` haga una búsqueda por subcadena sobre un string).
+- **Registro:** `RolesGuard` **no** se registra en `providers` ni `exports` de `IamModule`. Al usarse en `@UseGuards(...)`, Nest lo instancia en el módulo del controlador y `Reflector` está disponible globalmente; basta con importar la clase.
 - **Auditoría:** no registra evento.
 - **Riesgos:** (a) olvidar `AuthGuard` antes que `RolesGuard` → siempre 403 (falla cerrada, detectable en pruebas); (b) `@Roles` en un endpoint sin sesión → 403, no 401.
 
@@ -132,7 +138,7 @@ export class RolesGuard implements CanActivate {
 - [ ] **T1 (20 min)**: `roles.decorator.ts` con `ROLES_KEY` y `Roles(...roles: Role[])`.
 - [ ] **T2 (40 min)**: `roles.guard.ts` según la firma anterior.
 - [ ] **T3 (50 min)**: `roles.guard.spec.ts` con los 5 escenarios (con `Reflector` y `ExecutionContext` simulados).
-- [ ] **T4 (10 min)**: registrar y exportar `RolesGuard` en `IamModule`.
+- [ ] ~~**T4 (10 min)**: registrar y exportar `RolesGuard` en `IamModule`.~~ Descartada: no es necesario (ver §8, "Registro").
 
 ---
 
@@ -140,7 +146,7 @@ export class RolesGuard implements CanActivate {
 
 | Criterio | Tipo | Archivo |
 |---|---|---|
-| Escenarios 1–5 | Unitaria | `modules/iam/guards/roles.guard.spec.ts` |
+| Escenarios 1–5 y 4b | Unitaria | `modules/iam/guards/roles.guard.spec.ts` |
 
 ---
 
@@ -163,3 +169,4 @@ Ninguna. Decisiones de rol y matriz: ADR-007 §3 y §4.
 |---|---|---|
 | 2026-10-27 | Víctor Chán | Versión inicial. |
 | 2026-10-27 | Revisión | Rol `colaborador`; sin `auditor`/`super_admin`; el 403 no devuelve `requiredRoles`; sin decorar endpoints ajenos; falla cerrada; tipado con el enum `Role`. |
+| 2026-10-29 | Víctor Chán | Ajuste tras la revisión de la PR #15: sin `req.user` el guard deniega también sin `@Roles`; `@Roles()` vacío deniega a todos; se rechazan metadatos que no son array; se quita el cast `as Role`; error centralizado en `IamErrors.forbiddenRole()`; se descarta T4 (registrar en `IamModule`). Nuevo escenario 4b. |

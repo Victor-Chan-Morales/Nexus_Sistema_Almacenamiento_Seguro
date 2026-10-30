@@ -10,6 +10,7 @@ import { StorageModule } from './modules/storage/storage.module';
 import { HealthModule } from './modules/health/health.module';
 import { IntegrationModule } from './modules/integration/integration.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { AuditModule } from './modules/audit/audit.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     HealthModule,      // Salud: endpoint /api/health para verificar el sistema
     IntegrationModule, // Integración: SubscriptionCoordinator entre Billing y Files
     DashboardModule,   // Integración: GET /api/dashboard (plan + uso + organización)
+    AuditModule,       // Auditoría: AuditService.logEvent (global, SPEC-401)
   ],
 })
 export class AppModule {}
