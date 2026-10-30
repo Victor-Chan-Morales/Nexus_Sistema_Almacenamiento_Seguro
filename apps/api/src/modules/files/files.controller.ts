@@ -12,34 +12,38 @@ import {
   UploadedFile,
   Headers,
   Res,
-} from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { Response } from 'express';
-import { pipeline } from 'stream/promises';
-import { FilesService } from './files.service';
-import { TrashResponseDto } from './dto/trash.dto';
-import { CurrentUser } from '../iam/decorators/current-user.decorator';
-import { AuthUser } from '../iam/interfaces/auth-user.interface';
+} from "@nestjs/common";
+import { AuthGuard } from "@nestjs/passport";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { Response } from "express";
+import { pipeline } from "stream/promises";
+import { FilesService } from "./files.service";
+import { TrashResponseDto } from "./dto/trash.dto";
+import { CurrentUser } from "../iam/decorators/current-user.decorator";
+import { AuthUser } from "../iam/interfaces/auth-user.interface";
 
 /**
  * FoldersController (/folders)
  * Contrato canónico de navegación de carpetas según CONTRACTS.md v0.3
  */
-@Controller('folders')
-@UseGuards(AuthGuard('jwt'))
+@Controller("folders")
+@UseGuards(AuthGuard("jwt"))
 export class FoldersController {
   constructor(private readonly filesService: FilesService) {}
 
   @Get()
   async listFolders(
     @Request() req: any,
-    @Query('parentId') parentId?: string,
-    @Query('parentFolderId') parentFolderId?: string,
+    @Query("parentId") parentId?: string,
+    @Query("parentFolderId") parentFolderId?: string,
   ) {
     const orgId = req.user.organizationId;
     const userId = req.user.userId || req.user.id;
-    return this.filesService.listFolders(orgId, userId, parentId || parentFolderId);
+    return this.filesService.listFolders(
+      orgId,
+      userId,
+      parentId || parentFolderId,
+    );
   }
 
   @Post()
@@ -57,8 +61,8 @@ export class FoldersController {
     );
   }
 
-  @Get(':id/items')
-  async getFolderItems(@Request() req: any, @Param('id') folderId: string) {
+  @Get(":id/items")
+  async getFolderItems(@Request() req: any, @Param("id") folderId: string) {
     const orgId = req.user.organizationId;
     const userId = req.user.userId || req.user.id;
     return this.filesService.getFolderItems(orgId, userId, folderId);
@@ -69,8 +73,8 @@ export class FoldersController {
  * FilesController (/files)
  * Contrato canónico de archivos según CONTRACTS.md v0.3
  */
-@Controller('files')
-@UseGuards(AuthGuard('jwt'))
+@Controller("files")
+@UseGuards(AuthGuard("jwt"))
 export class FilesController {
   constructor(private readonly filesService: FilesService) {}
 
@@ -78,28 +82,28 @@ export class FilesController {
    * SPEC-202: Listado de archivos en papelera para el Drive personal del solicitante.
    * Se ubica antes de rutas dinámicas con :id para evitar colisiones de enrutamiento.
    */
-  @Get('trash')
+  @Get("trash")
   async getTrash(@CurrentUser() user: AuthUser): Promise<TrashResponseDto> {
     return this.filesService.listTrash(user.organizationId, user.userId);
   }
 
   @Get()
-  async listFiles(@Request() req: any, @Query('folderId') folderId?: string) {
+  async listFiles(@Request() req: any, @Query("folderId") folderId?: string) {
     const orgId = req.user.organizationId;
     const userId = req.user.userId || req.user.id;
     return this.filesService.listFiles(orgId, userId, folderId);
   }
 
-  @Post('upload')
+  @Post("upload")
   @UseInterceptors(
-    FileInterceptor('file', {
+    FileInterceptor("file", {
       limits: { fileSize: 100000000 }, // 100,000,000 bytes exactos
     }),
   )
   async uploadFile(
     @UploadedFile() file: any,
-    @Body('folderId') folderId: string,
-    @Headers('Idempotency-Key') idempotencyKey: string,
+    @Body("folderId") folderId: string,
+    @Headers("Idempotency-Key") idempotencyKey: string,
     @Request() req: any,
   ) {
     const orgId = req.user.organizationId;
@@ -114,39 +118,45 @@ export class FilesController {
     });
   }
 
-  @Get(':id/download')
+  @Get(":id/download")
   async downloadFile(
     @Request() req: any,
-    @Param('id') fileId: string,
+    @Param("id") fileId: string,
     @Res() res: Response,
   ) {
     const orgId = req.user.organizationId;
-    const { stream, mimeType, name } = await this.filesService.downloadFileStream(
-      fileId,
-      orgId,
-      req.user.userId || req.user.id,
-    );
+    const { stream, mimeType, name } =
+      await this.filesService.downloadFileStream(
+        fileId,
+        orgId,
+        req.user.userId || req.user.id,
+      );
 
-    const safeFilename = name.replace(/[/\\?%*:|"<>]/g, '_');
+    const safeFilename = name.replace(/[/\\?%*:|"<>]/g, "_");
     const rfc5987Filename = encodeURIComponent(safeFilename);
 
     res.set({
-      'Content-Type': mimeType,
-      'Content-Disposition': `attachment; filename="${safeFilename}"; filename*=UTF-8''${rfc5987Filename}`,
-      'Access-Control-Expose-Headers': 'Content-Disposition',
+      "Content-Type": mimeType,
+      "Content-Disposition": `attachment; filename="${safeFilename}"; filename*=UTF-8''${rfc5987Filename}`,
+      "Access-Control-Expose-Headers": "Content-Disposition",
     });
 
     try {
       await pipeline(stream, res);
     } catch {
       if (!res.headersSent) {
-        res.status(500).json({ statusCode: 500, message: 'Error en la transmisión del archivo' });
+        res
+          .status(500)
+          .json({
+            statusCode: 500,
+            message: "Error en la transmisión del archivo",
+          });
       }
     }
   }
 
-  @Delete(':id')
-  async softDelete(@Request() req: any, @Param('id') fileId: string) {
+  @Delete(":id")
+  async softDelete(@Request() req: any, @Param("id") fileId: string) {
     const orgId = req.user.organizationId;
     const userId = req.user.userId || req.user.id;
     await this.filesService.softDelete(fileId, orgId, userId);

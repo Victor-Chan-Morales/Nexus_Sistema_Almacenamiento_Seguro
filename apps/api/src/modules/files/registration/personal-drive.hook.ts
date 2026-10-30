@@ -1,6 +1,6 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
-import { RegistrationHooks } from '../../iam/registration-hooks';
-import { FilesService } from '../files.service';
+import { Injectable, OnModuleInit } from "@nestjs/common";
+import { RegistrationHooks } from "../../iam/registration-hooks";
+import { FilesService } from "../files.service";
 
 /**
  * Hook `personal-drive` que exige el registro de IAM: delega en Files la creación del Drive
@@ -17,8 +17,11 @@ export class PersonalDriveHook implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
-    this.hooks.register('personal-drive', async ({ manager, userId, organizationId }) => {
-      await this.files.getOrCreateUserDrive(organizationId, userId, manager);
-    });
+    this.hooks.register(
+      "personal-drive",
+      async ({ manager, userId, organizationId }) => {
+        await this.files.getOrCreateUserDrive(organizationId, userId, manager);
+      },
+    );
   }
 }
