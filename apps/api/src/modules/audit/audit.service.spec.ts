@@ -339,7 +339,162 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
       );
     });
   });
+
+  describe('listEvents (SPEC-402)', () => {
+    it('Escenario 1: Devuelve eventos de la org en orden descendente con nextBefore = null si no supera el límite', async () => {
+      const orgId = 'org-1';
+      const events = Array.from({ length: 15 }, (_, i) => ({
+        eventId: `ev-${i}`,
+        organizationId: orgId,
+        actionType: 'FILE_DOWNLOADED',
+        resourceType: 'file',
+        resourceId: `file-${i}`,
+        actorId: 'usr-1',
+        result: 'SUCCESS',
+        occurredAt: new Date(2026, 9, 29, 10, i),
+        recordHash: 'secret-hash',
+        prevHash: 'prev-hash',
+        correlationId: 'corr-id',
+      }));
+
+      const mockQb = {
+        where: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue(events),
+      };
+
+      (dataSource as any).getRepository = jest.fn().mockReturnValue({
+        createQueryBuilder: jest.fn().mockReturnValue(mockQb),
+      });
+
+      const res = await service.listEvents(orgId, { limit: 50 });
+
+      expect(res.items).toHaveLength(15);
+      expect(res.nextBefore).toBeNull();
+      // Escenario 6: Sin datos internos en items
+      expect((res.items[0] as any).recordHash).toBeUndefined();
+      expect((res.items[0] as any).prevHash).toBeUndefined();
+      expect((res.items[0] as any).correlationId).toBeUndefined();
+      expect(res.items[0].id).toBe('ev-0');
+      expect(res.items[0].action).toBe('FILE_DOWNLOADED');
+    });
+
+    it('Escenario 2: Devuelve limit registros y nextBefore = occurredAt del último cuando hay más páginas', async () => {
+      const orgId = 'org-1';
+      const events = Array.from({ length: 51 }, (_, i) => ({
+        eventId: `ev-${i}`,
+        organizationId: orgId,
+        actionType: 'LOGIN',
+        resourceType: null,
+        resourceId: null,
+        actorId: 'usr-1',
+        result: 'SUCCESS',
+        occurredAt: new Date(2026, 9, 29, 10, 50 - i),
+      }));
+
+      const mockQb = {
+        where: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue(events),
+      };
+
+      (dataSource as any).getRepository = jest.fn().mockReturnValue({
+        createQueryBuilder: jest.fn().mockReturnValue(mockQb),
+      });
+
+      const res = await service.listEvents(orgId, { limit: 50 });
+
+      expect(res.items).toHaveLength(50);
+      expect(res.nextBefore).toBe(events[49].occurredAt.toISOString());
+    });
+
+    it('Escenario 4: Aplica where organizationId aislando eventos de otros tenants', async () => {
+      const orgId = 'org-isolated-uuid';
+      const mockQb = {
+        where: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      };
+
+      (dataSource as any).getRepository = jest.fn().mockReturnValue({
+        createQueryBuilder: jest.fn().mockReturnValue(mockQb),
+      });
+
+      await service.listEvents(orgId, { limit: 50 });
+
+      expect(mockQb.where).toHaveBeenCalledWith(
+        'event.organizationId = :organizationId',
+        { organizationId: orgId },
+      );
+    });
+  });
+  
 });
+
+
+describe('computeRecordHash', () => {
+  const base: AuditHashFields = {
+    prevHash: null,
+    chainSeq: '1',
+    eventId: '66666666-6666-4666-8666-666666666666',
+    organizationId: ORG_ID,
+    actorType: AuditActorType.USER,
+    actorId: ACTOR_ID,
+    actionType: 'FILE_UPLOAD',
+    resourceType: 'file',
+    resourceId: RESOURCE_ID,
+    safeReason: null,
+    result: AuditResult.SUCCESS,
+    correlationId: '77777777-7777-4777-8777-777777777777',
+    occurredAt: new Date('2026-10-30T10:00:00.000Z'),
+  };
+
+  it('es determinista para los mismos campos', () => {
+    expect(computeRecordHash(base)).toBe(computeRecordHash({ ...base }));
+  });
+
+  it('produce un SHA-256 hexadecimal de 64 caracteres', () => {
+    expect(computeRecordHash(base)).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it.each([
+    ['prevHash', 'otro-hash'],
+    ['chainSeq', '2'],
+    ['eventId', '88888888-8888-4888-8888-888888888888'],
+    ['organizationId', OTHER_ORG_ID],
+    ['actorId', '99999999-9999-4999-8999-999999999999'],
+    ['actionType', 'FILE_DELETE'],
+    ['resourceType', 'membership'],
+    ['resourceId', '12121212-1212-4121-8121-121212121212'],
+    ['safeReason', 'motivo-de-prueba'],
+    ['correlationId', '13131313-1313-4131-8131-131313131313'],
+    ['occurredAt', new Date('2026-10-30T10:00:00.001Z')],
+  ] as const)('cambia cuando cambia %s', (field, value) => {
+    expect(computeRecordHash({ ...base, [field]: value })).not.toBe(computeRecordHash(base));
+  });
+
+  it('no colisiona cuando un valor contiene el separador que usaba la versión anterior', () => {
+    const withPipeInAction = computeRecordHash({ ...base, actionType: 'X|', resourceType: null });
+    const withPipeInResource = computeRecordHash({ ...base, actionType: 'X', resourceType: '|' });
+
+    expect(withPipeInAction).not.toBe(withPipeInResource);
+  });
+
+  it('trata prevHash nulo y vacío igual y distinto de un hash real', () => {
+    expect(computeRecordHash({ ...base, prevHash: null })).toBe(computeRecordHash({ ...base, prevHash: '' }));
+    expect(computeRecordHash({ ...base, prevHash: 'abc' })).not.toBe(computeRecordHash(base));
+  });
+});
+
 
 describe('computeRecordHash', () => {
   const base: AuditHashFields = {
