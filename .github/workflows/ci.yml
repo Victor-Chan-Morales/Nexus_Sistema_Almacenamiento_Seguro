@@ -1,0 +1,49 @@
+# CI del repositorio: valida el frontend (lint y build) y el API (lint, tsc, build y pruebas unitarias)
+# en cada PR y en cada push a main. Las pruebas e2e del API requieren Postgres y SeaweedFS, no se ejecutan aquí.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web (lint y build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run lint:web
+      - run: npm run build:web
+
+  api:
+    name: API (lint, build y pruebas)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc -p tsconfig.eslint.json
+      - run: npm run build
+      - run: npm test
