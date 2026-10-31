@@ -40,6 +40,7 @@ import { AccessTokenIssuer, OpaqueTokens, PasswordHasher } from './ports/securit
 import { UnitOfWork } from './ports/transaction';
 import { VerificationMailer } from './ports/verification-mailer';
 import { RegistrationHooks } from './registration-hooks';
+import { MemberAdmission } from './member-admission';
 import { AuthService } from './services/auth.service';
 import { EmailOutboxService } from './services/email-outbox.service';
 import { EmailVerificationService } from './services/email-verification.service';
@@ -83,6 +84,7 @@ function resolveJwtSecret(config: ConfigService): string {
     OutboxCipher,
     IamSettings,
     RegistrationHooks,
+    MemberAdmission,
     JwtStrategy,
     JwtAuthGuard,
     // Puertos → implementaciones (DIP): cambiar una tecnología es cambiar solo una línea aquí
@@ -98,6 +100,6 @@ function resolveJwtSecret(config: ConfigService): string {
     { provide: OpaqueTokens, useClass: CryptoOpaqueTokens },
     { provide: VerificationMailer, useClass: EmailService },
   ],
-  exports: [AuthService, JwtModule, PassportModule, JwtAuthGuard, RegistrationHooks],
+  exports: [AuthService, JwtModule, PassportModule, JwtAuthGuard, RegistrationHooks, MemberAdmission],
 })
 export class IamModule {}
