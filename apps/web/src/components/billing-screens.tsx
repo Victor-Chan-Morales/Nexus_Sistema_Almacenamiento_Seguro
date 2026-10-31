@@ -8,7 +8,7 @@ import { ApiError } from "@/lib/api/client";
 import { activateSubscription, getBillingOperations, getPlans, renewSubscription } from "@/lib/api/billing";
 import { getDashboard } from "@/lib/api/dashboard";
 import type { ActivateSubscriptionResponse, BillingOperationsResponse, DashboardResponse, Plan } from "@/lib/api/types";
-import { formatBytes, formatIsoDate, formatUsd, isExpired, usagePercent } from "@/lib/format";
+import { formatBytes, formatIsoDate, formatUsd, usagePercent } from "@/lib/format";
 import { RequireSession, useSession } from "@/lib/session";
 import { useLoad } from "@/lib/use-load";
 import { Brand } from "@/components/brand";
@@ -179,8 +179,6 @@ function CurrentSubscriptionContent() {
 
 function ActiveSubscription({ data, plan, isAdmin, token, onRenewed, historyKey }: { data: DashboardResponse; plan: NonNullable<DashboardResponse["plan"]>; isAdmin: boolean; token?: string; onRenewed: () => void; historyKey: number }) {
   const { failSession } = useSession();
-  const [now] = useState(() => Date.now());
-  const expired = isExpired(plan.expiresAt, now);
   const pct = usagePercent(data.storageUsedBytes, data.storageLimitBytes);
   const [renewing, setRenewing] = useState(false);
   const [renewError, setRenewError] = useState("");
@@ -200,8 +198,9 @@ function ActiveSubscription({ data, plan, isAdmin, token, onRenewed, historyKey 
   }
 
   return <>
-    <div className="billing-status"><span className="status-dot" /> {expired ? "Vencida" : "Activo"}</div>
-    <BillingRows rows={[["Plan actual", plan.name], ["Estado", expired ? "Vencida" : "Activo"], ["Vencimiento", formatIsoDate(plan.expiresAt)], ["Espacio incluido", formatBytes(plan.storageLimitBytes)], ["Espacio utilizado", formatBytes(data.storageUsedBytes)], ["Límite de usuarios", `Hasta ${plan.userLimit}`]]} />
+    <div className="billing-status"><span className="status-dot" /> Activo</div>
+    {/* La API solo devuelve suscripciones vigentes: el cliente no calcula vencimientos. */}
+    <BillingRows rows={[["Plan actual", plan.name], ["Estado", "Activo"], ["Vencimiento", formatIsoDate(plan.expiresAt)], ["Espacio incluido", formatBytes(plan.storageLimitBytes)], ["Espacio utilizado", formatBytes(data.storageUsedBytes)], ["Límite de usuarios", `Hasta ${plan.userLimit}`]]} />
     <div className="billing-progress"><span style={{ width: `${pct}%` }} /></div><p className="billing-progress-label">{formatBytes(data.storageUsedBytes)} de {formatBytes(data.storageLimitBytes)} utilizados</p>
     {isAdmin ? <>
       <div className="billing-actions">

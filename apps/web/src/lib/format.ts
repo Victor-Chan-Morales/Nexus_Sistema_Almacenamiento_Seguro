@@ -33,9 +33,3 @@ export function formatUsd(amount: number | string | null | undefined): string {
     maximumFractionDigits: 2,
   }).format(numeric).replace("$", "US$");
 }
-
-export function isExpired(expiresAt: string | null | undefined, now: number): boolean {
-  if (!expiresAt) return false;
-  const time = new Date(expiresAt).getTime();
-  return !Number.isNaN(time) && time < now;
-}
