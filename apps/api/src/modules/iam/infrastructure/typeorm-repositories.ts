@@ -37,6 +37,10 @@ export class TypeOrmUserRepository implements UserRepository {
     return managerOf(this.dataSource, tx).findOne(User, { where: { email } });
   }
 
+  findByEmailForUpdate(email: string, tx: TransactionContext): Promise<User | null> {
+    return tx.findOne(User, { where: { email }, lock: { mode: 'pessimistic_write' } });
+  }
+
   findById(id: string, tx?: TransactionContext): Promise<User | null> {
     return managerOf(this.dataSource, tx).findOne(User, { where: { id } });
   }

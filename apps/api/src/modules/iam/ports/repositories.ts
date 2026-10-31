@@ -13,6 +13,8 @@ import { TransactionContext } from './transaction';
  */
 export abstract class UserRepository {
   abstract findByEmail(email: string, tx?: TransactionContext): Promise<User | null>;
+  /** Como findByEmail, pero bloquea la fila del usuario hasta el fin de la transacción (SELECT ... FOR UPDATE). */
+  abstract findByEmailForUpdate(email: string, tx: TransactionContext): Promise<User | null>;
   abstract findById(id: string, tx?: TransactionContext): Promise<User | null>;
   abstract create(
     tx: TransactionContext,

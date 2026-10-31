@@ -50,7 +50,7 @@ const build = (opts: Options = {}) => {
     }),
   };
   const users = {
-    findByEmail: jest.fn().mockResolvedValue(opts.user === undefined ? activeUser : opts.user),
+    findByEmailForUpdate: jest.fn(async () => (log.push('lock'), opts.user === undefined ? activeUser : opts.user)),
     findById: jest.fn().mockResolvedValue(opts.user === undefined ? activeUser : opts.user),
     setPasswordAndVerifyEmail: jest.fn(async (_tx: unknown, _id: string, hash: string) => {
       state.passwordHash = hash;
@@ -105,7 +105,7 @@ describe('PasswordResetService.requestReset', () => {
     await flush();
 
     expect(t.uow.run).toHaveBeenCalledTimes(1);
-    expect(t.users.findByEmail).toHaveBeenCalledWith('usuario@nexus.com', 'tx'); // correo normalizado
+    expect(t.users.findByEmailForUpdate).toHaveBeenCalledWith('usuario@nexus.com', 'tx'); // correo normalizado y bloqueado
     expect(t.tokensRepo.invalidateUnused).toHaveBeenCalledWith('tx', 'u1', TokenPurpose.PASSWORD_RESET);
     expect(PASSWORD_RESET_TOKEN_TTL_MINUTES).toBe(15);
     expect(t.outbox.enqueueWithToken).toHaveBeenCalledWith('tx', {
@@ -117,7 +117,8 @@ describe('PasswordResetService.requestReset', () => {
       ttlMinutes: PASSWORD_RESET_TOKEN_TTL_MINUTES,
     });
     // invalidar antes de emitir (si no, se invalidaría el token recién creado); envío después del commit
-    expect(t.log).toEqual(['invalidate', 'enqueue', 'commit', 'dispatch']);
+    // bloqueo del usuario antes de invalidar (si no, dos peticiones pueden dejar dos tokens válidos)
+    expect(t.log).toEqual(['lock', 'invalidate', 'enqueue', 'commit', 'dispatch']);
   });
 
   it('Escenario 1: el despacho no se espera (un envío lento no retrasa la respuesta)', async () => {
@@ -137,7 +138,6 @@ describe('PasswordResetService.requestReset', () => {
     await expect(t.service.requestReset('noexiste@nexus.com')).resolves.toBeUndefined();
     await flush();
     expect(t.tokensRepo.invalidateUnused).not.toHaveBeenCalled();
-    expect(t.outbox.enqueueWithToken).not.toHaveBeenCalled();
     expect(t.outbox.enqueueWithToken).not.toHaveBeenCalled();
     expect(t.outbox.dispatch).not.toHaveBeenCalled();
   });

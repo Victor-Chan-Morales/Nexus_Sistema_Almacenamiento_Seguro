@@ -44,7 +44,9 @@ export class PasswordResetService {
     const email = normalizeEmail(rawEmail);
 
     const outboxId = await this.uow.run(async (tx) => {
-      const user = await this.users.findByEmail(email, tx);
+      // Bloquea la fila del usuario: dos peticiones simultáneas se serializan y la segunda ve el token de la primera
+      // ya confirmado, así que lo invalida. Sin el bloqueo podían quedar dos enlaces válidos a la vez.
+      const user = await this.users.findByEmailForUpdate(email, tx);
       if (!user || user.status !== UserStatus.ACTIVE) return null;
 
       await this.tokensRepo.invalidateUnused(tx, user.id, TokenPurpose.PASSWORD_RESET);
