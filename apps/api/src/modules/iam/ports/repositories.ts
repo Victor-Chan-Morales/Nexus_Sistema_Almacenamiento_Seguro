@@ -19,6 +19,8 @@ export abstract class UserRepository {
     data: { email: string; fullName: string; passwordHash: string },
   ): Promise<User>;
   abstract markEmailVerified(tx: TransactionContext, userId: string): Promise<void>;
+  /** Restablecimiento: reemplaza el hash y deja email_verified = true (el enlace prueba que controla el buzón). */
+  abstract setPasswordAndVerifyEmail(tx: TransactionContext, userId: string, passwordHash: string): Promise<void>;
 }
 
 export abstract class OrganizationRepository {
@@ -26,6 +28,12 @@ export abstract class OrganizationRepository {
     tx: TransactionContext,
     data: { name: string; deploymentModel: DeploymentModel },
   ): Promise<Organization>;
+
+  /**
+   * Bloquea la fila de la organización (SELECT ... FOR UPDATE) hasta el fin de la transacción. Serializa las
+   * altas de miembros de una misma organización. Devuelve false si la organización no existe.
+   */
+  abstract lockById(tx: TransactionContext, organizationId: string): Promise<boolean>;
 }
 
 export abstract class MembershipRepository {
@@ -44,6 +52,18 @@ export abstract class MembershipRepository {
     organizationId?: string,
     tx?: TransactionContext,
   ): Promise<Membership | null>;
+
+  /**
+   * Miembros de una organización (cualquier estado) con el nombre y el correo del usuario y el nombre del rol,
+   * del más antiguo al más nuevo. Solo carga las columnas necesarias: nunca el hash de la contraseña.
+   */
+  abstract listByOrganization(organizationId: string): Promise<Membership[]>;
+
+  /** Ids de TODAS las organizaciones donde el usuario tiene membresía (cualquier estado). */
+  abstract organizationIdsOfUser(tx: TransactionContext, userId: string): Promise<string[]>;
+
+  /** Membresías con status = active de una organización (base del límite de usuarios del plan). */
+  abstract countActiveInOrganization(tx: TransactionContext, organizationId: string): Promise<number>;
 }
 
 /** Las revocaciones usan la hora de la BD (now()) para respetar los CHECK de iam.session. */
@@ -73,6 +93,8 @@ export abstract class OneTimeTokenRepository {
     purpose: TokenPurpose,
   ): Promise<OneTimeToken | null>;
   abstract markUsed(tx: TransactionContext, token: OneTimeToken): Promise<void>;
+  /** Deja inválidos (used_at = now()) los tokens sin usar de un usuario para ese propósito. */
+  abstract invalidateUnused(tx: TransactionContext, userId: string, purpose: TokenPurpose): Promise<void>;
 }
 
 /** Mensaje reclamado para envío: el token sigue cifrado hasta el momento de enviarlo. */

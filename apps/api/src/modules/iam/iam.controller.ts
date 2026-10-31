@@ -3,8 +3,10 @@ import type { CookieOptions, Request, Response } from 'express';
 import { REFRESH_COOKIE_NAME, REFRESH_COOKIE_PATH, REFRESH_TOKEN_TTL_DAYS } from './constants';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { AuthResult } from './domain/auth-result';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { IamSettings } from './iam.settings';
@@ -16,6 +18,7 @@ import {
   RegisterResponse,
 } from './interfaces/auth-user.interface';
 import { AuthService } from './services/auth.service';
+import { PasswordResetService } from './services/password-reset.service';
 import { RegistrationService } from './services/registration.service';
 import { SessionService } from './services/session.service';
 
@@ -27,6 +30,7 @@ export class IamController {
     private readonly registration: RegistrationService,
     private readonly sessions: SessionService,
     private readonly settings: IamSettings,
+    private readonly passwordReset: PasswordResetService,
   ) {}
 
   @Post('register')
@@ -40,6 +44,21 @@ export class IamController {
   async verifyEmail(@Body() dto: VerifyEmailDto): Promise<{ verified: true }> {
     await this.auth.verifyEmail(dto.token);
     return { verified: true };
+  }
+
+  /** Pública. Respuesta idéntica exista o no el correo (anti-enumeración). */
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<{ message: string }> {
+    await this.passwordReset.requestReset(dto.email);
+    return { message: 'Si el correo está registrado, recibirás un enlace para restablecer tu contraseña.' };
+  }
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(@Body() dto: ResetPasswordDto): Promise<{ message: string }> {
+    await this.passwordReset.reset(dto.token, dto.newPassword);
+    return { message: 'Contraseña actualizada. Ya puedes iniciar sesión.' };
   }
 
   @Post('login')

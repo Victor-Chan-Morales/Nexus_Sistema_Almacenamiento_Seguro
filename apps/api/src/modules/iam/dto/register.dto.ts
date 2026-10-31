@@ -1,5 +1,6 @@
 import { Transform } from 'class-transformer';
-import { IsEmail, IsString, Length, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsString, Length, MaxLength } from 'class-validator';
+import { PasswordPolicy } from './password-policy';
 
 export const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
@@ -15,10 +16,7 @@ export class RegisterDto {
   @MaxLength(254)
   email!: string;
 
-  @IsString()
-  @MinLength(8)
-  @MaxLength(128)
-  @Matches(/^(?=.*[A-Za-z])(?=.*\d).+$/, { message: 'La contraseña debe incluir letras y números' })
+  @PasswordPolicy()
   password!: string;
 
   @Transform(trim)
