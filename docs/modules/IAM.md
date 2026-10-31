@@ -2,7 +2,7 @@
 
 Identidad, registro, verificación de correo, login, sesión y contexto de organización del monolito.
 Código: `apps/api/src/modules/iam` · Prefijo global: `/api` · Responsable: Sebastián.
-Contrato: `CONTRACTS.md` v0.4 y v0.5, aprobado para implementación.
+Contrato: `CONTRACTS.md` v0.4, aprobado para implementación (ya no hay rutas en estado de propuesta).
 Trazabilidad con el diagrama de clases y revisión SOLID: `docs/modules/IAM-diagrama-y-solid.md`.
 
 ## Estructura
@@ -82,24 +82,11 @@ Más cookie `nexus_refresh` (HttpOnly, `Path=/api/auth`, 7 días, `Secure` segú
 ### GET /api/auth/me — 200 (contrato v0.4) · `Authorization: Bearer <accessToken>`
 `{ "user": { "id", "fullName", "email" }, "organization": { "id", "name" }, "role": "tenant_admin" }`
 
-### Rutas aprobadas en CONTRACTS.md (v0.4 y v0.5)
+### Rutas aprobadas en CONTRACTS.md (v0.4)
 - `POST /api/auth/verify-email` `{ token }` → `200 { "verified": true }`. Un solo uso, 15 min, solo se guarda el hash.
 - `POST /api/auth/refresh` (cookie, sin body) → `200` con el esquema del login; rota la cookie. Reutilizar un token ya rotado revoca todas las sesiones del usuario.
 - `POST /api/auth/logout` (cookie) → `204`; revoca la sesión y limpia la cookie.
 - `POST /api/auth/login` responde `403 EMAIL_NOT_VERIFIED` si el correo no está verificado (`IAM_REQUIRE_VERIFIED_EMAIL=true`, por defecto).
-
-### POST /api/organizations/members — 201 (contrato v0.5, SPEC-102)
-Alta de miembros en la organización por un `tenant_admin` con límite de cupo según el plan contratado.
-
-```json
-{ "fullName": "Carlos Gómez", "email": "carlos@empresa.com", "role": "colaborador" }
-```
-→ `201 { "id": "uuid", "userId": "uuid", "email": "carlos@empresa.com", "fullName": "Carlos Gómez", "role": "colaborador", "status": "active", "createdAt": "2026-10-30T12:00:00.000Z" }`
-
-- **Autorización:** Protegido con `RolesGuard` y `@Roles(Role.TENANT_ADMIN)`. Colaboradores reciben `403 FORBIDDEN_ROLE`.
-- **Límite de usuarios del plan (SPEC-102 §8, T6):** Valida las membresías activas contra el puerto de admisión provisto por el hook `UserLimitHook` de Billing (`plan.maxMembers`). Si se alcanza el cupo del plan (Demo: 5, Team: 10) o la organización carece de suscripción activa, se rechaza de inmediato con `422 USER_LIMIT_EXCEEDED` bajo principio de falla cerrada (*fail-closed*).
-- **Proceso atómico:** Crea usuario con contraseña aleatoria inutilizable (`email_verified = false`), membresía activa en la organización, token de un solo uso (24 h) y mensaje `member_invitation` en `iam.email_outbox` en una sola transacción. El invitado define su contraseña al ingresar por el enlace del correo.
-- **Validaciones:** `422 MEMBER_ALREADY_EXISTS` si ya pertenece a la organización; `422 EMAIL_BELONGS_TO_OTHER_ORGANIZATION` si el correo existe en otra organización.
 
 ## Integración con frontend (Víctor)
 - `accessToken` solo en memoria; nunca en localStorage. `fetch(..., { credentials: 'include' })` en login, refresh y logout.
@@ -123,5 +110,6 @@ Sin paquetes fuera de los que IAM ya usa (`@nestjs/jwt`, `@nestjs/passport`, `pa
 (solo si no existe ya un transporte SMTP para `EmailService`). Dev: `supertest` / `@types/supertest` si faltan. No se agregó `cookie-parser`.
 
 ## Pendiente explícito (NO terminado)
-- Selector de organización activa si una cuenta pertenece a múltiples tenants.
+- RBAC completo: solo se asigna `tenant_admin`; `colaborador`, invitaciones y permisos por recurso quedan para después.
+- `requestPasswordReset` (la tabla `one_time_token` ya admite `password_reset`), bloqueo por intentos fallidos (`failed_login_attempts` / `last_login_at` sin usar), reenvío manual de verificación (el reintento ya renueva el token solo; un endpoint de reenvío sigue fuera del corte), `verifyTotp` (MFA fuera de alcance), selector de organización activa.
 - Rate limiting (`429`) en register/login/refresh; limpieza periódica de sesiones y tokens vencidos.
