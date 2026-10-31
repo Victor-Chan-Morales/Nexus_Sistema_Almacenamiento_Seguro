@@ -2,7 +2,7 @@ import { MemberAdmission } from '../iam/member-admission';
 import { UserLimitHook } from './registration/user-limit.hook';
 
 const build = (subscription: unknown) => {
-  const billing = { getSubscription: jest.fn().mockResolvedValue(subscription) };
+  const billing = { getActiveSubscriptionReadOnly: jest.fn().mockResolvedValue(subscription) };
   const admission = new MemberAdmission();
   new UserLimitHook(admission, billing as never).onModuleInit();
   return { admission, billing };
@@ -12,7 +12,7 @@ describe('UserLimitHook (fuente del límite de usuarios para IAM)', () => {
   it('devuelve plan.maxMembers de la suscripción vigente de la organización', async () => {
     const t = build({ plan: { maxMembers: 5 } });
     expect(await t.admission.userLimit('ORG-1')).toBe(5);
-    expect(t.billing.getSubscription).toHaveBeenCalledWith('ORG-1');
+    expect(t.billing.getActiveSubscriptionReadOnly).toHaveBeenCalledWith('ORG-1');
   });
 
   it('sin suscripción vigente devuelve null (IAM falla cerrado)', async () => {

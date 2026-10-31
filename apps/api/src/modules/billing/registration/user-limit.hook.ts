@@ -5,8 +5,9 @@ import { BillingService } from '../billing.service';
 /**
  * Fuente del límite de usuarios que exige el alta de miembros de IAM (SPEC-102). Devuelve
  * `plan.maxMembers` de la suscripción vigente, o null si no hay suscripción vigente (IAM lo trata
- * como límite 0 y responde USER_LIMIT_EXCEEDED). Es solo lectura: no bloquea filas, porque IAM ya
- * tiene bloqueada la organización mientras la consulta.
+ * como límite 0 y responde USER_LIMIT_EXCEEDED). Es solo lectura y no escribe: la consulta usa
+ * getActiveSubscriptionReadOnly, porque GET /organizations/members también la llama y no debe marcar suscripciones.
+ * IAM la invoca antes de abrir su transacción de alta.
  */
 @Injectable()
 export class UserLimitHook implements OnModuleInit {
@@ -17,7 +18,7 @@ export class UserLimitHook implements OnModuleInit {
 
   onModuleInit(): void {
     this.admission.register(async (organizationId) => {
-      const subscription = await this.billing.getSubscription(organizationId);
+      const subscription = await this.billing.getActiveSubscriptionReadOnly(organizationId);
       return subscription?.plan?.maxMembers ?? null;
     });
   }
