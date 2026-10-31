@@ -16,6 +16,7 @@ import { RolesGuard } from '../iam/guards/roles.guard';
 import { Roles } from '../iam/decorators/roles.decorator';
 import { Role } from '../iam/domain/enums';
 import { AuthUser } from '../iam/interfaces/auth-user.interface';
+import { priceUsd } from './billing.utils';
 
 /**
  * BillingController
@@ -38,7 +39,7 @@ export class BillingController {
       id: p.id,
       name: p.name,
       description: p.description || 'Plan de almacenamiento seguro Nexus',
-      priceMonthly: (p.priceCents || 0) / 100,
+      priceMonthly: priceUsd(p),
       storageLimitBytes: Number(p.storageLimitBytes),
       userLimit: p.maxMembers,
       validityDays: p.validityDays ?? null,

@@ -1,7 +1,6 @@
 import {
   Injectable,
   Logger,
-  ConflictException,
   InternalServerErrorException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -9,7 +8,6 @@ import { DataSource, EntityManager } from 'typeorm';
 import { BillingService } from '../billing/billing.service';
 import { FilesService } from '../files/files.service';
 import { Subscription, SubscriptionStatus } from '../billing/entities/subscription.entity';
-import { BillingOperationType } from '../billing/entities/billing-operation.entity';
 
 /**
  * SubscriptionCoordinator — Coordinador de Integración entre Billing y Files
@@ -22,8 +20,8 @@ import { BillingOperationType } from '../billing/entities/billing-operation.enti
  *    nunca asume 0 bytes.
  * 4. Control de concurrencia y carreras: ejecuta bajo transacción TypeORM con bloqueo pesimista
  *    (SELECT FOR UPDATE) e idempotencia para activaciones del mismo plan.
- * 5. Manejo del índice único parcial: captura el error 23505 (uq_subscription_one_active_per_organization)
- *    y emite un error 409 controlado de conflicto.
+ * 5. Delega la persistencia en BillingService.persistSubscription para unificar la creación
+ *    de suscripción, control de colisión única (23505) y registro de operaciones.
  *
  * Códigos de error según CONTRACTS.md: la cuota insuficiente responde 422 STORAGE_QUOTA_EXCEEDED
  * (regla de negocio); 409 queda reservado para el conflicto de estado por activación concurrente.
@@ -88,52 +86,8 @@ export class SubscriptionCoordinator {
         });
       }
 
-      // 4. Persistencia atómica de la nueva suscripción
-      try {
-        // Cancelar suscripción activa previa
-        if (currentActive) {
-          currentActive.status = SubscriptionStatus.CANCELLED;
-          await manager.save(currentActive);
-        }
-
-        const startDate = new Date();
-        const expiresAt = (targetPlan.validityDays && targetPlan.validityDays > 0)
-          ? new Date(startDate.getTime() + targetPlan.validityDays * 86400000)
-          : null;
-
-        const newSubscription = manager.create(Subscription, {
-          organizationId,
-          planId: targetPlan.id,
-          status: SubscriptionStatus.ACTIVE,
-          startDate,
-          simulated: true, // Sin procesamiento de cobro real
-          expiresAt,
-        });
-
-        const saved = await manager.save(newSubscription);
-        saved.plan = targetPlan;
-        const amountUsd = (targetPlan.priceCents || 0) / 100;
-        await this.billingService.recordOperation(
-          manager,
-          saved,
-          BillingOperationType.CHARGE,
-          amountUsd,
-        );
-        return saved;
-      } catch (dbError: any) {
-        // Manejo específico de colisión con el índice único parcial de PostgreSQL
-        if (
-          dbError?.code === '23505' ||
-          dbError?.driverError?.code === '23505' ||
-          dbError?.message?.includes('uq_subscription_one_active_per_organization')
-        ) {
-          throw new ConflictException({
-            code: 'CONCURRENT_SUBSCRIPTION_CONFLICT',
-            message: 'Ya existe una suscripción activa para esta organización o hay una operación concurrente en curso.',
-          });
-        }
-        throw dbError;
-      }
+      // 4. Delegar la persistencia atómica en BillingService.persistSubscription
+      return this.billingService.persistSubscription(organizationId, targetPlan, manager);
     });
   }
 }

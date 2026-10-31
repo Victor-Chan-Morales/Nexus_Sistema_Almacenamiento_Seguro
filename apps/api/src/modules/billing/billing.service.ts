@@ -4,7 +4,6 @@ import {
   ConflictException,
   UnprocessableEntityException,
   OnModuleInit,
-  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
@@ -15,6 +14,7 @@ import {
   BillingOperationType,
 } from './entities/billing-operation.entity';
 import { BillingOperationItemResponse } from './billing.dto';
+import { priceUsd, todayUtcDate } from './billing.utils';
 
 /**
  * BillingService — Lógica de dominio para planes, cuotas y persistencia de suscripciones.
@@ -35,9 +35,8 @@ export class BillingService implements OnModuleInit {
 
     private readonly dataSource: DataSource,
 
-    @Optional()
     @InjectRepository(BillingOperation)
-    private readonly billingOperationRepo?: Repository<BillingOperation>,
+    private readonly billingOperationRepo: Repository<BillingOperation>,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -99,8 +98,7 @@ export class BillingService implements OnModuleInit {
   }
 
   async listOperations(organizationId: string): Promise<BillingOperationItemResponse[]> {
-    const repo = this.billingOperationRepo ?? this.dataSource.getRepository(BillingOperation);
-    const operations = await repo
+    const operations = await this.billingOperationRepo
       .createQueryBuilder('op')
       .innerJoinAndSelect('op.subscription', 'sub')
       .innerJoinAndSelect('sub.plan', 'plan')
@@ -187,8 +185,8 @@ export class BillingService implements OnModuleInit {
 
     if (!sub) return null;
 
-    const todayUtc = new Date().toISOString().slice(0, 10);
-    const endDate = sub.expiresAt?.toISOString().slice(0, 10);
+    const todayUtc = todayUtcDate();
+    const endDate = sub.expiresAt ? todayUtcDate(sub.expiresAt) : undefined;
     if (endDate && endDate <= todayUtc) {
       sub.status = SubscriptionStatus.EXPIRED;
       await repo.save(sub);
@@ -224,6 +222,7 @@ export class BillingService implements OnModuleInit {
         const currentActive = await manager.findOne(Subscription, {
           where: { organizationId, status: SubscriptionStatus.ACTIVE },
           lock: { mode: 'pessimistic_write' },
+          loadEagerRelations: false,
         });
 
         // Idempotencia: Si ya está activo el mismo plan, retornar el registro existente sin recrear
@@ -254,7 +253,7 @@ export class BillingService implements OnModuleInit {
 
         const saved = await manager.save(newSubscription);
         saved.plan = targetPlan;
-        const amountUsd = (targetPlan.priceCents || 0) / 100;
+        const amountUsd = priceUsd(targetPlan);
         await this.recordOperation(manager, saved, BillingOperationType.CHARGE, amountUsd);
         return saved;
       } catch (error: any) {
@@ -288,8 +287,8 @@ export class BillingService implements OnModuleInit {
   }
 
   /**
-   * Extiende la vigencia de la suscripción activa en `validityDays` desde max(hoy, fin actual)
-   * y registra una operación simulada `renewal` en la misma transacción (SPEC-302).
+   * Extiende la vigencia de la suscripción activa en `validityDays` desde la fecha de fin actual
+   * (o hoy si no tenía) y registra una operación simulada `renewal` en la misma transacción (SPEC-302).
    */
   async renewSubscription(
     organizationId: string,
@@ -309,9 +308,9 @@ export class BillingService implements OnModuleInit {
         });
       }
 
-      const todayUtcStr = new Date().toISOString().slice(0, 10);
+      const todayUtcStr = todayUtcDate();
       const currentEndStr = activeSub.expiresAt
-        ? activeSub.expiresAt.toISOString().slice(0, 10)
+        ? todayUtcDate(activeSub.expiresAt)
         : null;
 
       if (currentEndStr && currentEndStr <= todayUtcStr) {
@@ -334,7 +333,7 @@ export class BillingService implements OnModuleInit {
       const currentEndMs = currentEndStr
         ? Date.parse(`${currentEndStr}T00:00:00.000Z`)
         : todayUtcMs;
-      const baseMs = Math.max(todayUtcMs, currentEndMs);
+      const baseMs = currentEndStr ? currentEndMs : todayUtcMs;
 
       activeSub.expiresAt = new Date(baseMs + plan.validityDays * 86400000);
       activeSub.plan = plan;
@@ -342,7 +341,7 @@ export class BillingService implements OnModuleInit {
       const saved = await manager.save(activeSub);
       saved.plan = plan;
 
-      const amountUsd = (plan.priceCents || 0) / 100;
+      const amountUsd = priceUsd(plan);
       await this.recordOperation(manager, saved, BillingOperationType.RENEWAL, amountUsd);
 
       return saved;
@@ -396,7 +395,7 @@ export class BillingService implements OnModuleInit {
         id: activeSub.plan.id,
         name: activeSub.plan.name,
         description: activeSub.plan.description || '',
-        priceMonthly: (activeSub.plan.priceCents || 0) / 100,
+        priceMonthly: priceUsd(activeSub.plan),
         storageLimitBytes: Number(activeSub.plan.storageLimitBytes),
         userLimit: activeSub.plan.maxMembers,
         validityDays: activeSub.plan.validityDays ?? null,
