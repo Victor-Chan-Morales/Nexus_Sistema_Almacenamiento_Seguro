@@ -130,6 +130,44 @@ describe('SPEC-405: Files Audit Hooks', () => {
 
       expect(mockAuditService.logEvent).not.toHaveBeenCalled();
     });
+
+    it('devuelve la subida aunque logEvent falle (Escenario 3)', async () => {
+      jest.spyOn(filesService, 'getOrCreateUserDrive').mockResolvedValue({
+        id: 'drive-1',
+        name: 'Drive',
+        rootFolderId: 'root-1',
+      });
+      jest.spyOn(filesService as any, 'requirePersonalFolder').mockResolvedValue({ id: 'folder-1' });
+      jest.spyOn(filesService as any, 'reserveUpload').mockResolvedValue({
+        reservationId: 'res-1',
+        uploadId: 'up-1',
+      });
+      jest.spyOn(filesService as any, 'hasExpectedContent').mockReturnValue(true);
+
+      mockDataSource.transaction.mockResolvedValue({
+        id: 'file-ok-1',
+        name: 'documento.txt',
+        mimeType: 'text/plain',
+        sizeBytes: 9,
+        versionId: 'v-1',
+        uploadedAt: new Date(),
+      });
+      mockAuditService.logEvent.mockRejectedValueOnce(new Error('Audit DB down'));
+
+      const result = await filesService.uploadMultipartFile({
+        organizationId: 'org-1',
+        ownerId: 'usr-1',
+        folderId: 'folder-1',
+        file: {
+          originalname: 'documento.txt',
+          mimetype: 'text/plain',
+          buffer: Buffer.from('contenido'),
+        },
+      });
+
+      expect(result.id).toBe('file-ok-1');
+      expect(mockAuditService.logEvent).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('FILE_DELETE en FilesService.softDelete', () => {
@@ -208,9 +246,12 @@ describe('SPEC-405: Files Audit Hooks', () => {
         getOne: jest.fn().mockResolvedValue({ id: 'file-1', organizationId: 'org-1' }),
       };
       mockFileRepo.createQueryBuilder.mockReturnValue(qbMock);
-      mockFileRepo.save.mockResolvedValue({ id: 'file-1', isDeleted: true });
+      mockFileRepo.save.mockImplementation(async (entity: FileRecord) => entity);
 
-      await expect(filesService.softDelete('file-1', 'org-1', 'usr-1')).resolves.toBeDefined();
+      const result = await filesService.softDelete('file-1', 'org-1', 'usr-1');
+
+      expect(result.isDeleted).toBe(true);
+      expect(mockAuditService.logEvent).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -240,6 +281,39 @@ describe('SPEC-405: Files Audit Hooks', () => {
         resourceType: AuditResource.FILE,
         resourceId: 'file-999',
       });
+    });
+
+    it('no registra FILE_DOWNLOAD si el archivo no existe (Escenario 2)', async () => {
+      const req = { user: { organizationId: 'org-dl-2', userId: 'usr-dl-2' } };
+      const res = new PassThrough() as unknown as Response;
+
+      jest.spyOn(filesService, 'downloadFileStream').mockRejectedValue(new NotFoundException('no existe'));
+
+      await expect(filesController.downloadFile(req, 'file-404', res)).rejects.toThrow(NotFoundException);
+
+      expect(mockAuditService.logEvent).not.toHaveBeenCalled();
+    });
+
+    it('entrega el archivo aunque logEvent falle (Escenario 3)', async () => {
+      const req = { user: { organizationId: 'org-dl-3', userId: 'usr-dl-3' } };
+
+      const res = new PassThrough() as unknown as Response;
+      (res as any).set = jest.fn();
+      (res as any).headersSent = false;
+      (res as any).status = jest.fn().mockReturnValue(res);
+      (res as any).json = jest.fn();
+
+      mockAuditService.logEvent.mockRejectedValueOnce(new Error('Audit DB down'));
+      jest.spyOn(filesService, 'downloadFileStream').mockResolvedValue({
+        stream: Readable.from(['contenido-binario']),
+        mimeType: 'text/plain',
+        name: 'reporte.txt',
+      });
+
+      await filesController.downloadFile(req, 'file-888', res);
+
+      expect(mockAuditService.logEvent).toHaveBeenCalledTimes(1);
+      expect((res as any).set).toHaveBeenCalled();
     });
   });
 });
