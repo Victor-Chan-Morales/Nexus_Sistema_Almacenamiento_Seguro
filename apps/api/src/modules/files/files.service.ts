@@ -9,6 +9,7 @@ import {
   NotFoundException,
   PayloadTooLargeException,
   UnsupportedMediaTypeException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
@@ -27,6 +28,8 @@ import { TenantQuota } from './entities/tenant-quota.entity';
 import { Upload } from './entities/upload.entity';
 import { EncryptedFile, FilesCryptoService } from './files-crypto.service';
 import { TrashItemDto, TrashResponseDto } from './dto/trash.dto';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction, AuditResource } from '../audit/audit.types';
 
 const MAX_FILE_SIZE_BYTES = 100_000_000;
 const MAX_ACTIVE_UPLOADS_PER_USER = 3;
@@ -83,6 +86,7 @@ export class FilesService {
     private readonly storageService: StorageService,
     private readonly billingService: BillingService,
     private readonly crypto: FilesCryptoService,
+    @Optional() private readonly auditService?: AuditService,
   ) {}
 
   /**
@@ -324,7 +328,7 @@ export class FilesService {
     };
   }
 
-  async createFolder(
+async createFolder(
     organizationId: string,
     userId: string,
     name: string,
@@ -350,6 +354,7 @@ export class FilesService {
         manager,
       );
       const folderRepo = manager.getRepository(Folder);
+
       const saved = await folderRepo.save(folderRepo.create({
         organizationId,
         driveId: drive.id,
@@ -360,6 +365,7 @@ export class FilesService {
         isDeleted: false,
         deletedAt: null,
       }));
+
       return {
         id: saved.id,
         name: saved.name,
@@ -543,7 +549,7 @@ export class FilesService {
     return folder;
   }
 
-  async uploadMultipartFile(params: {
+ async uploadMultipartFile(params: {
     organizationId: string;
     ownerId: string;
     folderId: string;
@@ -593,7 +599,7 @@ export class FilesService {
 
       let objectKey: string | undefined;
       try {
-        return await this.dataSource.transaction(async (manager) => {
+        const uploaded = await this.dataSource.transaction(async (manager) => {
           await this.lockTenantQuota(manager, organizationId);
           const folder = await this.requirePersonalFolder(
             organizationId,
@@ -684,6 +690,7 @@ export class FilesService {
 
           const usage = await this.readStorageUsage(manager, organizationId);
           await this.writeQuotaCounters(manager, organizationId, usage);
+
           return {
             id: fileRecord.id,
             name: fileRecord.name,
@@ -693,6 +700,17 @@ export class FilesService {
             uploadedAt: savedVersion.uploadedAt,
           };
         });
+
+        // Enganche SPEC-405: FILE_UPLOAD posterior al commit exitoso
+        void this.auditService?.logEvent({
+          organizationId,
+          actorId: ownerId,
+          action: AuditAction.FILE_UPLOAD,
+          resourceType: AuditResource.FILE,
+          resourceId: uploaded.id,
+        }).catch(() => {});
+
+        return uploaded;
       } catch (error) {
         const objectDeleted = objectKey
           ? await this.storageService.delete(objectKey).then(() => true).catch((deleteError) => {
@@ -988,7 +1006,7 @@ export class FilesService {
     return Buffer.concat(chunks);
   }
 
-  async softDelete(fileId: string, organizationId: string, userId: string): Promise<FileRecord> {
+async softDelete(fileId: string, organizationId: string, userId: string): Promise<FileRecord> {
     const drive = await this.getOrCreateUserDrive(organizationId, userId);
     const file = await this.fileRepository.createQueryBuilder('file')
       .innerJoin('file.folder', 'folder')
@@ -1002,6 +1020,17 @@ export class FilesService {
 
     file.isDeleted = true;
     file.deletedAt = new Date();
-    return this.fileRepository.save(file);
+    const saved = await this.fileRepository.save(file);
+
+    // Enganche SPEC-405: FILE_DELETE tras guardar el borrado lógico
+    void this.auditService?.logEvent({
+      organizationId,
+      actorId: userId,
+      action: AuditAction.FILE_DELETE,
+      resourceType: AuditResource.FILE,
+      resourceId: saved.id,
+    }).catch(() => {});
+
+    return saved;
   }
 }
