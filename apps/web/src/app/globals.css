@@ -605,6 +605,10 @@ h1, h2, h3 { font-family: "Inter", Arial, sans-serif; }
 .billing-table th, .billing-table td { padding: 8px 12px; border-bottom: 1px solid var(--line); }
 .billing-table th { color: var(--muted); font-weight: 600; }
 .billing-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--canvas); color: var(--muted); font-size: 10.5px; }
+.audit-badge-auth { background: var(--color-ice); color: var(--brand); }
+.audit-badge-files { background: color-mix(in srgb, var(--color-purple) 10%, white); color: var(--color-purple-deep); }
+.audit-badge-team { background: color-mix(in srgb, var(--color-coral) 16%, white); color: var(--ink); }
+.audit-badge-plan { background: color-mix(in srgb, var(--color-slate) 10%, white); color: var(--color-slate); }
 .button-secondary { border-color: var(--line); color: var(--color-purple); }
 .billing-expired-actions { display: grid; gap: 5px; }
 
