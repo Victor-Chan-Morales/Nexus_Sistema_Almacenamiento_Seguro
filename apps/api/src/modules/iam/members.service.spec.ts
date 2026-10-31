@@ -78,15 +78,11 @@ const build = (opts: Options = {}) => {
   };
   const hasher = { hash: jest.fn(async (plain: string) => `hash:${plain}`) };
   const opaque = { generate: jest.fn().mockReturnValue('secreto-aleatorio') };
-  const tokens = {
-    issueFor: jest.fn(async () => {
+  const outbox = {
+    // Emite el token (guardando solo su hash) y encola el mensaje, dentro de la misma transacción.
+    enqueueWithToken: jest.fn(async () => {
       if (opts.failOn === 'token') throw new Error('falla token');
       db.tokens.push({});
-      return { rawToken: 'raw-token', expiresAt: new Date('2026-10-30T12:00:00.000Z') };
-    }),
-  };
-  const outbox = {
-    enqueue: jest.fn(async () => {
       if (opts.failOn === 'outbox') throw new Error('falla outbox');
       db.outbox.push({});
       return 'outbox-1';
@@ -105,11 +101,10 @@ const build = (opts: Options = {}) => {
     memberships as never,
     hasher as never,
     opaque as never,
-    tokens as never,
     outbox as never,
     admission,
   );
-  return { service, log, db, uow, users, organizations, memberships, hasher, opaque, tokens, outbox };
+  return { service, log, db, uow, users, organizations, memberships, hasher, opaque, outbox };
 };
 
 describe('MembersService.addMember (sin base de datos: puertos simulados)', () => {
@@ -129,19 +124,14 @@ describe('MembersService.addMember (sin base de datos: puertos simulados)', () =
       organizationId: 'ORG-1',
       role: Role.COLABORADOR,
     });
-    expect(t.tokens.issueFor).toHaveBeenCalledWith(
-      'tx',
-      'u-new',
-      TokenPurpose.PASSWORD_RESET,
-      MEMBER_INVITATION_TOKEN_TTL_HOURS * 60,
-    );
-    expect(t.outbox.enqueue).toHaveBeenCalledWith('tx', expect.objectContaining({
+    expect(t.outbox.enqueueWithToken).toHaveBeenCalledWith('tx', {
       kind: 'member_invitation',
       userId: 'u-new',
       recipientEmail: 'ana@empresa.com',
       recipientName: 'Ana Pérez',
-      rawToken: 'raw-token',
-    }));
+      purpose: TokenPurpose.PASSWORD_RESET,
+      ttlMinutes: MEMBER_INVITATION_TOKEN_TTL_HOURS * 60,
+    });
     expect(result).toEqual({
       id: 'm-new',
       userId: 'u-new',
@@ -184,7 +174,7 @@ describe('MembersService.addMember (sin base de datos: puertos simulados)', () =
     expect(await codeOf(t.service.addMember(ACTOR, DTO))).toBe('EMAIL_BELONGS_TO_OTHER_ORGANIZATION');
     expect(t.users.create).not.toHaveBeenCalled();
     expect(t.memberships.create).not.toHaveBeenCalled();
-    expect(t.tokens.issueFor).not.toHaveBeenCalled(); // no se emite token para la cuenta ajena
+    expect(t.outbox.enqueueWithToken).not.toHaveBeenCalled(); // no se emite token para la cuenta ajena
     expect(t.outbox.dispatch).not.toHaveBeenCalled();
   });
 
@@ -232,7 +222,7 @@ describe('MembersService.addMember (sin base de datos: puertos simulados)', () =
     admission.register(async () => null);
     const service = new MembersService(
       t.uow as never, t.users as never, t.organizations as never, t.memberships as never,
-      t.hasher as never, t.opaque as never, t.tokens as never, t.outbox as never, admission,
+      t.hasher as never, t.opaque as never, t.outbox as never, admission,
     );
     expect(await codeOf(service.addMember(ACTOR, DTO))).toBe('USER_LIMIT_EXCEEDED');
   });
@@ -298,7 +288,7 @@ describe('MembersService.list (SPEC-104)', () => {
     if (limit !== null) admission.register(async () => limit);
     const service = new MembersService(
       {} as never, {} as never, {} as never, memberships as never,
-      {} as never, {} as never, {} as never, {} as never, admission,
+      {} as never, {} as never, {} as never, admission,
     );
     return { service, memberships, admission };
   };

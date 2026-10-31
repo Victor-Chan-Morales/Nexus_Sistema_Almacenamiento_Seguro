@@ -8,7 +8,6 @@ import { OneTimeTokenRepository, SessionRepository, UserRepository } from '../po
 import { OpaqueTokens, PasswordHasher } from '../ports/security';
 import { TransactionContext, UnitOfWork } from '../ports/transaction';
 import { EmailOutboxService } from './email-outbox.service';
-import { VerificationTokenService } from './verification-token.service';
 
 /**
  * Recuperación de contraseña (SPEC-103). Token de un solo uso de 15 minutos, solo su hash en la base
@@ -25,7 +24,6 @@ export class PasswordResetService {
     private readonly sessions: SessionRepository,
     private readonly hasher: PasswordHasher,
     private readonly opaque: OpaqueTokens,
-    private readonly tokens: VerificationTokenService,
     private readonly outbox: EmailOutboxService,
   ) {}
 
@@ -50,19 +48,13 @@ export class PasswordResetService {
       if (!user || user.status !== UserStatus.ACTIVE) return null;
 
       await this.tokensRepo.invalidateUnused(tx, user.id, TokenPurpose.PASSWORD_RESET);
-      const { rawToken, expiresAt } = await this.tokens.issueFor(
-        tx,
-        user.id,
-        TokenPurpose.PASSWORD_RESET,
-        PASSWORD_RESET_TOKEN_TTL_MINUTES,
-      );
-      return this.outbox.enqueue(tx, {
+      return this.outbox.enqueueWithToken(tx, {
         kind: 'password_reset',
         userId: user.id,
         recipientEmail: user.email,
         recipientName: user.fullName,
-        rawToken,
-        expiresAt,
+        purpose: TokenPurpose.PASSWORD_RESET,
+        ttlMinutes: PASSWORD_RESET_TOKEN_TTL_MINUTES,
       });
     });
 

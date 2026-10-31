@@ -80,14 +80,9 @@ const build = (opts: Options = {}) => {
   };
   const hasher = { hash: jest.fn(async (plain: string) => `argon2id:${plain}`) };
   const opaque = { hash: jest.fn((token: string) => `sha:${token}`) };
-  const tokens = {
-    issueFor: jest.fn(async () => (
-      log.push('issue'),
-      { rawToken: 'raw-nuevo', expiresAt: new Date(Date.now() + 15 * 60_000) }
-    )),
-  };
   const outbox = {
-    enqueue: jest.fn(async () => (log.push('enqueue'), 'outbox-1')),
+    // Emite el token (solo su hash) y encola el mensaje, dentro de la transacción.
+    enqueueWithToken: jest.fn(async () => (log.push('enqueue'), 'outbox-1')),
     dispatch: jest.fn(async () => void log.push('dispatch')),
   };
 
@@ -98,10 +93,9 @@ const build = (opts: Options = {}) => {
     sessions as never,
     hasher as never,
     opaque as never,
-    tokens as never,
     outbox as never,
   );
-  return { service, log, state, uow, users, tokensRepo, sessions, hasher, opaque, tokens, outbox };
+  return { service, log, state, uow, users, tokensRepo, sessions, hasher, opaque, outbox };
 };
 
 describe('PasswordResetService.requestReset', () => {
@@ -113,16 +107,17 @@ describe('PasswordResetService.requestReset', () => {
     expect(t.uow.run).toHaveBeenCalledTimes(1);
     expect(t.users.findByEmail).toHaveBeenCalledWith('usuario@nexus.com', 'tx'); // correo normalizado
     expect(t.tokensRepo.invalidateUnused).toHaveBeenCalledWith('tx', 'u1', TokenPurpose.PASSWORD_RESET);
-    expect(t.tokens.issueFor).toHaveBeenCalledWith('tx', 'u1', TokenPurpose.PASSWORD_RESET, PASSWORD_RESET_TOKEN_TTL_MINUTES);
     expect(PASSWORD_RESET_TOKEN_TTL_MINUTES).toBe(15);
-    expect(t.outbox.enqueue).toHaveBeenCalledWith('tx', expect.objectContaining({
+    expect(t.outbox.enqueueWithToken).toHaveBeenCalledWith('tx', {
       kind: 'password_reset',
       userId: 'u1',
       recipientEmail: 'usuario@nexus.com',
-      rawToken: 'raw-nuevo',
-    }));
+      recipientName: 'Ana',
+      purpose: TokenPurpose.PASSWORD_RESET,
+      ttlMinutes: PASSWORD_RESET_TOKEN_TTL_MINUTES,
+    });
     // invalidar antes de emitir (si no, se invalidaría el token recién creado); envío después del commit
-    expect(t.log).toEqual(['invalidate', 'issue', 'enqueue', 'commit', 'dispatch']);
+    expect(t.log).toEqual(['invalidate', 'enqueue', 'commit', 'dispatch']);
   });
 
   it('Escenario 1: el despacho no se espera (un envío lento no retrasa la respuesta)', async () => {
@@ -142,8 +137,8 @@ describe('PasswordResetService.requestReset', () => {
     await expect(t.service.requestReset('noexiste@nexus.com')).resolves.toBeUndefined();
     await flush();
     expect(t.tokensRepo.invalidateUnused).not.toHaveBeenCalled();
-    expect(t.tokens.issueFor).not.toHaveBeenCalled();
-    expect(t.outbox.enqueue).not.toHaveBeenCalled();
+    expect(t.outbox.enqueueWithToken).not.toHaveBeenCalled();
+    expect(t.outbox.enqueueWithToken).not.toHaveBeenCalled();
     expect(t.outbox.dispatch).not.toHaveBeenCalled();
   });
 
@@ -151,13 +146,13 @@ describe('PasswordResetService.requestReset', () => {
     const t = build({ user: { ...activeUser, status } });
     await t.service.requestReset('usuario@nexus.com');
     await flush();
-    expect(t.outbox.enqueue).not.toHaveBeenCalled();
+    expect(t.outbox.enqueueWithToken).not.toHaveBeenCalled();
     expect(t.outbox.dispatch).not.toHaveBeenCalled();
   });
 
   it('si falla encolar el mensaje no queda ni despacho (la transacción se revierte)', async () => {
     const t = build();
-    t.outbox.enqueue.mockRejectedValueOnce(new Error('falla'));
+    t.outbox.enqueueWithToken.mockRejectedValueOnce(new Error('falla'));
     await expect(t.service.requestReset('usuario@nexus.com')).resolves.toBeUndefined();
     await flush();
     expect(t.outbox.dispatch).not.toHaveBeenCalled();
@@ -167,7 +162,7 @@ describe('PasswordResetService.requestReset', () => {
   it('un fallo interno se registra sin el correo ni el token y no llega a la respuesta', async () => {
     const t = build();
     const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-    t.outbox.enqueue.mockRejectedValueOnce(Object.assign(new Error('falla con correo@x.com'), { name: 'DbError' }));
+    t.outbox.enqueueWithToken.mockRejectedValueOnce(Object.assign(new Error('falla con correo@x.com'), { name: 'DbError' }));
     await expect(t.service.requestReset('usuario@nexus.com')).resolves.toBeUndefined();
     await flush();
     expect(logged).toHaveBeenCalledTimes(1);

@@ -13,7 +13,6 @@ import { MembershipRepository, OrganizationRepository, UserRepository } from '..
 import { PasswordHasher, OpaqueTokens } from '../ports/security';
 import { UnitOfWork } from '../ports/transaction';
 import { EmailOutboxService } from './email-outbox.service';
-import { VerificationTokenService } from './verification-token.service';
 
 /**
  * Alta de miembros (SPEC-102). El administrador crea la cuenta con una contraseña aleatoria que nadie conoce y
@@ -29,7 +28,6 @@ export class MembersService {
     private readonly memberships: MembershipRepository,
     private readonly hasher: PasswordHasher,
     private readonly opaque: OpaqueTokens,
-    private readonly tokens: VerificationTokenService,
     private readonly outbox: EmailOutboxService,
     private readonly admission: MemberAdmission,
   ) {}
@@ -97,19 +95,13 @@ export class MembersService {
           role: dto.role,
         });
 
-        const { rawToken, expiresAt } = await this.tokens.issueFor(
-          tx,
-          user.id,
-          TokenPurpose.PASSWORD_RESET,
-          MEMBER_INVITATION_TOKEN_TTL_HOURS * 60,
-        );
-        const outboxId = await this.outbox.enqueue(tx, {
+        const outboxId = await this.outbox.enqueueWithToken(tx, {
           kind: 'member_invitation',
           userId: user.id,
           recipientEmail: user.email,
           recipientName: user.fullName,
-          rawToken,
-          expiresAt,
+          purpose: TokenPurpose.PASSWORD_RESET,
+          ttlMinutes: MEMBER_INVITATION_TOKEN_TTL_HOURS * 60,
         });
         return { user, membership, outboxId };
       });
