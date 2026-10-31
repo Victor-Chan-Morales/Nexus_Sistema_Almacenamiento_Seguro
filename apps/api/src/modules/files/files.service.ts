@@ -9,6 +9,7 @@ import {
   NotFoundException,
   PayloadTooLargeException,
   UnsupportedMediaTypeException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
@@ -27,6 +28,8 @@ import { TenantQuota } from './entities/tenant-quota.entity';
 import { Upload } from './entities/upload.entity';
 import { EncryptedFile, FilesCryptoService } from './files-crypto.service';
 import { TrashItemDto, TrashResponseDto } from './dto/trash.dto';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction, AuditResource } from '../audit/audit.types';
 
 const MAX_FILE_SIZE_BYTES = 100_000_000;
 const MAX_ACTIVE_UPLOADS_PER_USER = 3;
@@ -83,6 +86,7 @@ export class FilesService {
     private readonly storageService: StorageService,
     private readonly billingService: BillingService,
     private readonly crypto: FilesCryptoService,
+    @Optional() private readonly auditService?: AuditService,
   ) {}
 
   /**
@@ -593,7 +597,7 @@ export class FilesService {
 
       let objectKey: string | undefined;
       try {
-        return await this.dataSource.transaction(async (manager) => {
+        const uploaded = await this.dataSource.transaction(async (manager) => {
           await this.lockTenantQuota(manager, organizationId);
           const folder = await this.requirePersonalFolder(
             organizationId,
@@ -693,6 +697,17 @@ export class FilesService {
             uploadedAt: savedVersion.uploadedAt,
           };
         });
+
+        // Enganche SPEC-405: FILE_UPLOAD posterior al commit exitoso
+        void this.auditService?.logEvent({
+          organizationId,
+          actorId: ownerId,
+          action: AuditAction.FILE_UPLOAD,
+          resourceType: AuditResource.FILE,
+          resourceId: uploaded.id,
+        }).catch(() => {});
+
+        return uploaded;
       } catch (error) {
         const objectDeleted = objectKey
           ? await this.storageService.delete(objectKey).then(() => true).catch((deleteError) => {
@@ -1002,6 +1017,17 @@ export class FilesService {
 
     file.isDeleted = true;
     file.deletedAt = new Date();
-    return this.fileRepository.save(file);
+    const saved = await this.fileRepository.save(file);
+
+    // Enganche SPEC-405: FILE_DELETE tras guardar el borrado lógico
+    void this.auditService?.logEvent({
+      organizationId,
+      actorId: userId,
+      action: AuditAction.FILE_DELETE,
+      resourceType: AuditResource.FILE,
+      resourceId: saved.id,
+    }).catch(() => {});
+
+    return saved;
   }
 }

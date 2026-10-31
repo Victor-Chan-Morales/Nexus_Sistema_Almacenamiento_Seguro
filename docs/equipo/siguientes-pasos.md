@@ -20,7 +20,7 @@
 1. **SPEC-105** y **SPEC-106** (3 h): recuperación de contraseña y miembros en `/configuracion`. Trabaja contra datos simulados del contrato v0.5 hasta que existan las APIs.
 2. **SPEC-402** — `GET /audit/events` (1.5 h), **solo después de que 401 esté mergeado**; solo `tenant_admin`.
 3. **SPEC-303** — historial y "Renovar" en `/suscripcion` (1.5 h), después de 301.
-4. **SPEC-405 (Files)** — cinco eventos `FILE_*` (0.5 h).
+4. **SPEC-405 (Files)** — tres eventos `FILE_*` (upload, download, delete) (0.5 h). Restore y purge llegan con 203 y 204.
 5. **Si sobra tiempo (viernes), en este orden:** 202 y 203, 205, 204, 206, 207 (papelera y versiones).
 
 ## Anthony — Billing y Audit (≈ 6.6 h)
