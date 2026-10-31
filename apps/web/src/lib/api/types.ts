@@ -174,3 +174,38 @@ export type BillingOperationsResponse = {
 };
 
 export type RenewSubscriptionResponse = ActivateSubscriptionResponse;
+
+export type MemberRole = "tenant_admin" | "colaborador";
+
+export type OrganizationMember = {
+  id: UUID;
+  userId: UUID;
+  fullName: string;
+  email: string;
+  role: MemberRole;
+  status: string;
+  joinedAt?: ISODateTime;
+  createdAt?: ISODateTime;
+};
+
+export type OrganizationMembersResponse = {
+  members: OrganizationMember[];
+  totalMembers: number;
+  userLimit: number | null;
+};
+
+export type AddMemberInput = {
+  fullName: string;
+  email: string;
+  role: MemberRole;
+};
+
+export type AddMemberResponse = {
+  id: UUID;
+  userId: UUID;
+  email: string;
+  fullName: string;
+  role: MemberRole;
+  status: string;
+  createdAt: ISODateTime;
+};
