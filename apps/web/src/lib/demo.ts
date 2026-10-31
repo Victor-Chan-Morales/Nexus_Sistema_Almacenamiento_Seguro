@@ -24,12 +24,18 @@ export const initialDemo: DemoState = {
   ],
 };
 
+export function readDemoRaw(): string | null {
+  try { return window.localStorage.getItem(DEMO_KEY); } catch { return null; }
+}
+
+export function parseDemo(saved: string | null): DemoState {
+  if (!saved) return initialDemo;
+  try { return { ...initialDemo, ...JSON.parse(saved) }; } catch { return initialDemo; }
+}
+
 export function readDemo(): DemoState {
   if (typeof window === "undefined") return initialDemo;
-  try {
-    const saved = window.localStorage.getItem(DEMO_KEY);
-    return saved ? { ...initialDemo, ...JSON.parse(saved) } : initialDemo;
-  } catch { return initialDemo; }
+  return parseDemo(readDemoRaw());
 }
 
 export function writeDemo(next: DemoState) {

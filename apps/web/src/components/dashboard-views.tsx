@@ -1,16 +1,16 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { AppShell } from "@/components/app-shell";
 import { ApiError } from "@/lib/api/client";
 import { getDashboard } from "@/lib/api/dashboard";
 import type { DashboardResponse } from "@/lib/api/types";
 import { formatBytes as formatLiveBytes, formatIsoDate, usagePercent } from "@/lib/format";
 import { useSession } from "@/lib/session";
-import { DemoState, formatBytes, initialDemo, readDemo } from "@/lib/demo";
-import { DemoSubscription, initialSubscription, readSubscription } from "@/lib/billing-demo";
+import { DemoState, formatBytes, parseDemo, readDemoRaw } from "@/lib/demo";
+import { parseSubscription, readSubscriptionRaw } from "@/lib/billing-demo";
+import { noopSubscribe } from "@/lib/client-store";
 import { getPlan } from "@/lib/plans";
 import { UiIcon } from "@/components/ui-icon";
 
@@ -22,9 +22,14 @@ function formatStorage(bytes: number) {
   return gb >= 1 ? `${Number(gb.toFixed(1))} GB` : formatBytes(bytes);
 }
 
+const localDateFormatter = new Intl.DateTimeFormat("es-GT", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+
+function todayLabel() {
+  return localDateFormatter.format(new Date());
+}
+
 function LocalDate() {
-  const [date, setDate] = useState("");
-  useEffect(() => setDate(new Intl.DateTimeFormat("es-GT", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date())), []);
+  const date = useSyncExternalStore(noopSubscribe, todayLabel, () => "");
   return <>{date}</>;
 }
 
@@ -43,7 +48,6 @@ type LoadState = { status: "loading" } | { status: "error"; message: string } | 
 /** Dashboard conectado a GET /api/dashboard. Todas las cifras llegan de la API en bytes. */
 export function DashboardView() {
   const { session, failSession } = useSession();
-  const router = useRouter();
   const [load, setLoad] = useState<LoadState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
   const token = session?.accessToken;
@@ -93,15 +97,13 @@ function LiveDashboard({ data }: { data: DashboardResponse }) {
 
 /** Variantes de maqueta de Figma (organización nueva y cuota llena). No usan la API. */
 export function DashboardDemoView({ variant = "standard" }: { variant?: DashboardVariant }) {
-  const [state, setState] = useState<DemoState | null>(null);
-  const [billing, setBilling] = useState<DemoSubscription | null>(null);
-  useEffect(() => { setState(readDemo()); }, []);
-  useEffect(() => { setBilling(readSubscription()); }, []);
-  const currentState = state ?? initialDemo;
+  const demoRaw = useSyncExternalStore(noopSubscribe, readDemoRaw, () => null);
+  const billingRaw = useSyncExternalStore(noopSubscribe, readSubscriptionRaw, () => null);
+  const currentState = useMemo(() => parseDemo(demoRaw), [demoRaw]);
+  const subscription = useMemo(() => parseSubscription(billingRaw), [billingRaw]);
   const emptyMode = variant === "empty";
   const quotaMode = variant === "quota";
   const visibleFiles = emptyMode ? [] : currentState.files.filter((file) => !file.deleted);
-  const subscription = billing ?? initialSubscription;
   const plan = getPlan(emptyMode ? "demo" : quotaMode ? "profesional" : subscription.planId);
   const usedGb = emptyMode ? 0 : quotaMode ? plan.storageGb + 1 : subscription.storageUsedGb;
   const capBytes = plan.storageGb * 1024 ** 3;
