@@ -157,3 +157,20 @@ export type UploadFileResponse = {
   versionId: UUID;
   uploadedAt: ISODateTime;
 };
+
+export type BillingOperationType = "charge" | "renewal";
+
+export type BillingOperationItem = {
+  id: UUID;
+  type: BillingOperationType;
+  planName: string;
+  amount: number;
+  simulated: boolean;
+  occurredAt: ISODateTime;
+};
+
+export type BillingOperationsResponse = {
+  items: BillingOperationItem[];
+};
+
+export type RenewSubscriptionResponse = ActivateSubscriptionResponse;
