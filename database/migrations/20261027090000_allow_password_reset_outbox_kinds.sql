@@ -8,8 +8,8 @@ ALTER TABLE iam.email_outbox ADD CONSTRAINT ck_email_outbox_kind
   CHECK (kind IN ('email_verification', 'password_reset', 'member_invitation'));
 
 -- migrate:down
--- Los mensajes de los tipos nuevos no caben en la restricción anterior: se descartan antes de restaurarla.
-DELETE FROM iam.email_outbox WHERE kind <> 'email_verification';
+-- No borra datos. Si quedan mensajes de los tipos nuevos, la restauración de la restricción falla
+-- y dbmate revierte la transacción: la tabla queda como estaba. Para descartarlos, decidirlo a mano.
 ALTER TABLE iam.email_outbox DROP CONSTRAINT ck_email_outbox_kind;
 ALTER TABLE iam.email_outbox ADD CONSTRAINT ck_email_outbox_kind
   CHECK (kind IN ('email_verification'));

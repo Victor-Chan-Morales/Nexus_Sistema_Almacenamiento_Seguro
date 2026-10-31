@@ -185,15 +185,33 @@ export class BillingService implements OnModuleInit {
 
     if (!sub) return null;
 
-    const todayUtc = todayUtcDate();
-    const endDate = sub.expiresAt ? todayUtcDate(sub.expiresAt) : undefined;
-    if (endDate && endDate <= todayUtc) {
+    if (this.isExpired(sub)) {
       sub.status = SubscriptionStatus.EXPIRED;
       await repo.save(sub);
       return null;
     }
 
     return sub;
+  }
+
+  /**
+   * Lectura pura de la suscripción vigente: no escribe. Una suscripción vencida se devuelve como null y su
+   * estado no se corrige aquí; lo corrige getActiveSubscription en una consulta que sí persiste.
+   * Para lecturas que no deben escribir, como el límite de miembros de IAM (GET /organizations/members).
+   */
+  async getActiveSubscriptionReadOnly(organizationId: string): Promise<Subscription | null> {
+    const sub = await this.subscriptionRepo.findOne({
+      where: { organizationId, status: SubscriptionStatus.ACTIVE },
+      relations: ['plan'],
+      order: { createdAt: 'DESC' },
+    });
+    return sub && !this.isExpired(sub) ? sub : null;
+  }
+
+  private isExpired(sub: Subscription): boolean {
+    const todayUtc = todayUtcDate();
+    const endDate = sub.expiresAt ? todayUtcDate(sub.expiresAt) : undefined;
+    return Boolean(endDate && endDate <= todayUtc);
   }
 
   /**

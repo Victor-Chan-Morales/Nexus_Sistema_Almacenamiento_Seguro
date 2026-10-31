@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { OutboxKind } from '../constants';
 import { OUTBOX_POLL_INTERVAL_MS, outboxBackoffSeconds, outboxHorizonPassed } from '../../../common/outbox-policy';
+import { TokenPurpose } from '../domain/enums';
 import { OutboxCipher } from '../infrastructure/outbox-cipher';
 import { EmailOutboxRepository, OutboxMessage } from '../ports/repositories';
 import { TransactionContext, UnitOfWork } from '../ports/transaction';
@@ -61,6 +62,32 @@ export class EmailOutboxService implements OnModuleInit, OnModuleDestroy {
       recipientName: data.recipientName,
       encryptedPayload: this.cipher.encrypt(data.rawToken),
       expiresAt: data.expiresAt,
+    });
+  }
+
+  /**
+   * Dentro de la transacción de origen: emite el token de un solo uso (solo su hash se guarda) y encola el
+   * correo con su vigencia. Lo usan la recuperación de contraseña y el alta de miembros.
+   */
+  async enqueueWithToken(
+    tx: TransactionContext,
+    data: {
+      kind: OutboxKind;
+      userId: string;
+      recipientEmail: string;
+      recipientName: string;
+      purpose: TokenPurpose;
+      ttlMinutes: number;
+    },
+  ): Promise<string> {
+    const { rawToken, expiresAt } = await this.tokens.issueFor(tx, data.userId, data.purpose, data.ttlMinutes);
+    return this.enqueue(tx, {
+      kind: data.kind,
+      userId: data.userId,
+      recipientEmail: data.recipientEmail,
+      recipientName: data.recipientName,
+      rawToken,
+      expiresAt,
     });
   }
 
