@@ -5,6 +5,7 @@ import { Response } from 'express';
 import { PassThrough, Readable } from 'stream';
 import { FilesService } from './files.service';
 import { FilesController } from './files.controller';
+import { AuditService } from '../audit/audit.service';
 import { AuditAction, AuditResource } from '../audit/audit.types';
 import { FileRecord } from './entities/file-record.entity';
 
@@ -31,20 +32,20 @@ describe('SPEC-405: Files Audit Hooks', () => {
       transaction: jest.fn(),
     };
 
-    filesService = new (FilesService as any)(
-      mockFileRepo,
-      {},
-      {},
-      mockDataSource,
-      { delete: jest.fn().mockResolvedValue(undefined) },
-      {},
-      {},
-      mockAuditService,
+    filesService = new FilesService(
+      mockFileRepo as never,
+      {} as never,
+      {} as never,
+      mockDataSource as never,
+      { delete: jest.fn().mockResolvedValue(undefined) } as never,
+      {} as never,
+      {} as never,
+      mockAuditService as unknown as AuditService,
     );
 
-    filesController = new (FilesController as any)(
+    filesController = new FilesController(
       filesService,
-      mockAuditService,
+      mockAuditService as unknown as AuditService,
     );
   });
 

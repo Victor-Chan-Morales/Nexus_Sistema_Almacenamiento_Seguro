@@ -1,15 +1,15 @@
 import { apiRequest } from "./client";
-import type { 
-            ApiRequestOptions,
-            CurrentUserResponse,
-            ForgotPasswordResponse,
-            LoginInput,
-            LoginResponse,
-            RegisterInput,
-            RegisterResponse,
-            ResetPasswordResponse,
-            VerifyEmailResponse, 
-            } from "./types";
+import type {
+  ApiRequestOptions,
+  CurrentUserResponse,
+  ForgotPasswordResponse,
+  LoginInput,
+  LoginResponse,
+  RegisterInput,
+  RegisterResponse,
+  ResetPasswordResponse,
+  VerifyEmailResponse,
+} from "./types";
 
 export function register(input: RegisterInput, options?: ApiRequestOptions) {
   return apiRequest<RegisterResponse>("/auth/register", { method: "POST", body: JSON.stringify(input), headers: { "Content-Type": "application/json" } }, options);
