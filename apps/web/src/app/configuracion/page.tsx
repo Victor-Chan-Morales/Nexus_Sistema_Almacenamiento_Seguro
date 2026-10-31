@@ -16,7 +16,7 @@ const roleLabels: Record<MemberRole, string> = {
 };
 
 export default function SettingsPage() {
-  const { session } = useSession();
+  const { session, failSession } = useSession();
   const isAdmin = session?.role === "tenant_admin";
   const accessToken = session?.accessToken;
 
@@ -68,6 +68,7 @@ export default function SettingsPage() {
       setRole("colaborador");
       reload();
     } catch (err) {
+      if (failSession(err)) return;
       // Escenario 3: Mapeo de errores de negocio 422
       if (err instanceof ApiError) {
         switch (err.code) {
@@ -101,19 +102,17 @@ export default function SettingsPage() {
 
   return (
     <AppShell active="settings">
-      <div className="dashboard-container">
-        <header className="dashboard-header">
+      <>
+        <div className="dashboard-page-heading">
           <div>
-            <h1 className="dashboard-title">Configuración</h1>
-            <p className="dashboard-subtitle">
-              Administración de miembros y políticas del espacio de trabajo.
-            </p>
+            <h1>Configuración</h1>
+            <p>Administración de miembros y políticas del espacio de trabajo.</p>
           </div>
-        </header>
+        </div>
 
         {/* Escenario 4: Restricción para colaborador */}
         {!isAdmin ? (
-          <section className="dashboard-card">
+          <section className="panel">
             <div className="auth-alert" role="status">
               Solo los administradores gestionan miembros.
             </div>
@@ -121,14 +120,14 @@ export default function SettingsPage() {
         ) : (
           <div className="settings-layout">
             {/* Formulario: Invitar miembro */}
-            <section className="dashboard-card">
+            <section className="panel">
               <h2 className="settings-section-title">Agregar miembro al equipo</h2>
               <p className="settings-section-subtitle">
                 Invita a una nueva persona a colaborar en el espacio de trabajo.
               </p>
 
               {formSuccess && (
-                <div className="auth-result-notice">
+                <div className="auth-result-notice" role="status">
                   <strong>Invitación enviada</strong>
                   <span>{formSuccess}</span>
                 </div>
@@ -200,13 +199,13 @@ export default function SettingsPage() {
             </section>
 
             {/* Tabla de Miembros */}
-            <section className="dashboard-card">
+            <section className="panel">
               <div className="settings-header-row">
                 <div>
                   <h2 className="settings-section-title">Miembros del equipo</h2>
                   <span className="settings-counter">
                     {/* Escenario 1: Contador N de {userLimit} usuarios */}
-                    {userLimit ? `${totalMembers} de ${userLimit} usuarios` : `${totalMembers} usuarios`}
+                    {userLimit !== null ? `${totalMembers} de ${userLimit} usuarios` : `${totalMembers} usuarios`}
                   </span>
                 </div>
 
@@ -222,7 +221,7 @@ export default function SettingsPage() {
 
               {/* Escenario 5: Manejo de estados mediante useLoad */}
               {state.status === "loading" ? (
-                <div className="settings-state-box">
+                <div className="settings-state-box" role="status" aria-live="polite">
                   Cargando miembros...
                 </div>
               ) : state.status === "error" ? (
@@ -282,7 +281,7 @@ export default function SettingsPage() {
             </section>
           </div>
         )}
-      </div>
+      </>
     </AppShell>
   );
 }
