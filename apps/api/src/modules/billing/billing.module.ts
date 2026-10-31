@@ -7,7 +7,6 @@ import { Subscription } from './entities/subscription.entity';
 import { BillingOperation } from './entities/billing-operation.entity';
 import { IamModule } from '../iam/iam.module';
 import { DemoSubscriptionHook } from './registration/demo-subscription.hook';
-import { MemberAdmission, UserLimitHook } from './registration/user-limit.hook';
 
 /**
  * Módulo BILLING
@@ -24,7 +23,7 @@ import { MemberAdmission, UserLimitHook } from './registration/user-limit.hook';
     IamModule, // Guard JWT y RegistrationHooks, en el mismo proceso
   ],
   controllers: [BillingController],
-  providers: [BillingService, DemoSubscriptionHook, UserLimitHook, MemberAdmission],
-  exports: [BillingService, UserLimitHook, MemberAdmission],
+  providers: [BillingService, DemoSubscriptionHook],
+  exports: [BillingService],
 })
 export class BillingModule {}
