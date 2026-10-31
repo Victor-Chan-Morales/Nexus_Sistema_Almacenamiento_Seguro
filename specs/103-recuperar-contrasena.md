@@ -92,7 +92,7 @@ ALTER TABLE iam.email_outbox ADD CONSTRAINT ck_email_outbox_kind
   CHECK (kind IN ('email_verification', 'password_reset', 'member_invitation'));
 
 -- migrate:down
-DELETE FROM iam.email_outbox WHERE kind <> 'email_verification';
+-- No borra datos: si quedan mensajes de los tipos nuevos, la restauración falla y se revierte.
 ALTER TABLE iam.email_outbox DROP CONSTRAINT ck_email_outbox_kind;
 ALTER TABLE iam.email_outbox ADD CONSTRAINT ck_email_outbox_kind CHECK (kind IN ('email_verification'));
 ```
@@ -160,5 +160,6 @@ Ninguna. Decisiones: ADR-007 §5 y §6.
 | Fecha | Autor | Descripción |
 |---|---|---|
 | 2026-10-27 | Víctor Chán | Versión inicial. |
+| 2026-10-31 | Revisión | El `migrate:down` de la migración del outbox ya no borra mensajes: restaura la restricción solo si no quedan mensajes de los tipos nuevos (ver `database/README.md`). |
 | 2026-10-28 | Revisión | Corregido el nombre del método de revocación: `revokeAllActiveOf`, ya existente (no `revokeAllForUser`). |
 | 2026-10-27 | Revisión | Declarada la migración del outbox (el CHECK lo impedía); generalización del outbox; revocación de todas las sesiones (ADR-003, absorbe SPEC-107); `email_verified = true`; respuesta idéntica y despacho no esperado. |
