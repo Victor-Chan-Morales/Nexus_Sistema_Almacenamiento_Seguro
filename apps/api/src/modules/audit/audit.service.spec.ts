@@ -21,7 +21,7 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
     findOne: jest.Mock;
     insert: jest.Mock;
   };
-  let dataSource: { transaction: jest.Mock };
+  let dataSource: { transaction: jest.Mock; getRepository: jest.Mock };
   let outbox: { enqueue: jest.Mock };
   let loggerError: jest.SpyInstance;
 
@@ -33,6 +33,7 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
     };
     dataSource = {
       transaction: jest.fn(async (callback: (m: typeof manager) => Promise<void>) => callback(manager)),
+      getRepository: jest.fn(),
     };
     outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     service = new AuditService(
@@ -366,7 +367,7 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
         getMany: jest.fn().mockResolvedValue(events),
       };
 
-      (dataSource as any).getRepository = jest.fn().mockReturnValue({
+      dataSource.getRepository.mockReturnValue({
         createQueryBuilder: jest.fn().mockReturnValue(mockQb),
       });
 
@@ -404,7 +405,7 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
         getMany: jest.fn().mockResolvedValue(events),
       };
 
-      (dataSource as any).getRepository = jest.fn().mockReturnValue({
+      dataSource.getRepository.mockReturnValue({
         createQueryBuilder: jest.fn().mockReturnValue(mockQb),
       });
 
@@ -425,7 +426,7 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
         getMany: jest.fn().mockResolvedValue([]),
       };
 
-      (dataSource as any).getRepository = jest.fn().mockReturnValue({
+      dataSource.getRepository.mockReturnValue({
         createQueryBuilder: jest.fn().mockReturnValue(mockQb),
       });
 
@@ -445,7 +446,7 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
         getMany: jest.fn().mockResolvedValue([]),
       };
 
-      (dataSource as any).getRepository = jest.fn().mockReturnValue({
+      dataSource.getRepository.mockReturnValue({
         createQueryBuilder: jest.fn().mockReturnValue(mockQb),
       });
 
@@ -486,7 +487,7 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
         getMany: jest.fn().mockResolvedValue(events),
       };
 
-      (dataSource as any).getRepository = jest.fn().mockReturnValue({
+      dataSource.getRepository.mockReturnValue({
         createQueryBuilder: jest.fn().mockReturnValue(mockQb),
       });
 

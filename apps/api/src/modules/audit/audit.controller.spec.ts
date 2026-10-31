@@ -82,7 +82,7 @@ describe('AuditController (SPEC-402)', () => {
       user: {
         userId: 'usr-123',
         organizationId: 'org-456',
-        role: 'tenant_admin',
+        role: Role.TENANT_ADMIN,
       },
     };
     const query = { limit: 50 };

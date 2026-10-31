@@ -10,6 +10,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { Roles } from '../iam/decorators/roles.decorator';
 import { Role } from '../iam/domain/enums';
 import { RolesGuard } from '../iam/guards/roles.guard';
+import { AuthUser } from '../iam/interfaces/auth-user.interface';
 import { AuditService } from './audit.service';
 import {
   AuditEventsResponseDto,
@@ -29,7 +30,7 @@ export class AuditController {
   @Get('events')
   @Roles(Role.TENANT_ADMIN)
   async getEvents(
-    @Request() req: any,
+    @Request() req: { user?: Partial<AuthUser> },
     @Query() query: ListAuditEventsQueryDto,
   ): Promise<AuditEventsResponseDto> {
     const organizationId = req.user?.organizationId;
