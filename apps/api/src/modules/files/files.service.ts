@@ -328,7 +328,7 @@ export class FilesService {
     };
   }
 
-async createFolder(
+  async createFolder(
     organizationId: string,
     userId: string,
     name: string,
@@ -354,7 +354,6 @@ async createFolder(
         manager,
       );
       const folderRepo = manager.getRepository(Folder);
-
       const saved = await folderRepo.save(folderRepo.create({
         organizationId,
         driveId: drive.id,
@@ -365,7 +364,6 @@ async createFolder(
         isDeleted: false,
         deletedAt: null,
       }));
-
       return {
         id: saved.id,
         name: saved.name,
@@ -549,7 +547,7 @@ async createFolder(
     return folder;
   }
 
- async uploadMultipartFile(params: {
+  async uploadMultipartFile(params: {
     organizationId: string;
     ownerId: string;
     folderId: string;
@@ -690,7 +688,6 @@ async createFolder(
 
           const usage = await this.readStorageUsage(manager, organizationId);
           await this.writeQuotaCounters(manager, organizationId, usage);
-
           return {
             id: fileRecord.id,
             name: fileRecord.name,
@@ -1006,7 +1003,7 @@ async createFolder(
     return Buffer.concat(chunks);
   }
 
-async softDelete(fileId: string, organizationId: string, userId: string): Promise<FileRecord> {
+  async softDelete(fileId: string, organizationId: string, userId: string): Promise<FileRecord> {
     const drive = await this.getOrCreateUserDrive(organizationId, userId);
     const file = await this.fileRepository.createQueryBuilder('file')
       .innerJoin('file.folder', 'folder')
