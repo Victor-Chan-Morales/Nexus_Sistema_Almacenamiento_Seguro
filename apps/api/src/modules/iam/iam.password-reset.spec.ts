@@ -1,4 +1,4 @@
-import { BadRequestException, HttpException, ValidationPipe } from '@nestjs/common';
+import { BadRequestException, HttpException, Logger, ValidationPipe } from '@nestjs/common';
 import { PASSWORD_RESET_TOKEN_TTL_MINUTES } from './constants';
 import { TokenPurpose, UserStatus } from './domain/enums';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
@@ -18,6 +18,9 @@ const codeOf = async (promise: Promise<unknown>): Promise<string> => {
 
 const TOKEN = 'token-en-claro-de-mas-de-veinte-caracteres';
 const GENERIC = 'Si el correo está registrado, recibirás un enlace para restablecer tu contraseña.';
+
+/** requestReset responde antes de procesar: el trabajo en segundo plano termina en el siguiente turno. */
+const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 const activeUser = { id: 'u1', email: 'usuario@nexus.com', fullName: 'Ana', status: UserStatus.ACTIVE };
 
@@ -105,6 +108,7 @@ describe('PasswordResetService.requestReset', () => {
   it('Escenario 1: invalida tokens previos, emite uno de 15 min y encola password_reset, todo en una transacción', async () => {
     const t = build();
     await t.service.requestReset(' USUARIO@Nexus.com ');
+    await flush();
 
     expect(t.uow.run).toHaveBeenCalledTimes(1);
     expect(t.users.findByEmail).toHaveBeenCalledWith('usuario@nexus.com', 'tx'); // correo normalizado
@@ -127,9 +131,16 @@ describe('PasswordResetService.requestReset', () => {
     await expect(t.service.requestReset('usuario@nexus.com')).resolves.toBeUndefined();
   });
 
+  it('responde aunque la transacción no termine: el trabajo va en segundo plano', async () => {
+    const t = build();
+    t.uow.run.mockImplementationOnce(() => new Promise(() => undefined)); // nunca resuelve
+    await expect(t.service.requestReset('usuario@nexus.com')).resolves.toBeUndefined();
+  });
+
   it('Escenario 2: correo no registrado → no crea token ni mensaje ni despacha', async () => {
     const t = build({ user: null });
     await expect(t.service.requestReset('noexiste@nexus.com')).resolves.toBeUndefined();
+    await flush();
     expect(t.tokensRepo.invalidateUnused).not.toHaveBeenCalled();
     expect(t.tokens.issueFor).not.toHaveBeenCalled();
     expect(t.outbox.enqueue).not.toHaveBeenCalled();
@@ -139,6 +150,7 @@ describe('PasswordResetService.requestReset', () => {
   it.each([UserStatus.INACTIVE, UserStatus.LOCKED])('Escenario 2: cuenta %s → trato idéntico a no registrada', async (status) => {
     const t = build({ user: { ...activeUser, status } });
     await t.service.requestReset('usuario@nexus.com');
+    await flush();
     expect(t.outbox.enqueue).not.toHaveBeenCalled();
     expect(t.outbox.dispatch).not.toHaveBeenCalled();
   });
@@ -146,9 +158,22 @@ describe('PasswordResetService.requestReset', () => {
   it('si falla encolar el mensaje no queda ni despacho (la transacción se revierte)', async () => {
     const t = build();
     t.outbox.enqueue.mockRejectedValueOnce(new Error('falla'));
-    await expect(t.service.requestReset('usuario@nexus.com')).rejects.toThrow();
+    await expect(t.service.requestReset('usuario@nexus.com')).resolves.toBeUndefined();
+    await flush();
     expect(t.outbox.dispatch).not.toHaveBeenCalled();
     expect(t.log).toContain('rollback');
+  });
+
+  it('un fallo interno se registra sin el correo ni el token y no llega a la respuesta', async () => {
+    const t = build();
+    const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    t.outbox.enqueue.mockRejectedValueOnce(Object.assign(new Error('falla con correo@x.com'), { name: 'DbError' }));
+    await expect(t.service.requestReset('usuario@nexus.com')).resolves.toBeUndefined();
+    await flush();
+    expect(logged).toHaveBeenCalledTimes(1);
+    expect(logged.mock.calls[0][0]).toBe('Fallo al procesar la recuperación de contraseña: DbError');
+    expect(String(logged.mock.calls[0][0])).not.toContain('correo@x.com');
+    logged.mockRestore();
   });
 });
 

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PASSWORD_RESET_TOKEN_TTL_MINUTES } from '../constants';
 import { TokenPurpose, UserStatus } from '../domain/enums';
 import { OneTimeToken } from '../entities/one-time-token.entity';
@@ -16,6 +16,8 @@ import { VerificationTokenService } from './verification-token.service';
  */
 @Injectable()
 export class PasswordResetService {
+  private readonly logger = new Logger(PasswordResetService.name);
+
   constructor(
     private readonly uow: UnitOfWork,
     private readonly users: UserRepository,
@@ -28,10 +30,19 @@ export class PasswordResetService {
   ) {}
 
   /**
-   * Nunca revela si el correo existe: devuelve lo mismo exista o no, y el envío no se espera
-   * (evita diferencias de tiempo observables). Emitir uno nuevo invalida los anteriores sin usar.
+   * Nunca revela si el correo existe: responde antes de tocar la base, así que tarda lo mismo exista o no el
+   * correo. La transacción y el envío van en segundo plano; un fallo se registra sin el correo ni el token.
+   * Emitir uno nuevo invalida los anteriores sin usar. Consecuencia: si la base falla, el usuario recibe el
+   * 200 genérico y no llega correo (debe volver a pedirlo).
    */
-  async requestReset(rawEmail: string): Promise<void> {
+  requestReset(rawEmail: string): Promise<void> {
+    this.processRequest(rawEmail).catch((err: Error) =>
+      this.logger.error(`Fallo al procesar la recuperación de contraseña: ${err.name}`),
+    );
+    return Promise.resolve();
+  }
+
+  private async processRequest(rawEmail: string): Promise<void> {
     const email = normalizeEmail(rawEmail);
 
     const outboxId = await this.uow.run(async (tx) => {
