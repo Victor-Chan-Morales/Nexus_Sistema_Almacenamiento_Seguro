@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 
 /**
  * Devuelve el límite de usuarios del plan vigente de la organización, o null si no hay plan vigente.
- * La fuente NO debe bloquear la fila de la organización: el alta de miembros ya la tiene bloqueada
- * mientras la consulta (otra conexión) y esperaría indefinidamente.
+ * La fuente se consulta ANTES de abrir la transacción del alta: usa otra conexión del pool, y leerla dentro
+ * de la transacción podía agotar el pool. No debe bloquear filas de la organización.
  */
 export type UserLimitSource = (organizationId: string) => Promise<number | null>;
 

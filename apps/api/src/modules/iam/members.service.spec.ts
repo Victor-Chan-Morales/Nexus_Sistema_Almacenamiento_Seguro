@@ -94,7 +94,9 @@ const build = (opts: Options = {}) => {
     dispatch: jest.fn(async () => void log.push('dispatch')),
   };
   const admission = new MemberAdmission();
-  if (opts.limit !== null) admission.register(async () => opts.limit ?? 5);
+  if (opts.limit !== null) {
+    admission.register(async () => (log.push('limit'), opts.limit ?? 5));
+  }
 
   const service = new MembersService(
     uow as never,
@@ -154,8 +156,16 @@ describe('MembersService.addMember (sin base de datos: puertos simulados)', () =
   it('Escenario 1: el correo se envía después del commit y la organización se bloquea antes de contar', async () => {
     const t = build();
     await t.service.addMember(ACTOR, DTO);
-    expect(t.log).toEqual(['lock', 'commit', 'dispatch']);
+    expect(t.log).toEqual(['limit', 'lock', 'commit', 'dispatch']);
     expect(t.outbox.dispatch).toHaveBeenCalledWith('outbox-1');
+  });
+
+  it('el límite se lee una sola vez y antes de abrir la transacción (no retiene una conexión extra del pool)', async () => {
+    const t = build({ activeCount: 1, limit: 5 });
+    await t.service.addMember(ACTOR, DTO);
+    expect(t.log.indexOf('limit')).toBeLessThan(t.log.indexOf('lock'));
+    expect(t.uow.run).toHaveBeenCalledTimes(1);
+    expect(t.log.filter((entry) => entry === 'limit')).toHaveLength(1);
   });
 
   it('Escenario 1: el 24 h de la invitación es el contrato (token de un solo uso con TTL de 1440 min)', () => {

@@ -62,6 +62,9 @@ export class MembersService {
     const email = normalizeEmail(dto.email);
     // Argon2 es costoso: se calcula antes de la transacción para no retener el bloqueo de la organización.
     const unusablePasswordHash = await this.hasher.hash(this.opaque.generate());
+    // El límite se lee antes de la transacción: la fuente usa otra conexión del pool y, leída dentro,
+    // con varias altas simultáneas agotaría el pool mientras cada una mantiene la suya. Sin fuente o sin plan es 0.
+    const limit = (await this.admission.userLimit(actor.organizationId)) ?? 0;
 
     let created: { user: User; membership: Membership; outboxId: string };
     try {
@@ -80,8 +83,6 @@ export class MembersService {
             : IamErrors.emailBelongsToOtherOrganization();
         }
 
-        // Sin fuente registrada o sin plan vigente el límite es 0 (falla cerrada).
-        const limit = (await this.admission.userLimit(actor.organizationId)) ?? 0;
         const active = await this.memberships.countActiveInOrganization(tx, actor.organizationId);
         if (active >= limit) throw IamErrors.userLimitExceeded();
 
