@@ -131,6 +131,22 @@ export class TypeOrmMembershipRepository implements MembershipRepository {
     });
   }
 
+  listByOrganization(organizationId: string): Promise<Membership[]> {
+    return this.dataSource.getRepository(Membership).find({
+      where: { organizationId },
+      relations: { user: true, roleRef: true },
+      select: {
+        id: true,
+        userId: true,
+        status: true,
+        createdAt: true,
+        user: { fullName: true, email: true },
+        roleRef: { name: true },
+      },
+      order: { createdAt: 'ASC' },
+    });
+  }
+
   async organizationIdsOfUser(tx: TransactionContext, userId: string): Promise<string[]> {
     const rows = await tx.find(Membership, { where: { userId }, select: { organizationId: true } });
     return rows.map((row) => row.organizationId);

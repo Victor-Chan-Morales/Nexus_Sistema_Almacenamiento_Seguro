@@ -255,3 +255,87 @@ describe('MemberAdmission', () => {
     expect(await admission.userLimit('ORG-1')).toBe(10);
   });
 });
+
+describe('MembersService.list (SPEC-104)', () => {
+  const stamp = (n: number) => new Date(Date.UTC(2026, 9, n, 12));
+  /** Membresías de dos organizaciones; el usuario trae campos que jamás deben salir. */
+  const all = [
+    { id: 'm1', userId: 'u1', organizationId: 'ORG-1', status: 'active', createdAt: stamp(1), role: Role.TENANT_ADMIN,
+      user: { fullName: 'Admin Uno', email: 'admin@empresa.com', passwordHash: 'argon2id$SECRETO', mfaSecretEncrypted: 'MFA' } },
+    { id: 'm2', userId: 'u2', organizationId: 'ORG-1', status: 'suspended', createdAt: stamp(2), role: Role.COLABORADOR,
+      user: { fullName: 'Ana Pérez', email: 'ana@empresa.com', passwordHash: 'argon2id$OTRO', refreshTokenHash: 'RT' } },
+    { id: 'm3', userId: 'u3', organizationId: 'ORG-2', status: 'active', createdAt: stamp(3), role: Role.TENANT_ADMIN,
+      user: { fullName: 'Intruso Dos', email: 'intruso@otra.com', passwordHash: 'argon2id$AJENO' } },
+  ];
+
+  const build = (limit: number | null = 5) => {
+    // El repositorio simulado filtra como la consulta real: WHERE organization_id = :orgId
+    const memberships = {
+      listByOrganization: jest.fn(async (organizationId: string) =>
+        all.filter((row) => row.organizationId === organizationId)),
+    };
+    const admission = new MemberAdmission();
+    if (limit !== null) admission.register(async () => limit);
+    const service = new MembersService(
+      {} as never, {} as never, {} as never, memberships as never,
+      {} as never, {} as never, {} as never, {} as never, admission,
+    );
+    return { service, memberships, admission };
+  };
+
+  it('Escenario 1: lista los miembros de la organización con el contrato exacto, totalMembers y userLimit', async () => {
+    const t = build(5);
+    const result = await t.service.list(ACTOR);
+
+    expect(t.memberships.listByOrganization).toHaveBeenCalledWith('ORG-1');
+    expect(result).toEqual({
+      members: [
+        { id: 'm1', userId: 'u1', fullName: 'Admin Uno', email: 'admin@empresa.com', role: 'tenant_admin',
+          status: 'active', joinedAt: '2026-10-01T12:00:00.000Z' },
+        { id: 'm2', userId: 'u2', fullName: 'Ana Pérez', email: 'ana@empresa.com', role: 'colaborador',
+          status: 'suspended', joinedAt: '2026-10-02T12:00:00.000Z' },
+      ],
+      totalMembers: 2, // los suspendidos se listan y cuentan aquí; el cupo del plan solo mira los activos
+      userLimit: 5,
+    });
+  });
+
+  it('Escenario 1: userLimit es null si no hay plan vigente o no hay fuente registrada', async () => {
+    expect((await build(null).service.list(ACTOR)).userLimit).toBeNull();
+
+    const sinPlan = build(5);
+    sinPlan.admission.register(async () => null);
+    expect((await sinPlan.service.list(ACTOR)).userLimit).toBeNull();
+  });
+
+  it('Escenario 1: una organización sin otros miembros devuelve su lista y el total', async () => {
+    const solo = { ...ACTOR, organizationId: 'ORG-2' };
+    const result = await build(10).service.list(solo);
+    expect(result.members.map((m) => m.id)).toEqual(['m3']);
+    expect(result.totalMembers).toBe(1);
+    expect(result.userLimit).toBe(10);
+  });
+
+  it('Escenario 2: ningún miembro de otra organización aparece (se consulta solo por la organización del actor)', async () => {
+    const t = build();
+    const result = await t.service.list(ACTOR);
+    expect(result.members.map((m) => m.userId)).not.toContain('u3');
+    expect(JSON.stringify(result)).not.toContain('intruso@otra.com');
+    expect(t.memberships.listByOrganization.mock.calls).toEqual([['ORG-1']]);
+  });
+
+  it('Escenario 4: la respuesta nunca incluye hash de contraseña, tokens ni campos de sesión', async () => {
+    const result = await build().service.list(ACTOR);
+    const json = JSON.stringify(result);
+    for (const secret of ['argon2id', 'SECRETO', 'passwordHash', 'password', 'mfa', 'MFA', 'refresh', 'RT', 'token']) {
+      expect(json).not.toContain(secret);
+    }
+    // solo las claves del contrato, nada más
+    for (const member of result.members) {
+      expect(Object.keys(member).sort()).toEqual(
+        ['email', 'fullName', 'id', 'joinedAt', 'role', 'status', 'userId'],
+      );
+    }
+    expect(Object.keys(result).sort()).toEqual(['members', 'totalMembers', 'userLimit']);
+  });
+});

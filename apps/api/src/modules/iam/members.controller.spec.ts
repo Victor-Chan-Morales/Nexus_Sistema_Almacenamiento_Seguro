@@ -6,9 +6,9 @@ import { AddMemberDto } from './dto/add-member.dto';
 import { RolesGuard } from './guards/roles.guard';
 import { MembersController } from './members.controller';
 
-const contextOf = (user: unknown) =>
+const contextOf = (user: unknown, handler: object = MembersController.prototype.addMember) =>
   ({
-    getHandler: () => MembersController.prototype.addMember,
+    getHandler: () => handler,
     getClass: () => MembersController,
     switchToHttp: () => ({ getRequest: () => ({ user }) }),
   }) as never;
@@ -65,5 +65,31 @@ describe('MembersController (POST /organizations/members)', () => {
   it('acepta ambos roles del contrato y recorta espacios', async () => {
     const dto = await validate({ fullName: '  Ana Pérez  ', email: ' ana@empresa.com ', role: 'tenant_admin' });
     expect(dto).toMatchObject({ fullName: 'Ana Pérez', email: 'ana@empresa.com', role: Role.TENANT_ADMIN });
+  });
+
+  it('SPEC-104 Escenario 3: GET exige tenant_admin y un colaborador recibe 403 FORBIDDEN_ROLE', () => {
+    const handler = MembersController.prototype.list;
+    expect(Reflect.getMetadata(ROLES_KEY, handler)).toEqual([Role.TENANT_ADMIN]);
+
+    const guard = new RolesGuard(new Reflector());
+    let error: HttpException | undefined;
+    try {
+      guard.canActivate(contextOf(colaborador, handler));
+    } catch (err) {
+      error = err as HttpException;
+    }
+    expect(error?.getStatus()).toBe(403);
+    expect(error?.getResponse()).toMatchObject({ code: 'FORBIDDEN_ROLE' });
+    expect(new RolesGuard(new Reflector()).canActivate(contextOf(admin, handler))).toBe(true);
+  });
+
+  it('SPEC-104: GET delega en el servicio con el actor del token (sin parámetros de organización)', async () => {
+    const result = { members: [], totalMembers: 0, userLimit: null };
+    const service = { list: jest.fn().mockResolvedValue(result) };
+    const controller = new MembersController(service as never);
+
+    expect(await controller.list(admin as never)).toBe(result);
+    expect(service.list).toHaveBeenCalledWith(admin);
+    expect(MembersController.prototype.list.length).toBe(1); // solo recibe al actor
   });
 });

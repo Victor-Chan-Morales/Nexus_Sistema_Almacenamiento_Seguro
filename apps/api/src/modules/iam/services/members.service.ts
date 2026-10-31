@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { MEMBER_INVITATION_TOKEN_TTL_HOURS } from '../constants';
 import { TokenPurpose } from '../domain/enums';
 import { AddMemberDto } from '../dto/add-member.dto';
-import { MemberDto } from '../dto/member.dto';
+import { MemberDto, MemberListDto } from '../dto/member.dto';
 import { Membership } from '../entities/membership.entity';
 import { User } from '../entities/user.entity';
 import { IamErrors } from '../iam.errors';
@@ -33,6 +33,30 @@ export class MembersService {
     private readonly outbox: EmailOutboxService,
     private readonly admission: MemberAdmission,
   ) {}
+
+  /**
+   * Miembros de la organización del actor (SPEC-104). Se mapea a un DTO explícito: la entidad User
+   * nunca sale del servicio. totalMembers cuenta todos los listados; el cupo del plan solo los activos (SPEC-102).
+   */
+  async list(actor: AuthUser): Promise<MemberListDto> {
+    const [memberships, userLimit] = await Promise.all([
+      this.memberships.listByOrganization(actor.organizationId),
+      this.admission.userLimit(actor.organizationId),
+    ]);
+    return {
+      members: memberships.map((membership) => ({
+        id: membership.id,
+        userId: membership.userId,
+        fullName: membership.user.fullName,
+        email: membership.user.email,
+        role: membership.role,
+        status: membership.status,
+        joinedAt: membership.createdAt.toISOString(),
+      })),
+      totalMembers: memberships.length,
+      userLimit,
+    };
+  }
 
   async addMember(actor: AuthUser, dto: AddMemberDto): Promise<MemberDto> {
     const email = normalizeEmail(dto.email);

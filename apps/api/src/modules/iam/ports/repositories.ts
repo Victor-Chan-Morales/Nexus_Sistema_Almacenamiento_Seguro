@@ -53,6 +53,12 @@ export abstract class MembershipRepository {
     tx?: TransactionContext,
   ): Promise<Membership | null>;
 
+  /**
+   * Miembros de una organización (cualquier estado) con el nombre y el correo del usuario y el nombre del rol,
+   * del más antiguo al más nuevo. Solo carga las columnas necesarias: nunca el hash de la contraseña.
+   */
+  abstract listByOrganization(organizationId: string): Promise<Membership[]>;
+
   /** Ids de TODAS las organizaciones donde el usuario tiene membresía (cualquier estado). */
   abstract organizationIdsOfUser(tx: TransactionContext, userId: string): Promise<string[]>;
 
