@@ -5,7 +5,6 @@ import { Response } from 'express';
 import { PassThrough, Readable } from 'stream';
 import { FilesService } from './files.service';
 import { FilesController } from './files.controller';
-import { AuditService } from '../audit/audit.service';
 import { AuditAction, AuditResource } from '../audit/audit.types';
 import { FileRecord } from './entities/file-record.entity';
 
