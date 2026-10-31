@@ -64,6 +64,8 @@ token de verificación y mensaje en la **outbox** (`iam.email_outbox`) en **una 
 
 La outbox maneja tres tipos de mensaje (`kind`, CHECK `ck_email_outbox_kind`): `email_verification` (token de 15 min; el reintento lo renueva si venció), `password_reset` (token de 15 min, SPEC-103) y `member_invitation` (token de 24 h, SPEC-102). Los dos últimos **no renuevan** el token: si vence antes de enviarse, el mensaje pasa a `expired` y se vuelve a solicitar. `EmailOutboxService.enqueue(tx, { kind, ... })` encola; el enlace de `password_reset` y `member_invitation` apunta a `/nueva-contrasena?token=...`.
 
+La migración `20261027090000_allow_password_reset_outbox_kinds` amplía el CHECK a los tres tipos. Su `down` **no borra datos**: restaura la regla de un solo tipo solo si no quedan mensajes `password_reset` ni `member_invitation`; si quedan, falla y la transacción se revierte. Ver la política de migraciones en `database/README.md`.
+
 ### POST /api/auth/login — 200 (contrato v0.4)
 ```json
 { "email": "ana@empresa.com", "password": "Password123" }
