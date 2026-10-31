@@ -5,6 +5,12 @@ import { AuditChainWriter } from './audit-chain-writer';
 import { errorCode, isPermanentError } from './audit-error-code';
 import { AuditOutboxService } from './audit-outbox.service';
 import { AuditEventInput } from './audit.types';
+import {
+  AuditEventResponseDto,
+  AuditEventsResponseDto,
+  ListAuditEventsQueryDto,
+} from './dto/list-audit-events.dto';
+import { AuditEvent } from './entities/audit-event.entity';
 
 /**
  * Registro síncrono de eventos de auditoría con cadena de hashes por organización.
@@ -50,5 +56,51 @@ export class AuditService {
       if (isPermanentError(code)) await this.outbox.enqueue(queued, code);
       else await this.outbox.enqueue(queued);
     }
+  }
+
+  /**
+   * SPEC-402: Consulta de eventos de auditoría por cursor para tenant_admin.
+   * Filtra por organización y fecha previa si se especifica cursor 'before'.
+   */
+  async listEvents(
+    organizationId: string,
+    query: ListAuditEventsQueryDto,
+  ): Promise<AuditEventsResponseDto> {
+    const limit = query.limit ?? 50;
+    const toIso = (date: Date | string) => new Date(date).toISOString();
+    const qb = this.dataSource
+      .getRepository(AuditEvent)
+      .createQueryBuilder('event')
+      .where('event.organizationId = :organizationId', { organizationId })
+      .orderBy('event.occurredAt', 'DESC')
+      .addOrderBy('event.eventId', 'DESC')
+      .take(limit + 1);
+
+    if (query.before) {
+      qb.andWhere('event.occurredAt < :before', {
+        before: new Date(query.before),
+      });
+    }
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+
+    const events: AuditEventResponseDto[] = pageRows.map((e) => ({
+      id: e.eventId,
+      action: e.actionType,
+      resourceType: e.resourceType ?? null,
+      resourceId: e.resourceId ?? null,
+      actorId: e.actorId,
+      result: e.result,
+      occurredAt: toIso(e.occurredAt),
+    }));
+
+    const nextBefore = hasMore ? toIso(pageRows[pageRows.length - 1].occurredAt) : null;
+
+    return {
+      events,
+      nextBefore,
+    };
   }
 }
