@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api/client";
-import { login, register, verifyEmail } from "@/lib/api/iam";
+import { forgotPassword, login, register, resetPassword, verifyEmail } from "@/lib/api/iam";
 import { useSession } from "@/lib/session";
 import { Brand } from "@/components/brand";
 import { UiIcon } from "@/components/ui-icon";
@@ -174,40 +174,327 @@ function VerifyFormContent() {
 export function RecoverForm() {
   const [sent, setSent] = useState(false);
   const [email, setEmail] = useState("");
-  function submit(e: FormEvent<HTMLFormElement>) { e.preventDefault(); setEmail(String(new FormData(e.currentTarget).get("email") ?? "")); setSent(true); }
-  return <AuthFrame className="auth-result-card" title={sent ? "Revisa tu correo" : "Recupera tu contraseña"} simulated lead={sent ? `Si existe una cuenta para ${email}, recibirás instrucciones para restablecer tu contraseña.` : "Ingresa el correo asociado a tu cuenta y te enviaremos instrucciones para restablecerla."}>
-    {sent ? <><div className="auth-result-icon" aria-hidden="true"><UiIcon name="envelope" size={25} /></div><div className="auth-result-notice"><strong>Solicitud registrada</strong><span>Esta confirmación es simulada; no se envió ningún correo.</span></div><Link className="button button-primary button-wide auth-submit" href="/nueva-contrasena">Abrir nueva contraseña (demo)</Link><button className="text-button auth-resend-button" onClick={() => setSent(false)}>Usar otro correo</button></> : <form className="auth-form" onSubmit={submit}>
-      <div className="field"><label htmlFor="recover-email">Correo electrónico</label><input id="recover-email" name="email" type="email" autoComplete="email" placeholder="tu@correo.com" required /></div>
-      <button className="button button-primary button-wide auth-submit" type="submit">Enviar instrucciones</button>
-    </form>}
-    <p className="auth-switch"><Link href="/login"><UiIcon name="arrowLeft" size={15} /> Volver a iniciar sesión</Link></p>
-  </AuthFrame>;
+  const [loading, setLoading] = useState(false);
+  const [serverMessage, setServerMessage] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [cooldown, setCooldown] = useState(0);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setInterval(() => {
+      setCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldown]);
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (loading || cooldown > 0) return;
+
+    setError(null);
+    const form = new FormData(e.currentTarget);
+    const targetEmail = String(form.get("email") ?? "").trim();
+    if (!targetEmail) return;
+
+    setLoading(true);
+    try {
+      const response = await forgotPassword(targetEmail);
+      setEmail(targetEmail);
+      setServerMessage(
+        response?.message ||
+          "Si el correo está registrado, recibirás un enlace para restablecer tu contraseña.",
+      );
+      setSent(true);
+      setCooldown(30);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.code === "VALIDATION_ERROR") {
+          setError("Ingresa un correo electrónico válido.");
+        } else {
+          setError(err.message || "No fue posible procesar la solicitud.");
+        }
+      } else {
+        setError("No fue posible conectar con el servidor. Intenta de nuevo.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <AuthFrame
+      className="auth-result-card"
+      title={sent ? "Revisa tu correo" : "Recupera tu contraseña"}
+      lead={
+        sent
+          ? serverMessage ||
+            `Si existe una cuenta para ${email}, recibirás instrucciones para restablecer tu contraseña.`
+          : "Ingresa el correo asociado a tu cuenta y te enviaremos instrucciones para restablecerla."
+      }
+    >
+      {sent ? (
+        <>
+          <div className="auth-result-icon" aria-hidden="true">
+            <UiIcon name="envelope" size={25} />
+          </div>
+          <div className="auth-result-notice">
+            <strong>Solicitud registrada</strong>
+            <span>{serverMessage}</span>
+          </div>
+          {error && <div className="auth-alert" role="alert">{error}</div>}
+          <button
+            className="button button-primary button-wide auth-submit"
+            type="button"
+            disabled={loading || cooldown > 0}
+            onClick={() => {
+              if (email && cooldown === 0) {
+                setLoading(true);
+                setError(null);
+                forgotPassword(email)
+                  .then((res) => {
+                    setServerMessage(res.message);
+                    setCooldown(30);
+                  })
+                  .catch((err) => {
+                    setError(err instanceof ApiError ? err.message : "Error al reenviar");
+                  })
+                  .finally(() => setLoading(false));
+              }
+            }}
+          >
+            {loading
+              ? "Enviando..."
+              : cooldown > 0
+              ? `Reenviar instrucciones (${cooldown}s)`
+              : "Reenviar instrucciones"}
+          </button>
+          <button
+            className="text-button auth-resend-button"
+            type="button"
+            onClick={() => {
+              setSent(false);
+              setError(null);
+            }}
+          >
+            Usar otro correo
+          </button>
+        </>
+      ) : (
+        <form className="auth-form" onSubmit={submit}>
+          <div className="field">
+            <label htmlFor="recover-email">Correo electrónico</label>
+            <input
+              id="recover-email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              defaultValue={email}
+              placeholder="tu@correo.com"
+              required
+            />
+          </div>
+          {error && <div className="auth-alert" role="alert">{error}</div>}
+          <button
+            className="button button-primary button-wide auth-submit"
+            type="submit"
+            disabled={loading || cooldown > 0}
+          >
+            {loading
+              ? "Enviando..."
+              : cooldown > 0
+              ? `Enviar instrucciones (${cooldown}s)`
+              : "Enviar instrucciones"}
+          </button>
+        </form>
+      )}
+      <p className="auth-switch">
+        <Link href="/login">
+          <UiIcon name="arrowLeft" size={15} /> Volver a iniciar sesión
+        </Link>
+      </p>
+    </AuthFrame>
+  );
 }
 
-export function NewPasswordForm() {
+function NewPasswordInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const token = searchParams.get("token")?.trim() || "";
+
   const [expired, setExpired] = useState(false);
   const [done, setDone] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  function submit(e: FormEvent<HTMLFormElement>) {
+
+  const hasToken = Boolean(token);
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (loading || !token) return;
+
+    setError("");
     const form = new FormData(e.currentTarget);
     const password = String(form.get("password") ?? "");
     const confirmation = String(form.get("confirmation") ?? "");
-    if (expired) { setError("El enlace de recuperación venció. Solicita uno nuevo para continuar."); return; }
-    if (!passwordIsStrong(password)) { setError("La contraseña es demasiado débil. Usa 8 caracteres, una mayúscula y un número."); return; }
-    if (password !== confirmation) { setError("Las contraseñas no coinciden."); return; }
-    setDone(true); setError("");
+
+    if (!password) {
+      setError("Ingresa una contraseña nueva.");
+      return;
+    }
+
+    if (password !== confirmation) {
+      setError("Las contraseñas no coinciden.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await resetPassword(token, password);
+      setDone(true);
+      setError("");
+      setTimeout(() => {
+        router.push("/login");
+      }, 2000);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.code === "INVALID_OR_EXPIRED_TOKEN" || (err.status === 400 && err.code?.includes("EXPIRED"))) {
+          setExpired(true);
+          setError("El enlace venció o ya se usó");
+        } else if (err.code === "VALIDATION_ERROR") {
+          setError(err.message || "La contraseña no cumple con los requisitos mínimos de seguridad.");
+        } else {
+          setError(err.message || "No fue posible restablecer la contraseña.");
+        }
+      } else {
+        setError("Error de conexión con el servidor. Intenta nuevamente.");
+      }
+    } finally {
+      setLoading(false);
+    }
   }
-  return <AuthFrame simulated className="auth-result-card" title={expired ? "Enlace vencido" : done ? "Contraseña actualizada" : "Crea una nueva contraseña"} lead={expired ? "El enlace ya no es válido. Solicita uno nuevo para proteger tu cuenta." : done ? "Tu contraseña se cambió correctamente." : "Elige una contraseña segura para volver a acceder a tu cuenta."}>
-    {expired ? <><div className="auth-alert" role="alert">El enlace de recuperación venció.</div><Link className="button button-primary button-wide auth-submit" href="/recuperar-contrasena">Solicitar otro enlace</Link></> : done ? <><div className="auth-result-icon" aria-hidden="true"><UiIcon name="check" size={25} /></div><Link className="button button-primary button-wide auth-submit" href="/login">Ir al inicio de sesión</Link></> : <form className="auth-form" onSubmit={submit} noValidate>
-      <div className="field"><label htmlFor="new-password">Contraseña nueva</label><input id="new-password" name="password" type="password" autoComplete="new-password" placeholder="Mínimo 8 caracteres" required /><small>Incluye una mayúscula y un número.</small></div>
-      <div className="field"><label htmlFor="new-password-confirm">Confirmar contraseña</label><input id="new-password-confirm" name="confirmation" type="password" autoComplete="new-password" placeholder="Repite tu contraseña" required /></div>
-      {error && <div className="auth-alert" role="alert">{error}</div>}
-      <button className="button button-primary button-wide auth-submit" type="submit">Cambiar contraseña</button>
-      <button type="button" className="text-button auth-demo-expired" onClick={() => { setExpired(true); setError(""); }}>Probar enlace vencido</button>
-    </form>}
-    <p className="auth-switch"><Link href="/login">Volver al inicio de sesión</Link></p>
-  </AuthFrame>;
+
+  if (!hasToken) {
+    return (
+      <AuthFrame
+        className="auth-result-card"
+        title="Enlace inválido"
+        lead="No se proporcionó un token de recuperación válido. Solicita un nuevo enlace para continuar."
+      >
+        <div className="auth-alert" role="alert">
+          El enlace no contiene un token de recuperación.
+        </div>
+        <Link className="button button-primary button-wide auth-submit" href="/recuperar-contrasena">
+          Solicitar otro enlace
+        </Link>
+        <p className="auth-switch">
+          <Link href="/login">Volver al inicio de sesión</Link>
+        </p>
+      </AuthFrame>
+    );
+  }
+
+  return (
+    <AuthFrame
+      className="auth-result-card"
+      title={
+        expired
+          ? "Enlace vencido"
+          : done
+          ? "Contraseña actualizada"
+          : "Crea una nueva contraseña"
+      }
+      lead={
+        expired
+          ? "El enlace ya no es válido. Solicita uno nuevo para proteger tu cuenta."
+          : done
+          ? "Tu contraseña se cambió correctamente. Redirigiendo al inicio de sesión..."
+          : "Elige una contraseña segura para volver a acceder a tu cuenta."
+      }
+    >
+      {expired ? (
+        <>
+          <div className="auth-alert" role="alert">
+            El enlace venció o ya se usó.
+          </div>
+          <Link className="button button-primary button-wide auth-submit" href="/recuperar-contrasena">
+            Solicitar otro enlace
+          </Link>
+        </>
+      ) : done ? (
+        <>
+          <div className="auth-result-icon" aria-hidden="true">
+            <UiIcon name="check" size={25} />
+          </div>
+          <div className="auth-result-notice">
+            <strong>Contraseña actualizada</strong>
+            <span>Redirigiendo a inicio de sesión...</span>
+          </div>
+          <Link className="button button-primary button-wide auth-submit" href="/login">
+            Ir al inicio de sesión
+          </Link>
+        </>
+      ) : (
+        <form className="auth-form" onSubmit={submit} noValidate>
+          <div className="field">
+            <label htmlFor="new-password">Contraseña nueva</label>
+            <input
+              id="new-password"
+              name="password"
+              type="password"
+              autoComplete="new-password"
+              placeholder="Mínimo 8 caracteres"
+              required
+              disabled={loading}
+            />
+            <small>Incluye mayúsculas, minúsculas y números.</small>
+          </div>
+          <div className="field">
+            <label htmlFor="new-password-confirm">Confirmar contraseña</label>
+            <input
+              id="new-password-confirm"
+              name="confirmation"
+              type="password"
+              autoComplete="new-password"
+              placeholder="Repite tu contraseña"
+              required
+              disabled={loading}
+            />
+          </div>
+          {error && <div className="auth-alert" role="alert">{error}</div>}
+          <button
+            className="button button-primary button-wide auth-submit"
+            type="submit"
+            disabled={loading}
+          >
+            {loading ? "Actualizando..." : "Cambiar contraseña"}
+          </button>
+        </form>
+      )}
+      <p className="auth-switch">
+        <Link href="/login">Volver al inicio de sesión</Link>
+      </p>
+    </AuthFrame>
+  );
+}
+
+export function NewPasswordForm() {
+  return (
+    <Suspense
+      fallback={
+        <AuthFrame
+          className="auth-result-card"
+          title="Crea una nueva contraseña"
+          lead="Cargando formulario..."
+        >
+          <div className="auth-result-notice">
+            <span>Cargando...</span>
+          </div>
+        </AuthFrame>
+      }
+    >
+      <NewPasswordInner />
+    </Suspense>
+  );
 }
 
 export function SessionExpired() {

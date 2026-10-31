@@ -1,5 +1,15 @@
 import { apiRequest } from "./client";
-import type { ApiRequestOptions, CurrentUserResponse, LoginInput, LoginResponse, RegisterInput, RegisterResponse, VerifyEmailResponse } from "./types";
+import type { 
+            ApiRequestOptions,
+            CurrentUserResponse,
+            ForgotPasswordResponse,
+            LoginInput,
+            LoginResponse,
+            RegisterInput,
+            RegisterResponse,
+            ResetPasswordResponse,
+            VerifyEmailResponse, 
+            } from "./types";
 
 export function register(input: RegisterInput, options?: ApiRequestOptions) {
   return apiRequest<RegisterResponse>("/auth/register", { method: "POST", body: JSON.stringify(input), headers: { "Content-Type": "application/json" } }, options);
@@ -26,4 +36,30 @@ export function refreshSession(options?: ApiRequestOptions) {
 /** Endpoint del contrato v0.3: revoca la sesión y limpia la cookie. */
 export function logout(options?: ApiRequestOptions) {
   return apiRequest<void>("/auth/logout", { method: "POST" }, options);
+}
+
+/** SPEC-105: Solicita enlace de recuperación de contraseña (POST /auth/forgot-password). */
+export function forgotPassword(email: string, options?: ApiRequestOptions) {
+  return apiRequest<ForgotPasswordResponse>(
+    "/auth/forgot-password",
+    {
+      method: "POST",
+      body: JSON.stringify({ email }),
+      headers: { "Content-Type": "application/json" },
+    },
+    options,
+  );
+}
+
+/** SPEC-105: Restablece la contraseña con token de un solo uso (POST /auth/reset-password). */
+export function resetPassword(token: string, newPassword: string, options?: ApiRequestOptions) {
+  return apiRequest<ResetPasswordResponse>(
+    "/auth/reset-password",
+    {
+      method: "POST",
+      body: JSON.stringify({ token, newPassword }),
+      headers: { "Content-Type": "application/json" },
+    },
+    options,
+  );
 }
