@@ -45,15 +45,11 @@ export class AuditService {
     };
 
     try {
-      await this.dataSource.transaction((manager) =>
-        this.writer.append(manager, event, { dedupe: false }),
-      );
+      await this.dataSource.transaction((manager) => this.writer.append(manager, event, { dedupe: false }));
     } catch (error) {
       // Solo el código de error: el mensaje y los parámetros de pg pueden contener datos del evento.
       const code = errorCode(error);
-      this.logger.error(
-        `No se pudo registrar el evento de auditoría (código ${code}), se encola para reintento`,
-      );
+      this.logger.error(`No se pudo registrar el evento de auditoría (código ${code}), se encola para reintento`);
       // `enqueue` no lanza: por eso no hace falta un segundo try aquí. Un fallo permanente no mejora
       // reintentando: se conserva directamente como `dead` para revisión.
       const queued = { ...event, occurredAt: capturedAt };
@@ -66,11 +62,12 @@ export class AuditService {
    * SPEC-402: Consulta de eventos de auditoría por cursor para tenant_admin.
    * Filtra por organización y fecha previa si se especifica cursor 'before'.
    */
-async listEvents(
+  async listEvents(
     organizationId: string,
     query: ListAuditEventsQueryDto,
   ): Promise<AuditEventsResponseDto> {
     const limit = query.limit ?? 50;
+    const toIso = (date: Date | string) => new Date(date).toISOString();
     const qb = this.dataSource
       .getRepository(AuditEvent)
       .createQueryBuilder('event')
@@ -96,17 +93,10 @@ async listEvents(
       resourceId: e.resourceId ?? null,
       actorId: e.actorId,
       result: e.result,
-      occurredAt:
-        e.occurredAt instanceof Date
-          ? e.occurredAt.toISOString()
-          : new Date(e.occurredAt).toISOString(),
+      occurredAt: toIso(e.occurredAt),
     }));
 
-    const nextBefore = hasMore
-      ? pageRows[pageRows.length - 1].occurredAt instanceof Date
-        ? pageRows[pageRows.length - 1].occurredAt.toISOString()
-        : new Date(pageRows[pageRows.length - 1].occurredAt).toISOString()
-      : null;
+    const nextBefore = hasMore ? toIso(pageRows[pageRows.length - 1].occurredAt) : null;
 
     return {
       events,

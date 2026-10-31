@@ -11,7 +11,8 @@ import { AuditOutbox } from './entities/audit-outbox.entity';
  * Módulo AUDIT
  *
  * Servicio base de auditoría (SPEC-401) con su outbox de reintento (issue #17). Global para que IAM, Files y
- * Billing inyecten AuditService sin importarlo. Expone AuditController para consulta de bitácora (SPEC-402).
+ * Billing inyecten AuditService sin importarlo. No importa módulos de dominio: no hay dependencia circular.
+ * Expone AuditController para consulta de bitácora (SPEC-402).
  */
 @Global()
 @Module({

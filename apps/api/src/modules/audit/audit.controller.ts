@@ -34,7 +34,9 @@ export class AuditController {
   ): Promise<AuditEventsResponseDto> {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
-      throw new ForbiddenException('La sesión no tiene una organización activa válida');
+      throw new ForbiddenException(
+        'La sesión no tiene una organización activa válida',
+      );
     }
 
     return this.auditService.listEvents(organizationId, query);
