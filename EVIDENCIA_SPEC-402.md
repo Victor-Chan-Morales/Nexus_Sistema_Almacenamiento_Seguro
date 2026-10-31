@@ -17,12 +17,12 @@
 
 | Escenario | Criterio de la Spec | Estado | Componente Validador |
 |---|---|:---:|---|
-| **Escenario 1** | Primera página en orden descendente, contrato público sin datos internos (`events`) y `nextBefore = null` al no superar el límite. | **PASS** | `audit.service.spec.ts` |
-| **Escenario 2** | Paginación por cursor retornando `limit` elementos y asignando a `nextBefore` la fecha ISO del último evento. | **PASS** | `audit.service.spec.ts` |
-| **Escenario 3** | Validación estricta de parámetros (`limit` 1–100, default 50; `before` formato ISO-8601). Retorno 400 ante valores inválidos. | **PASS** | `audit.controller.spec.ts` (validación de DTO con `class-validator`) |
-| **Escenario 4** | Aislamiento multi-tenant estricto mediante filtrado obligatorio por `organizationId` de la sesión JWT. | **PASS** | `audit.service.spec.ts` |
-| **Escenario 5** | Control de acceso restringido con exclusividad al rol `tenant_admin`. | **PASS** | Metadatos `@Roles` verificados vía `Reflector` en `audit.controller.spec.ts`; rechazo HTTP 401 en vivo ante peticiones anónimas |
-| **Escenario 6** | Sanitización y exclusión categórica de metadatos criptográficos internos (`recordHash`, `prevHash`, `correlationId`, `safeReason`). | **PASS** | `audit.service.ts` / `audit.service.spec.ts` |
+| **Escenario 1** | Primera página en orden `occurredAt DESC, eventId DESC`, contrato público (`events`) y `nextBefore = null` al no superar el límite. | **PASS** | `audit.service.spec.ts` (orden, `take(limit + 1)` y `nextBefore`) |
+| **Escenario 2** | Paginación por cursor: `limit` elementos, `nextBefore` = `occurredAt` del último, y `before` aplica `occurredAt < :before`. | **PASS** | `audit.service.spec.ts` (página completa y filtro `before`) |
+| **Escenario 3** | `limit` por defecto 50 y rango 1–100; `before` ISO-8601; valores inválidos → 400. | **PASS** | `audit.controller.spec.ts` (default, bordes 1 y 100, rechazo de 0 y 101, `before` ISO) |
+| **Escenario 4** | Aislamiento multi-tenant mediante filtro obligatorio por `organizationId` de la sesión JWT. | **PASS** | `audit.service.spec.ts` |
+| **Escenario 5** | Acceso exclusivo a `tenant_admin`: `@Roles` verificado con `Reflector`, `colaborador` recibe 403 `FORBIDDEN_ROLE` al ejecutar el `RolesGuard` real, y 401 en vivo ante peticiones anónimas. | **PASS** | `audit.controller.spec.ts` (guard con contexto simulado) |
+| **Escenario 6** | La respuesta solo expone `id`, `action`, `resourceType`, `resourceId`, `actorId`, `result` y `occurredAt`; no incluye `recordHash`, `prevHash`, `correlationId` ni `safeReason`. | **PASS** | `audit.service.spec.ts` (claves exactas y ausencia de valores internos) |
 
 ---
 
@@ -30,7 +30,7 @@
 
 - **Comprobación estricta de tipos:** `npx tsc --noEmit` ejecutado en `apps/api` finalizado con **0 errores**.
 - **Empaquetado de producción:** `nest build` completado satisfactoriamente en `dist/`.
-- **Justificación de `apps/api/tsconfig.json`:** Se incluyó `"types": ["node", "jest"]` para que el compilador resuelva las declaraciones globales de pruebas (`jest`, `describe`, `expect`) en los archivos `*.spec.ts` dentro de `src/`, manteniendo la configuración sin espacios ni líneas sobrantes.
+- **`apps/api/tsconfig.json`:** sin cambios respecto a `main`. La PR no modifica la configuración de TypeScript.
 - **Registro en Módulo:** `AuditController` registrado formalmente en `AuditModule.controllers`.
 
 ---
@@ -43,12 +43,13 @@ Servidor ejecutándose en `http://localhost:3001/api`:
 - **Petición con límite excedido (`limit=150`):** Rechazada por el DTO mediante `Max(100)` con HTTP `400 Bad Request`.
 - **Petición con cursor inválido (`before=fecha-invalida`):** Rechazada por el DTO mediante `IsISO8601()` con HTTP `400 Bad Request`.
 
+> Nota: estas pruebas en vivo las ejecutó el autor antes de la revisión de formato y pruebas. Los cambios posteriores no modifican la lógica HTTP. No se repitieron en la revisión porque requieren servidor y base de datos en ejecución.
+
 ---
 
 ## 4. Evidencia de Ejecución de Suites de Pruebas Automatizadas
 
-### A. Dominio de Auditoría (`apps/api`) — 61 pruebas unitarias en verde
-*(Se removió el bloque duplicado `computeRecordHash` en `audit.service.spec.ts`, estabilizando el total real del módulo en 61 pruebas).*
+### A. Dominio de Auditoría (`apps/api`) — 70 pruebas unitarias en verde
 
 ```text
 PASS src/modules/audit/audit-error-code.spec.ts
@@ -79,7 +80,9 @@ PASS src/modules/audit/audit.service.spec.ts
     listEvents (SPEC-402)
       √ Escenario 1: Devuelve eventos de la org en orden descendente con nextBefore = null si no supera el límite
       √ Escenario 2: Devuelve limit registros y nextBefore = occurredAt del último cuando hay más páginas
+      √ Escenario 2: con before filtra por occurredAt anterior al cursor
       √ Escenario 4: Aplica where organizationId aislando eventos de otros tenants
+      √ Escenario 6: la respuesta solo expone los campos públicos
   computeRecordHash
     √ es determinista para los mismos campos
     √ produce un SHA-256 hexadecimal de 64 caracteres
@@ -100,12 +103,28 @@ PASS src/modules/audit/audit.service.spec.ts
 PASS src/modules/audit/audit.controller.spec.ts
   AuditController (SPEC-402)
     √ Escenario 5: El endpoint getEvents está restringido exclusivamente a TENANT_ADMIN
+    √ Escenario 5: un colaborador recibe 403 con código FORBIDDEN_ROLE
+    √ Escenario 5: un tenant_admin supera el RolesGuard
     √ Delega la consulta al servicio con el organizationId de la sesión
     √ Lanza ForbiddenException si la sesión no contiene un organizationId
     Escenario 3: Validación de límites en query DTO
-      √ valida que limit por defecto sea 50 y acepte valores entre 1 y 100 con fecha ISO
-      √ falla validación si limit es menor a 1, mayor a 100 o before no es ISO
+      √ usa 50 como limit por defecto cuando el parámetro no se envía
+      √ acepta limit = 1
+      √ acepta limit = 100
+      √ rechaza limit = 0
+      √ rechaza limit = 101
+      √ rechaza before que no es ISO-8601
+      √ acepta before ISO-8601
 
 Test Suites: 4 passed, 4 total
-Tests:       61 passed, 61 total
+Tests:       70 passed, 70 total
 Snapshots:   0 total
+```
+
+### B. Suite completa de la API (`apps/api`)
+
+```text
+Test Suites: 17 passed, 17 total
+Tests:       167 passed, 167 total
+Snapshots:   0 total
+```
