@@ -37,3 +37,16 @@ export interface SubscriptionDetailResponse {
   createdAt: string;
   plan: PlanItemResponse;
 }
+
+export interface BillingOperationItemResponse {
+  id: string;
+  type: 'charge' | 'renewal';
+  planName: string;
+  amount: number;
+  simulated: true;
+  occurredAt: string;
+}
+
+export interface BillingOperationListResponse {
+  items: BillingOperationItemResponse[];
+}
