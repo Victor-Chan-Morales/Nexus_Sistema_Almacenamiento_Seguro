@@ -172,6 +172,29 @@ describe('PasswordResetService.reset', () => {
     expect(t.log.at(-1)).toBe('commit');
   });
 
+  it('el hash de Argon2 se calcula entre dos transacciones, nunca dentro de la que tiene el bloqueo del token', async () => {
+    const t = build();
+    await t.service.reset(TOKEN, 'NuevaClave123');
+
+    expect(t.uow.run).toHaveBeenCalledTimes(2);
+    const [firstRun, secondRun] = t.uow.run.mock.invocationCallOrder;
+    const hashAt = t.hasher.hash.mock.invocationCallOrder[0];
+    expect(hashAt).toBeGreaterThan(firstRun);
+    expect(hashAt).toBeLessThan(secondRun);
+    expect(t.log).toEqual(['commit', 'markUsed', 'password', 'revoke', 'commit']);
+  });
+
+  it('si el token se consume entre las dos fases, la segunda falla y no cambia nada', async () => {
+    const t = build();
+    t.tokensRepo.findByHashForUpdate
+      .mockResolvedValueOnce({ id: 't1', userId: 'u1', usedAt: null, expiresAt: new Date(Date.now() + 60_000) })
+      .mockResolvedValueOnce({ id: 't1', userId: 'u1', usedAt: new Date(), expiresAt: new Date(Date.now() + 60_000) });
+    expect(await codeOf(t.service.reset(TOKEN, 'NuevaClave123'))).toBe('INVALID_OR_EXPIRED_TOKEN');
+    expect(t.tokensRepo.markUsed).not.toHaveBeenCalled();
+    expect(t.users.setPasswordAndVerifyEmail).not.toHaveBeenCalled();
+    expect(t.sessions.revokeAllActiveOf).not.toHaveBeenCalled();
+  });
+
   it('Escenario 4: token inexistente → INVALID_OR_EXPIRED_TOKEN y no cambia nada', async () => {
     const t = build({ record: null });
     expect(await codeOf(t.service.reset(TOKEN, 'NuevaClave123'))).toBe('INVALID_OR_EXPIRED_TOKEN');
