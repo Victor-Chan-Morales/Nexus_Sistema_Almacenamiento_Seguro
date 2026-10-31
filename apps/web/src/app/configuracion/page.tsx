@@ -16,7 +16,7 @@ const roleLabels: Record<MemberRole, string> = {
 };
 
 export default function SettingsPage() {
-  const { session } = useSession();
+  const { session, failSession } = useSession();
   const isAdmin = session?.role === "tenant_admin";
   const accessToken = session?.accessToken;
 
@@ -68,6 +68,7 @@ export default function SettingsPage() {
       setRole("colaborador");
       reload();
     } catch (err) {
+      if (failSession(err)) return;
       // Escenario 3: Mapeo de errores de negocio 422
       if (err instanceof ApiError) {
         switch (err.code) {
@@ -126,7 +127,7 @@ export default function SettingsPage() {
               </p>
 
               {formSuccess && (
-                <div className="auth-result-notice">
+                <div className="auth-result-notice" role="status">
                   <strong>Invitación enviada</strong>
                   <span>{formSuccess}</span>
                 </div>
@@ -204,7 +205,7 @@ export default function SettingsPage() {
                   <h2 className="settings-section-title">Miembros del equipo</h2>
                   <span className="settings-counter">
                     {/* Escenario 1: Contador N de {userLimit} usuarios */}
-                    {userLimit ? `${totalMembers} de ${userLimit} usuarios` : `${totalMembers} usuarios`}
+                    {userLimit !== null ? `${totalMembers} de ${userLimit} usuarios` : `${totalMembers} usuarios`}
                   </span>
                 </div>
 
@@ -220,7 +221,7 @@ export default function SettingsPage() {
 
               {/* Escenario 5: Manejo de estados mediante useLoad */}
               {state.status === "loading" ? (
-                <div className="settings-state-box">
+                <div className="settings-state-box" role="status" aria-live="polite">
                   Cargando miembros...
                 </div>
               ) : state.status === "error" ? (
