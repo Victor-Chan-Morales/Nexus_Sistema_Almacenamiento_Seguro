@@ -12,6 +12,7 @@ import { formatBytes, formatIsoDate, formatUsd, usagePercent } from "@/lib/forma
 import { RequireSession, useSession } from "@/lib/session";
 import { useLoad } from "@/lib/use-load";
 import { Brand } from "@/components/brand";
+import { Notice } from "@/components/notice";
 import { UiIcon } from "@/components/ui-icon";
 
 function BillingFrame({ title, subtitle, children, wide = false }: { title: string; subtitle: string; children: React.ReactNode; wide?: boolean }) {
@@ -20,10 +21,6 @@ function BillingFrame({ title, subtitle, children, wide = false }: { title: stri
 
 function BillingRows({ rows }: { rows: Array<[string, string]> }) {
   return <div className="billing-rows">{rows.map(([label, value]) => <div className="billing-row" key={label}><span>{label}</span><b>{value}</b></div>)}</div>;
-}
-
-function Notice({ title, message, onRetry }: { title: string; message: string; onRetry?: () => void }) {
-  return <div className="billing-error-box" role="alert"><b>{title}</b><p>{message}</p>{onRetry && <p><button type="button" className="text-button" onClick={onRetry}>Reintentar</button></p>}</div>;
 }
 
 function price(plan: Plan) {
