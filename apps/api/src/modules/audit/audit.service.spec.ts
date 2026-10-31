@@ -350,7 +350,7 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
         resourceType: 'file',
         resourceId: `file-${i}`,
         actorId: 'usr-1',
-        result: 'SUCCESS',
+        result: 'success',
         occurredAt: new Date(2026, 9, 29, 10, i),
         recordHash: 'secret-hash',
         prevHash: 'prev-hash',
@@ -374,12 +374,12 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
 
       expect(res.events).toHaveLength(15);
       expect(res.nextBefore).toBeNull();
-      // Escenario 6: Sin datos internos en events
-      expect((res.events[0] as any).recordHash).toBeUndefined();
-      expect((res.events[0] as any).prevHash).toBeUndefined();
-      expect((res.events[0] as any).correlationId).toBeUndefined();
       expect(res.events[0].id).toBe('ev-0');
       expect(res.events[0].action).toBe('FILE_DOWNLOADED');
+      expect(mockQb.orderBy).toHaveBeenCalledWith('event.occurredAt', 'DESC');
+      expect(mockQb.addOrderBy).toHaveBeenCalledWith('event.eventId', 'DESC');
+      expect(mockQb.take).toHaveBeenCalledWith(51);
+      expect(mockQb.andWhere).not.toHaveBeenCalled();
     });
 
     it('Escenario 2: Devuelve limit registros y nextBefore = occurredAt del último cuando hay más páginas', async () => {
@@ -391,7 +391,7 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
         resourceType: null,
         resourceId: null,
         actorId: 'usr-1',
-        result: 'SUCCESS',
+        result: 'success',
         occurredAt: new Date(2026, 9, 29, 10, 50 - i),
       }));
 
@@ -412,6 +412,26 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
 
       expect(res.events).toHaveLength(50);
       expect(res.nextBefore).toBe(events[49].occurredAt.toISOString());
+    });
+
+    it('Escenario 2: con before filtra por occurredAt anterior al cursor', async () => {
+      const before = '2026-10-29T10:30:00.000Z';
+      const mockQb = {
+        where: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      };
+
+      (dataSource as any).getRepository = jest.fn().mockReturnValue({
+        createQueryBuilder: jest.fn().mockReturnValue(mockQb),
+      });
+
+      await service.listEvents('org-1', { limit: 50, before });
+
+      expect(mockQb.andWhere).toHaveBeenCalledWith('event.occurredAt < :before', { before: new Date(before) });
     });
 
     it('Escenario 4: Aplica where organizationId aislando eventos de otros tenants', async () => {
@@ -436,10 +456,49 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
         { organizationId: orgId },
       );
     });
-  });
-  
-});
 
+    it('Escenario 6: la respuesta solo expone los campos públicos', async () => {
+      const orgId = 'org-1';
+      const events = [
+        {
+          eventId: 'ev-1',
+          organizationId: orgId,
+          actionType: 'FILE_UPLOAD',
+          resourceType: 'file',
+          resourceId: 'file-1',
+          actorId: 'usr-1',
+          result: 'success',
+          occurredAt: new Date('2026-10-29T10:00:00.000Z'),
+          chainSeq: '7',
+          recordHash: 'secret-record-hash',
+          prevHash: 'secret-prev-hash',
+          correlationId: 'secret-correlation-id',
+          safeReason: 'secret-safe-reason',
+        },
+      ];
+
+      const mockQb = {
+        where: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue(events),
+      };
+
+      (dataSource as any).getRepository = jest.fn().mockReturnValue({
+        createQueryBuilder: jest.fn().mockReturnValue(mockQb),
+      });
+
+      const res = await service.listEvents(orgId, { limit: 50 });
+
+      expect(Object.keys(res.events[0]).sort()).toEqual(
+        ['action', 'actorId', 'id', 'occurredAt', 'resourceId', 'resourceType', 'result'],
+      );
+      expect(JSON.stringify(res)).not.toMatch(/secret-|chainSeq/);
+    });
+  });
+});
 
 describe('computeRecordHash', () => {
   const base: AuditHashFields = {
@@ -494,4 +553,3 @@ describe('computeRecordHash', () => {
     expect(computeRecordHash({ ...base, prevHash: 'abc' })).not.toBe(computeRecordHash(base));
   });
 });
-
