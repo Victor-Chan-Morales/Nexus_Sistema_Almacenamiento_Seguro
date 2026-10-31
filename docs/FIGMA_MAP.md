@@ -61,6 +61,7 @@ Se preparó navegación y contenido inicial en estas rutas. La implementación v
 | `/archivos`, `/archivos/[folderId]`, `/archivos/cuota-excedida` | Mi espacio, lista de carpetas/archivos, carpeta vacía y con contenido, creación y validación, detalle, carga/errores, duplicados, versiones, descarga de demostración y estado de cuota llena | Basado en `docs/figma/carga_archivos/mk_01_vista_panel_archivos_existentes.png`, `mk_02_detalles_al_selecciona_archivo.png`, `mk_03_opciones_con_archivos.png` y `mk_07_espacio_almacenamiento_alcanzado.png`; cotejo final pendiente |
 | `/papelera` | Papelera con estado vacío, restauración, confirmación y eliminación definitiva | Basado en `docs/figma/carga_archivos/mk_04_papelera.png`; cotejo final pendiente |
 | `/perfil` | Perfil de cuenta: nombre editable en la demostración, correo de solo lectura, estado de verificación, acceso a recuperación de contraseña y organización asociada | Sin frame específico; campos basados en `USER` de `docs/modelo-minimo.md` y en el estado de cuenta documentado. Guardado solo local, pendiente de conectar con IAM y cotejo visual |
-| `/configuracion`, `/auditoria` | Solo estructura inicial | Pendiente de frame |
+| `/configuracion` | Gestión de miembros del equipo | Conectada a la API (SPEC-106) |
+| `/auditoria` | Solo estructura inicial | Pendiente de frame |
 
 Las acciones de demostración solo alteran datos locales del navegador. La selección de un archivo no transfiere sus bytes a SeaweedFS ni sustituye las operaciones de API de IAM, Billing o Files.
