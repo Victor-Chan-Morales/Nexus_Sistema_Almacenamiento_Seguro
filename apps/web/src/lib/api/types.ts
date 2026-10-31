@@ -174,3 +174,20 @@ export type BillingOperationsResponse = {
 };
 
 export type RenewSubscriptionResponse = ActivateSubscriptionResponse;
+
+export type ForgotPasswordInput = {
+  email: string;
+};
+
+export type ForgotPasswordResponse = {
+  message: string;
+};
+
+export type ResetPasswordInput = {
+  token: string;
+  newPassword: string;
+};
+
+export type ResetPasswordResponse = {
+  message: string;
+};

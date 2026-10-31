@@ -18,9 +18,9 @@
 | `docs/figma/crear_cuenta/mk_02_Registro de usuario.png` | `/registro` | Víctor | IAM — Sebastián | Captura revisada; cotejo final pendiente | Nombre, correo, organización, contraseña y confirmación; mostrar validación y cuenta creada pendiente de verificar | Implementación inicial simulada |
 | `docs/figma/crear_cuenta/mk_02_Registro de usuario.png` | `/registro/completado` | Víctor | IAM — Sebastián | Captura revisada; cotejo final pendiente | Confirmación de creación y aviso de verificación por correo | Implementación inicial simulada |
 | `docs/figma/crear_cuenta/mk_03_acceder_crear_cuenta.png` | `/login` | Víctor | IAM — Sebastián | Captura revisada; cotejo final pendiente | Correo, contraseña, recordar sesión y recuperar contraseña | Implementación inicial simulada; incluye errores de acceso |
-| `docs/figma/crear_cuenta/mk_03_acceder_crear_cuenta.png` | `/nueva-contrasena` | Víctor | IAM — Sebastián | Sin frame específico | Nueva contraseña, confirmación, reglas de fortaleza, enlace vencido y éxito | Estructura inicial simulada |
+| `docs/figma/crear_cuenta/mk_03_acceder_crear_cuenta.png` | `/nueva-contrasena` | Víctor | IAM — Sebastián | Sin frame específico | Nueva contraseña, confirmación, reglas de fortaleza, enlace vencido y éxito | Conectada a la API (SPEC-105) |
 | Sin frame identificado | `/verificar-correo` | Víctor | IAM — Sebastián | No | Código, reenvío, token inválido/vencido y verificación exitosa | Implementación inicial simulada |
-| Sin frame identificado | `/recuperar-contrasena` | Víctor | IAM — Sebastián | No | Solicitud con correo, confirmación y enlace a nueva contraseña de demostración | Implementación inicial simulada |
+| Sin frame identificado | `/recuperar-contrasena` | Víctor | IAM — Sebastián | No | Solicitud con correo, confirmación y enlace a nueva contraseña | Conectada a la API (SPEC-105) |
 | Sin frame identificado | `/sesion-vencida` | Víctor | IAM — Sebastián | No | Mensaje de sesión expirada y enlace para volver al login | Estructura inicial |
 | Pendiente: planes/contratación | `/planes` | Víctor | Billing — Anthony | No | Pendiente | Estructura de ruta |
 | Pendiente: dashboard | `/dashboard` | Víctor | IAM/Billing/Files | No | Pendiente | Estructura de ruta |
