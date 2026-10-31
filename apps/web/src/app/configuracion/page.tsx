@@ -101,19 +101,17 @@ export default function SettingsPage() {
 
   return (
     <AppShell active="settings">
-      <div className="dashboard-container">
-        <header className="dashboard-header">
+      <>
+        <div className="dashboard-page-heading">
           <div>
-            <h1 className="dashboard-title">Configuración</h1>
-            <p className="dashboard-subtitle">
-              Administración de miembros y políticas del espacio de trabajo.
-            </p>
+            <h1>Configuración</h1>
+            <p>Administración de miembros y políticas del espacio de trabajo.</p>
           </div>
-        </header>
+        </div>
 
         {/* Escenario 4: Restricción para colaborador */}
         {!isAdmin ? (
-          <section className="dashboard-card">
+          <section className="panel">
             <div className="auth-alert" role="status">
               Solo los administradores gestionan miembros.
             </div>
@@ -121,7 +119,7 @@ export default function SettingsPage() {
         ) : (
           <div className="settings-layout">
             {/* Formulario: Invitar miembro */}
-            <section className="dashboard-card">
+            <section className="panel">
               <h2 className="settings-section-title">Agregar miembro al equipo</h2>
               <p className="settings-section-subtitle">
                 Invita a una nueva persona a colaborar en el espacio de trabajo.
@@ -200,7 +198,7 @@ export default function SettingsPage() {
             </section>
 
             {/* Tabla de Miembros */}
-            <section className="dashboard-card">
+            <section className="panel">
               <div className="settings-header-row">
                 <div>
                   <h2 className="settings-section-title">Miembros del equipo</h2>
@@ -282,7 +280,7 @@ export default function SettingsPage() {
             </section>
           </div>
         )}
-      </div>
+      </>
     </AppShell>
   );
 }
