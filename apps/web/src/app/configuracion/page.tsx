@@ -20,7 +20,7 @@ export default function SettingsPage() {
   const isAdmin = session?.role === "tenant_admin";
   const accessToken = session?.accessToken;
 
-  // Carga reactiva de miembros mediante el hook useLoad del proyecto (Desviación 1)
+  // Carga reactiva de miembros mediante el hook useLoad del proyecto
   const fetchMembers = useCallback(
     (signal: AbortSignal) => getMembers(accessToken!, { signal }),
     [accessToken],
@@ -101,7 +101,7 @@ export default function SettingsPage() {
   const userLimit = state.status === "ready" ? state.data.userLimit : null;
 
   return (
-    <AppShell active="settings">
+    <AppShell active="/configuracion">
       <>
         <div className="dashboard-page-heading">
           <div>
@@ -234,7 +234,7 @@ export default function SettingsPage() {
                   </button>
                 </div>
               ) : members.length === 0 ? (
-                /* Desviación 3: Texto de estado vacío exacto */
+                /* Texto de estado vacío según la spec */
                 <div className="empty-state">
                   <span>
                     <UiIcon name="shield" size={24} />
