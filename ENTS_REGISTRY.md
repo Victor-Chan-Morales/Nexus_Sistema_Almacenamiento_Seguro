@@ -43,7 +43,7 @@ Estas rutas siguen bajo la propiedad de Web común/Víctor. Las rutas marcadas c
 | `/archivos/[folderId]` | Contenido de carpeta | Víctor | Files/Storage (Miguel) | ID/frame pendiente |
 | `/papelera` | Elementos eliminados | Víctor | Files (Miguel) | ID/frame pendiente |
 | `/configuracion` | Configuración de cuenta/organización | Víctor | IAM; alcance posterior | ID/frame pendiente |
-| `/auditoria` | Eventos de actividad | Víctor | Audit; fase posterior | ID/frame pendiente |
+| `/auditoria` | Eventos de actividad | Víctor | Audit (`GET /audit/events`, SPEC-402) + miembros para nombres (SPEC-104); conectada en SPEC-403 | ID/frame pendiente |
 
 ## Límites de carpetas
 
