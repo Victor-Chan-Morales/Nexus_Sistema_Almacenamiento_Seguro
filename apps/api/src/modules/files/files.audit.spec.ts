@@ -14,6 +14,7 @@ describe('SPEC-405: Files Audit Hooks', () => {
   let filesController: FilesController;
   let mockAuditService: { logEvent: jest.Mock };
   let mockFileRepo: { createQueryBuilder: jest.Mock; save: jest.Mock };
+  let mockDataSource: { transaction: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -27,12 +28,16 @@ describe('SPEC-405: Files Audit Hooks', () => {
       save: jest.fn(),
     };
 
+    mockDataSource = {
+      transaction: jest.fn(),
+    };
+
     filesService = new FilesService(
       mockFileRepo as never,
       {} as never,
       {} as never,
-      {} as never,
-      {} as never,
+      mockDataSource as never,
+      { delete: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never,
       {} as never,
       mockAuditService as unknown as AuditService,
@@ -42,6 +47,89 @@ describe('SPEC-405: Files Audit Hooks', () => {
       filesService,
       mockAuditService as unknown as AuditService,
     );
+  });
+
+  describe('FILE_UPLOAD en FilesService.uploadMultipartFile', () => {
+    it('registra FILE_UPLOAD tras confirmar la transacción de subida', async () => {
+      const orgId = 'org-up-1';
+      const userId = 'usr-up-1';
+      const folderId = 'folder-up-1';
+      const fileId = 'file-new-1';
+
+      jest.spyOn(filesService, 'getOrCreateUserDrive').mockResolvedValue({
+        id: 'drive-1',
+        name: 'Drive',
+        rootFolderId: 'root-1',
+      });
+      jest.spyOn(filesService as any, 'requirePersonalFolder').mockResolvedValue({ id: folderId });
+      jest.spyOn(filesService as any, 'reserveUpload').mockResolvedValue({
+        reservationId: 'res-1',
+        uploadId: 'up-1',
+      });
+      jest.spyOn(filesService as any, 'hasExpectedContent').mockReturnValue(true);
+
+      mockDataSource.transaction.mockResolvedValue({
+        id: fileId,
+        name: 'documento.txt',
+        mimeType: 'text/plain',
+        sizeBytes: 15,
+        versionId: 'v-1',
+        uploadedAt: new Date(),
+      });
+
+      const result = await filesService.uploadMultipartFile({
+        organizationId: orgId,
+        ownerId: userId,
+        folderId,
+        file: {
+          originalname: 'documento.txt',
+          mimetype: 'text/plain',
+          buffer: Buffer.from('contenido prueba'),
+        },
+      });
+
+      expect(result.id).toBe(fileId);
+      expect(mockAuditService.logEvent).toHaveBeenCalledTimes(1);
+      expect(mockAuditService.logEvent).toHaveBeenCalledWith({
+        organizationId: orgId,
+        actorId: userId,
+        action: AuditAction.FILE_UPLOAD,
+        resourceType: AuditResource.FILE,
+        resourceId: fileId,
+      });
+    });
+
+    it('no registra FILE_UPLOAD si la transacción de subida falla (Escenario 2)', async () => {
+      jest.spyOn(filesService, 'getOrCreateUserDrive').mockResolvedValue({
+        id: 'drive-1',
+        name: 'Drive',
+        rootFolderId: 'root-1',
+      });
+      jest.spyOn(filesService as any, 'requirePersonalFolder').mockResolvedValue({ id: 'folder-1' });
+      jest.spyOn(filesService as any, 'reserveUpload').mockResolvedValue({
+        reservationId: 'res-1',
+        uploadId: 'up-1',
+      });
+      jest.spyOn(filesService as any, 'hasExpectedContent').mockReturnValue(true);
+      jest.spyOn(filesService as any, 'finishFailedUpload').mockResolvedValue(undefined);
+
+      mockDataSource.transaction.mockRejectedValue(new Error('Error de cuota en BD'));
+
+      await expect(
+        filesService.uploadMultipartFile({
+          organizationId: 'org-1',
+          ownerId: 'usr-1',
+          folderId: 'folder-1',
+          file: {
+            originalname: 'documento.txt',
+            mimetype: 'text/plain',
+            buffer: Buffer.from('contenido'),
+          },
+        }),
+      ).rejects.toThrow();
+
+      expect(mockAuditService.logEvent).not.toHaveBeenCalled();
+    });
   });
 
   describe('FILE_DELETE en FilesService.softDelete', () => {
