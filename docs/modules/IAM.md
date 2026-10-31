@@ -88,6 +88,18 @@ Más cookie `nexus_refresh` (HttpOnly, `Path=/api/auth`, 7 días, `Secure` segú
 - `POST /api/auth/logout` (cookie) → `204`; revoca la sesión y limpia la cookie.
 - `POST /api/auth/login` responde `403 EMAIL_NOT_VERIFIED` si el correo no está verificado (`IAM_REQUIRE_VERIFIED_EMAIL=true`, por defecto).
 
+## Miembros, invitaciones y recuperación de contraseña (SPEC-102, SPEC-103, SPEC-104)
+
+- **Alta** `POST /api/organizations/members` (`MembersService.addMember`, solo `tenant_admin`). Dentro de una transacción: bloquea la fila de la organización (`SELECT ... FOR UPDATE`), comprueba el correo (`MEMBER_ALREADY_EXISTS` si ya es miembro de esta organización; `EMAIL_BELONGS_TO_OTHER_ORGANIZATION` si pertenece a otra), comprueba el límite (`USER_LIMIT_EXCEEDED`) y crea usuario con contraseña aleatoria inutilizable, membresía activa, token `password_reset` de **24 h** y mensaje `member_invitation`. El correo sale después del commit. La organización sale solo del token; un `organizationId` en el cuerpo responde `400`.
+- **Límite de usuarios**: IAM define el puerto `MemberAdmission`. Billing lo rellena en `modules/billing/registration/user-limit.hook.ts` con `plan.maxMembers` de la suscripción vigente. Sin suscripción vigente, o sin fuente registrada, el límite es 0 (falla cerrada). Cuenta solo membresías `active`.
+- **Listado** `GET /api/organizations/members` (solo `tenant_admin`, `MembersService.list`): DTO explícito, nunca la entidad `User` ni el hash. `userLimit` es `null` sin plan vigente. `totalMembers` cuenta todas las membresías (también las suspendidas); el cupo solo compara las activas. Sin paginación: se asume un máximo de 100 miembros en este corte.
+- **Recuperación** (`PasswordResetService`): `POST /auth/forgot-password` responde igual exista o no el correo y no espera el envío. `POST /auth/reset-password` valida el token (hash, propósito, vencimiento, uso) y la política de contraseña antes de consumirlo; en una transacción cambia la contraseña (Argon2id), marca `email_verified = true`, consume el token y revoca todas las sesiones.
+- **Limitaciones conocidas**:
+  - Una recuperación nueva invalida también una invitación pendiente (ambas usan `password_reset`). La salida es "Olvidé mi contraseña".
+  - Tras restablecer, las sesiones (refresh) quedan revocadas, pero un access token ya emitido sigue válido hasta vencer (15 min): `JwtStrategy` valida membresía y organización en cada request, no la sesión.
+  - La recuperación no tiene límite de intentos (`429`) en este corte.
+  - Las auditorías `MEMBER_ADDED` y `AUTH_PASSWORD_RESET` llegan con SPEC-405.
+
 ## Integración con frontend (Víctor)
 - `accessToken` solo en memoria; nunca en localStorage. `fetch(..., { credentials: 'include' })` en login, refresh y logout.
 - Ante 401 en ruta protegida: un intento de `/auth/refresh` y reintento; si falla, ir a login.
@@ -111,5 +123,5 @@ Sin paquetes fuera de los que IAM ya usa (`@nestjs/jwt`, `@nestjs/passport`, `pa
 
 ## Pendiente explícito (NO terminado)
 - RBAC completo: solo se asigna `tenant_admin`; `colaborador`, invitaciones y permisos por recurso quedan para después.
-- `requestPasswordReset` (la tabla `one_time_token` ya admite `password_reset`), bloqueo por intentos fallidos (`failed_login_attempts` / `last_login_at` sin usar), reenvío manual de verificación (el reintento ya renueva el token solo; un endpoint de reenvío sigue fuera del corte), `verifyTotp` (MFA fuera de alcance), selector de organización activa.
+- Bloqueo por intentos fallidos (`failed_login_attempts` / `last_login_at` sin usar), reenvío manual de verificación (el reintento ya renueva el token solo; un endpoint de reenvío sigue fuera del corte), `verifyTotp` (MFA fuera de alcance), selector de organización activa.
 - Rate limiting (`429`) en register/login/refresh; limpieza periódica de sesiones y tokens vencidos.
