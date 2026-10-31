@@ -12,6 +12,7 @@ import {
   UploadedFile,
   Headers,
   Res,
+  Optional,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -21,6 +22,8 @@ import { FilesService } from './files.service';
 import { TrashResponseDto } from './dto/trash.dto';
 import { CurrentUser } from '../iam/decorators/current-user.decorator';
 import { AuthUser } from '../iam/interfaces/auth-user.interface';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction, AuditResource } from '../audit/audit.types';
 
 /**
  * FoldersController (/folders)
@@ -72,7 +75,10 @@ export class FoldersController {
 @Controller('files')
 @UseGuards(AuthGuard('jwt'))
 export class FilesController {
-  constructor(private readonly filesService: FilesService) {}
+  constructor(
+    private readonly filesService: FilesService,
+    @Optional() private readonly auditService?: AuditService,
+  ) {}
 
   /**
    * SPEC-202: Listado de archivos en papelera para el Drive personal del solicitante.
@@ -121,11 +127,21 @@ export class FilesController {
     @Res() res: Response,
   ) {
     const orgId = req.user.organizationId;
+    const userId = req.user.userId || req.user.id;
     const { stream, mimeType, name } = await this.filesService.downloadFileStream(
       fileId,
       orgId,
-      req.user.userId || req.user.id,
+      userId,
     );
+
+    // Enganche SPEC-405: FILE_DOWNLOAD tras resolver el archivo exitosamente
+    void this.auditService?.logEvent({
+      organizationId: orgId,
+      actorId: userId,
+      action: AuditAction.FILE_DOWNLOAD,
+      resourceType: AuditResource.FILE,
+      resourceId: fileId,
+    }).catch(() => {});
 
     const safeFilename = name.replace(/[/\\?%*:|"<>]/g, '_');
     const rfc5987Filename = encodeURIComponent(safeFilename);
