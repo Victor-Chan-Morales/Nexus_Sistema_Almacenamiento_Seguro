@@ -187,15 +187,10 @@ export function RecoverForm() {
     return () => clearInterval(timer);
   }, [cooldown]);
 
-  async function submit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  async function requestRecovery(targetEmail: string) {
     if (loading || cooldown > 0) return;
 
     setError(null);
-    const form = new FormData(e.currentTarget);
-    const targetEmail = String(form.get("email") ?? "").trim();
-    if (!targetEmail) return;
-
     setLoading(true);
     try {
       const response = await forgotPassword(targetEmail);
@@ -219,6 +214,13 @@ export function RecoverForm() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const targetEmail = String(new FormData(e.currentTarget).get("email") ?? "").trim();
+    if (!targetEmail) return;
+    void requestRecovery(targetEmail);
   }
 
   return (
@@ -247,19 +249,7 @@ export function RecoverForm() {
             type="button"
             disabled={loading || cooldown > 0}
             onClick={() => {
-              if (email && cooldown === 0) {
-                setLoading(true);
-                setError(null);
-                forgotPassword(email)
-                  .then((res) => {
-                    setServerMessage(res.message);
-                    setCooldown(30);
-                  })
-                  .catch((err) => {
-                    setError(err instanceof ApiError ? err.message : "Error al reenviar");
-                  })
-                  .finally(() => setLoading(false));
-              }
+              if (email) void requestRecovery(email);
             }}
           >
             {loading
@@ -446,7 +436,7 @@ function NewPasswordInner() {
               required
               disabled={loading}
             />
-            <small>Incluye mayúsculas, minúsculas y números.</small>
+            <small>Mínimo 8 caracteres, con letras y números.</small>
           </div>
           <div className="field">
             <label htmlFor="new-password-confirm">Confirmar contraseña</label>
