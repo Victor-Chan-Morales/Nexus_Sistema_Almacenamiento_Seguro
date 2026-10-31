@@ -204,6 +204,16 @@ describe('MembersService.addMember (sin base de datos: puertos simulados)', () =
     expect(await codeOf(t.service.addMember(ACTOR, DTO))).toBe('MEMBER_ALREADY_EXISTS');
   });
 
+  it.each<[string, Options]>([
+    ['MEMBER_ALREADY_EXISTS', { existing: { id: 'u-ana' }, organizationIds: ['ORG-1'] }],
+    ['EMAIL_BELONGS_TO_OTHER_ORGANIZATION', { existing: { id: 'u-ana' }, organizationIds: ['ORG-2'] }],
+    ['USER_LIMIT_EXCEEDED', { activeCount: 5, limit: 5 }],
+  ])('%s no calcula el hash de Argon2 (no paga el coste de un alta rechazada)', async (code, opts) => {
+    const t = build(opts);
+    expect(await codeOf(t.service.addMember(ACTOR, DTO))).toBe(code);
+    expect(t.hasher.hash).not.toHaveBeenCalled();
+  });
+
   it('Escenario 5: miembros activos = límite del plan (Demo: 5) → USER_LIMIT_EXCEEDED', async () => {
     const t = build({ activeCount: 5, limit: 5 });
     expect(await codeOf(t.service.addMember(ACTOR, DTO))).toBe('USER_LIMIT_EXCEEDED');
