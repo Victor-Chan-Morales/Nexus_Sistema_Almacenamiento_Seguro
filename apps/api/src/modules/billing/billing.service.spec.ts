@@ -434,5 +434,51 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
       });
       expect(mockManagerExpired.save).not.toHaveBeenCalled();
     });
+
+    it('Escenario 5: dos renovaciones seguidas suman dos periodos y escriben una operación renewal cada una', async () => {
+      // PostgreSQL serializa las renovaciones con FOR UPDATE; aquí se comprueba la suma con un estado compartido
+      jest.useFakeTimers({ now: new Date('2026-10-29T12:00:00.000Z') });
+
+      const activeTeam: Subscription = {
+        id: 'sub-team-active',
+        organizationId: 'org-123',
+        planId: mockTeamPlan.id,
+        plan: mockTeamPlan,
+        status: SubscriptionStatus.ACTIVE,
+        simulated: true,
+        startDate: new Date('2026-10-11T00:00:00.000Z'),
+        expiresAt: new Date('2026-11-10T00:00:00.000Z'),
+        createdAt: new Date('2026-10-11T00:00:00.000Z'),
+      };
+      const operations: BillingOperation[] = [];
+
+      const mockManager = {
+        findOne: jest.fn().mockResolvedValue(activeTeam),
+        create: jest.fn((cls: unknown, entity: unknown) => {
+          if (cls === BillingOperation) operations.push(entity as BillingOperation);
+          return entity;
+        }),
+        save: jest.fn((entity: unknown) => Promise.resolve(entity)),
+      };
+      (dataSource.transaction as jest.Mock).mockImplementation((cb: (m: unknown) => Promise<unknown>) => cb(mockManager));
+
+      await service.renewSubscription('org-123');
+      const second = await service.renewSubscription('org-123');
+
+      const lockedQuery = {
+        where: { organizationId: 'org-123', status: SubscriptionStatus.ACTIVE },
+        lock: { mode: 'pessimistic_write' },
+        loadEagerRelations: false,
+      };
+      expect(mockManager.findOne.mock.calls).toEqual([
+        [Subscription, lockedQuery],
+        [Subscription, lockedQuery],
+      ]);
+      // 2026-11-10 + 30 días = 2026-12-10; + 30 días más = 2027-01-09
+      expect(second.id).toBe('sub-team-active');
+      expect(second.expiresAt?.toISOString()).toBe('2027-01-09T00:00:00.000Z');
+      expect(operations).toHaveLength(2);
+      expect(operations.every((op) => op.type === BillingOperationType.RENEWAL && op.amount === 19.99)).toBe(true);
+    });
   });
 });
