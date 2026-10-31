@@ -18,12 +18,22 @@ export class VerificationTokenService {
     private readonly opaque: OpaqueTokens,
   ) {}
 
-  async issue(tx: TransactionContext, userId: string): Promise<{ rawToken: string; expiresAt: Date }> {
+  issue(tx: TransactionContext, userId: string): Promise<{ rawToken: string; expiresAt: Date }> {
+    return this.issueFor(tx, userId, TokenPurpose.EMAIL_VERIFICATION, VERIFICATION_TOKEN_TTL_MINUTES);
+  }
+
+  /** Mismo mecanismo con otro propósito y vigencia (p. ej. invitación de miembro: password_reset, 24 h). */
+  async issueFor(
+    tx: TransactionContext,
+    userId: string,
+    purpose: TokenPurpose,
+    ttlMinutes: number,
+  ): Promise<{ rawToken: string; expiresAt: Date }> {
     const rawToken = this.opaque.generate();
-    const expiresAt = addMinutes(VERIFICATION_TOKEN_TTL_MINUTES);
+    const expiresAt = addMinutes(ttlMinutes);
     await this.tokensRepo.create(tx, {
       userId,
-      purpose: TokenPurpose.EMAIL_VERIFICATION,
+      purpose,
       tokenHash: this.opaque.hash(rawToken),
       expiresAt,
     });

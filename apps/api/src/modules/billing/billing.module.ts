@@ -6,6 +6,7 @@ import { Plan } from './entities/plan.entity';
 import { Subscription } from './entities/subscription.entity';
 import { IamModule } from '../iam/iam.module';
 import { DemoSubscriptionHook } from './registration/demo-subscription.hook';
+import { UserLimitHook } from './registration/user-limit.hook';
 
 /**
  * Módulo BILLING
@@ -14,7 +15,8 @@ import { DemoSubscriptionHook } from './registration/demo-subscription.hook';
  * Catálogo de planes y persistencia de suscripciones, desacoplado de FilesModule
  * (sin dependencia cíclica ni ModuleRef). Importa IamModule por el guard JWT y por
  * RegistrationHooks: el alta de una organización contrata el plan Demo dentro de la
- * misma transacción del registro (hook demo-subscription).
+ * misma transacción del registro (hook demo-subscription). También registra la fuente del límite de
+ * usuarios del plan (UserLimitHook) para el alta de miembros de IAM.
  */
 @Module({
   imports: [
@@ -22,7 +24,7 @@ import { DemoSubscriptionHook } from './registration/demo-subscription.hook';
     IamModule, // Guard JWT y RegistrationHooks, en el mismo proceso
   ],
   controllers: [BillingController],
-  providers: [BillingService, DemoSubscriptionHook],
+  providers: [BillingService, DemoSubscriptionHook, UserLimitHook],
   exports: [BillingService],
 })
 export class BillingModule {}
