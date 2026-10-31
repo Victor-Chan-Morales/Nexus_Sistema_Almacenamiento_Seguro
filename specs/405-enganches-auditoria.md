@@ -67,6 +67,8 @@ No cambia ninguna respuesta HTTP. Eventos (nombres de `CONTRACTS.md` v0.5):
 | `PLAN_ACTIVATED` | `SubscriptionsController.activate`, tras responder con éxito (también en la reactivación idempotente) | `subscription` / `subscriptionId` | Anthony |
 | `PLAN_RENEWED` | `SubscriptionsController.renew`, tras el éxito | `subscription` / `subscriptionId` | Anthony |
 
+> **Pendiente de Files:** `FILE_RESTORE` y `FILE_PURGE` no tienen métodos en `main` (`restoreFile`/`purgeFile`). Se añaden con SPEC-203 y SPEC-204 (tarea T2b).
+
 ---
 
 ## 6. Datos y Esquema
@@ -91,7 +93,8 @@ No aplica.
 ## 9. Plan de Tareas
 
 - [ ] **T1 (Víctor, 30 min; después de que se mergeen 103 y 102)**: `AUTH_LOGIN`, `AUTH_PASSWORD_RESET`, `MEMBER_ADDED` + una prueba por evento que verifique la llamada con los argumentos correctos.
-- [ ] **T2 (Miguel, 30 min)**: los cinco `FILE_*` + pruebas.
+- [ ] **T2 (Miguel, 30 min)**: `FILE_UPLOAD`, `FILE_DOWNLOAD` y `FILE_DELETE` + pruebas.
+- [ ] **T2b (Miguel, diferida; con SPEC-203 y SPEC-204)**: `FILE_RESTORE` tras el commit de `restoreFile` y `FILE_PURGE` tras el commit de `purgeFile`, cada uno con su prueba y los Escenarios 1–4. Se implementa en el mismo PR que la spec que crea el método.
 - [ ] **T3 (Anthony, 20 min)**: `PLAN_ACTIVATED`, `PLAN_RENEWED` + pruebas.
 
 ---
@@ -122,3 +125,4 @@ Ninguna. Decisión: ADR-007 §8.
 | Fecha | Autor | Descripción |
 |---|---|---|
 | 2026-10-27 | Revisión | Spec nueva: separa los enganches de la creación del servicio para respetar la propiedad por directorio (la spec 401 original pedía a Anthony editar `AuthService` y `FilesService`). |
+| 2026-10-31 | Revisión | T2 queda con tres eventos (`FILE_UPLOAD`, `FILE_DOWNLOAD`, `FILE_DELETE`). `FILE_RESTORE` y `FILE_PURGE` pasan a T2b, diferida con SPEC-203 y SPEC-204 (P2). |

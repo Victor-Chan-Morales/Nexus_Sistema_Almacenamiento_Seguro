@@ -22,3 +22,14 @@ export function usagePercent(used: number | string | null | undefined, limit: nu
   if (!Number.isFinite(numUsed) || numUsed <= 0) return 0;
   return Math.min(100, Math.round((numUsed / numLimit) * 100));
 }
+
+export function formatUsd(amount: number | string | null | undefined): string {
+  const numeric = typeof amount === "number" ? amount : Number(amount);
+  if (!Number.isFinite(numeric)) return "US$0.00";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(numeric).replace("$", "US$");
+}

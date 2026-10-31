@@ -4,6 +4,7 @@ import { BillingController } from './billing.controller';
 import { BillingService } from './billing.service';
 import { Plan } from './entities/plan.entity';
 import { Subscription } from './entities/subscription.entity';
+import { BillingOperation } from './entities/billing-operation.entity';
 import { IamModule } from '../iam/iam.module';
 import { DemoSubscriptionHook } from './registration/demo-subscription.hook';
 import { UserLimitHook } from './registration/user-limit.hook';
@@ -20,7 +21,7 @@ import { UserLimitHook } from './registration/user-limit.hook';
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Plan, Subscription]),
+    TypeOrmModule.forFeature([Plan, Subscription, BillingOperation]),
     IamModule, // Guard JWT y RegistrationHooks, en el mismo proceso
   ],
   controllers: [BillingController],

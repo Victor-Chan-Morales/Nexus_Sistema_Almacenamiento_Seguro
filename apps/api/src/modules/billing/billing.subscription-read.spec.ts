@@ -8,7 +8,7 @@ const build = (sub: unknown) => {
     findOne: jest.fn().mockResolvedValue(sub),
     save: jest.fn().mockResolvedValue(undefined),
   };
-  const service = new BillingService({} as never, subscriptionRepo as never, {} as never);
+  const service = new BillingService({} as never, subscriptionRepo as never, {} as never, {} as never);
   return { service, subscriptionRepo };
 };
 

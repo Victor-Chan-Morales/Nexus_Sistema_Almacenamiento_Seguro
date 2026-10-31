@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { FormEvent, Suspense, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api/client";
 import { login, register, verifyEmail } from "@/lib/api/iam";
 import { useSession } from "@/lib/session";
@@ -127,32 +127,37 @@ export function RegistrationComplete() {
   </AuthFrame>;
 }
 
+function verifyErrorMessage(err: unknown) {
+  return err instanceof ApiError && err.status === 0 ? err.message : "El enlace venció o ya fue usado. Inicia sesión para revisar el estado de tu cuenta o crea una cuenta nueva.";
+}
+
 export function VerifyForm() {
+  return <Suspense fallback={null}><VerifyFormContent /></Suspense>;
+}
+
+function VerifyFormContent() {
+  const fromLink = useSearchParams().get("token") ?? "";
   const [status, setStatus] = useState("");
   const [done, setDone] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(Boolean(fromLink));
+  const [token, setToken] = useState(fromLink);
 
-  async function confirm(value: string) {
-    const clean = value.trim();
-    if (clean.length < 20) { setStatus("El enlace o código no es válido. Copia el enlace completo del correo."); return; }
-    setBusy(true); setStatus("");
-    try {
-      await verifyEmail(clean);
-      setDone(true);
-    } catch (err) {
-      setStatus(err instanceof ApiError && err.status === 0 ? err.message : "El enlace venció o ya fue usado. Inicia sesión para revisar el estado de tu cuenta o crea una cuenta nueva.");
-    } finally { setBusy(false); }
+  function verify(value: string) {
+    verifyEmail(value)
+      .then(() => setDone(true), (err: unknown) => setStatus(verifyErrorMessage(err)))
+      .finally(() => setBusy(false));
   }
 
   useEffect(() => {
-    const fromLink = new URLSearchParams(window.location.search).get("token");
-    if (fromLink) { setToken(fromLink); void confirm(fromLink); }
-  }, []);
+    if (fromLink) verify(fromLink);
+  }, [fromLink]);
 
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    void confirm(token);
+    const clean = token.trim();
+    if (clean.length < 20) { setStatus("El enlace o código no es válido. Copia el enlace completo del correo."); return; }
+    setBusy(true); setStatus("");
+    verify(clean);
   }
   return <AuthFrame className="auth-result-card" title={done ? "Correo verificado" : "Verifica tu correo"} lead={done ? "Tu cuenta está lista. Ya puedes iniciar sesión." : "Abre el enlace que enviamos a tu correo o pega aquí el código del enlace."}>
     <div className="auth-result-icon" aria-hidden="true"><UiIcon name={done ? "check" : "envelope"} size={25} /></div>

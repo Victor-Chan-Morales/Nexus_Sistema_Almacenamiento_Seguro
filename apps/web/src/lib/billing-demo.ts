@@ -20,12 +20,18 @@ export const initialSubscription: DemoSubscription = {
   usersUsed: 1,
 };
 
+export function readSubscriptionRaw(): string | null {
+  try { return window.localStorage.getItem(BILLING_DEMO_KEY); } catch { return null; }
+}
+
+export function parseSubscription(saved: string | null): DemoSubscription {
+  if (!saved) return initialSubscription;
+  try { return { ...initialSubscription, ...JSON.parse(saved) }; } catch { return initialSubscription; }
+}
+
 export function readSubscription(): DemoSubscription {
   if (typeof window === "undefined") return initialSubscription;
-  try {
-    const saved = window.localStorage.getItem(BILLING_DEMO_KEY);
-    return saved ? { ...initialSubscription, ...JSON.parse(saved) } : initialSubscription;
-  } catch { return initialSubscription; }
+  return parseSubscription(readSubscriptionRaw());
 }
 
 export function writeSubscription(subscription: DemoSubscription) {
