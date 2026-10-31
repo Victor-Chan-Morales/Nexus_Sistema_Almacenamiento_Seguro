@@ -955,3 +955,125 @@ h1, h2, h3 { font-family: "Inter", Arial, sans-serif; }
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
   outline-color: var(--color-purple);
 }
+
+/* ==========================================================================
+   Configuración y Miembros (SPEC-106)
+   ========================================================================== */
+
+.settings-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.settings-section-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: #1e293b;
+}
+
+.settings-section-subtitle {
+  color: var(--muted);
+  font-size: 0.875rem;
+  margin-bottom: 1.5rem;
+}
+
+.settings-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.settings-select {
+  height: 2.65rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  padding: 0 0.75rem;
+  background: var(--surface);
+  color: inherit;
+  font-size: 0.875rem;
+  width: 100%;
+}
+
+.settings-submit-btn {
+  height: 2.65rem;
+}
+
+.settings-notice-invite {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+  font-size: 0.8125rem;
+}
+
+.settings-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.settings-counter {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.settings-table-wrapper {
+  overflow-x: auto;
+}
+
+.settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.875rem;
+}
+
+.settings-table th {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.settings-table td {
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-cell-name {
+  font-weight: 500;
+}
+
+.settings-cell-muted {
+  color: var(--muted);
+}
+
+.settings-badge {
+  display: inline-block;
+  padding: 0.2rem 0.65rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.settings-badge-admin {
+  background: var(--color-ice);
+  color: var(--brand);
+}
+
+.settings-badge-colab {
+  background: #f1f5f9;
+  color: var(--muted);
+}
+
+.settings-state-box {
+  text-align: center;
+  padding: 2.5rem 1rem;
+  color: var(--muted);
+} 
