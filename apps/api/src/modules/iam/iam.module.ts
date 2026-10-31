@@ -39,10 +39,14 @@ import {
 import { AccessTokenIssuer, OpaqueTokens, PasswordHasher } from './ports/security';
 import { UnitOfWork } from './ports/transaction';
 import { VerificationMailer } from './ports/verification-mailer';
+import { MemberAdmission } from './member-admission';
+import { MembersController } from './members.controller';
 import { RegistrationHooks } from './registration-hooks';
 import { AuthService } from './services/auth.service';
 import { EmailOutboxService } from './services/email-outbox.service';
 import { EmailVerificationService } from './services/email-verification.service';
+import { MembersService } from './services/members.service';
+import { PasswordResetService } from './services/password-reset.service';
 import { RegistrationService } from './services/registration.service';
 import { SessionService } from './services/session.service';
 import { VerificationTokenService } from './services/verification-token.service';
@@ -71,18 +75,21 @@ function resolveJwtSecret(config: ConfigService): string {
       }),
     }),
   ],
-  controllers: [IamController],
+  controllers: [IamController, MembersController],
   providers: [
     // Casos de uso
     AuthService,
     RegistrationService,
     SessionService,
     EmailVerificationService,
+    MembersService,
+    PasswordResetService,
     EmailOutboxService,
     VerificationTokenService,
     OutboxCipher,
     IamSettings,
     RegistrationHooks,
+    MemberAdmission,
     JwtStrategy,
     JwtAuthGuard,
     // Puertos → implementaciones (DIP): cambiar una tecnología es cambiar solo una línea aquí
@@ -98,6 +105,6 @@ function resolveJwtSecret(config: ConfigService): string {
     { provide: OpaqueTokens, useClass: CryptoOpaqueTokens },
     { provide: VerificationMailer, useClass: EmailService },
   ],
-  exports: [AuthService, JwtModule, PassportModule, JwtAuthGuard, RegistrationHooks],
+  exports: [AuthService, JwtModule, PassportModule, JwtAuthGuard, RegistrationHooks, MemberAdmission],
 })
 export class IamModule {}

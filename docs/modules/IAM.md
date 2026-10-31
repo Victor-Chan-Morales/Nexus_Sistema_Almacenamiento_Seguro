@@ -64,6 +64,8 @@ token de verificación y mensaje en la **outbox** (`iam.email_outbox`) en **una 
 
 La outbox maneja tres tipos de mensaje (`kind`, CHECK `ck_email_outbox_kind`): `email_verification` (token de 15 min; el reintento lo renueva si venció), `password_reset` (token de 15 min, SPEC-103) y `member_invitation` (token de 24 h, SPEC-102). Los dos últimos **no renuevan** el token: si vence antes de enviarse, el mensaje pasa a `expired` y se vuelve a solicitar. `EmailOutboxService.enqueue(tx, { kind, ... })` encola; el enlace de `password_reset` y `member_invitation` apunta a `/nueva-contrasena?token=...`.
 
+La migración `20261027090000_allow_password_reset_outbox_kinds` amplía el CHECK a los tres tipos. Su `down` **no borra datos**: restaura la regla de un solo tipo solo si no quedan mensajes `password_reset` ni `member_invitation`; si quedan, falla y la transacción se revierte. Ver la política de migraciones en `database/README.md`.
+
 ### POST /api/auth/login — 200 (contrato v0.4)
 ```json
 { "email": "ana@empresa.com", "password": "Password123" }
@@ -88,6 +90,21 @@ Más cookie `nexus_refresh` (HttpOnly, `Path=/api/auth`, 7 días, `Secure` segú
 - `POST /api/auth/logout` (cookie) → `204`; revoca la sesión y limpia la cookie.
 - `POST /api/auth/login` responde `403 EMAIL_NOT_VERIFIED` si el correo no está verificado (`IAM_REQUIRE_VERIFIED_EMAIL=true`, por defecto).
 
+## Miembros, invitaciones y recuperación de contraseña (SPEC-102, SPEC-103, SPEC-104)
+
+- **Alta** `POST /api/organizations/members` (`MembersService.addMember`, solo `tenant_admin`). El límite se lee antes de la transacción; dentro de ella, bloquea la fila de la organización (`SELECT ... FOR UPDATE`), comprueba el correo (`MEMBER_ALREADY_EXISTS` si ya es miembro de esta organización; `EMAIL_BELONGS_TO_OTHER_ORGANIZATION` si pertenece a otra), comprueba el cupo (`USER_LIMIT_EXCEEDED`), y solo entonces calcula el hash de una contraseña aleatoria inutilizable y crea usuario, membresía activa y la invitación (`enqueueWithToken`: token `password_reset` de **24 h** y mensaje `member_invitation`). El correo sale después del commit. La organización sale solo del token; un `organizationId` en el cuerpo responde `400`.
+  - **Decisión aceptada:** el hash de Argon2 se calcula dentro de la transacción, con el bloqueo de la organización tomado. Solo llega ahí un alta válida, y las altas de una misma organización ya se serializan por el bloqueo. Durante una ráfaga de altas, cada una retiene una conexión unos 50–100 ms. Sacarlo del bloqueo obligaría a calcularlo también para las altas rechazadas o a recomprobar tras el hash.
+- **Límite de usuarios**: IAM define el puerto `MemberAdmission`. Billing lo rellena en `modules/billing/registration/user-limit.hook.ts` con `plan.maxMembers` de la suscripción vigente. Sin suscripción vigente, o sin fuente registrada, el límite es 0 (falla cerrada). Se lee fuera de la transacción porque la fuente usa otra conexión del pool; leerla dentro podía agotar el pool con altas simultáneas. La fuente usa `BillingService.getActiveSubscriptionReadOnly`, que no escribe: un listado de miembros nunca marca una suscripción vencida. Cuenta solo membresías `active`.
+- **Listado** `GET /api/organizations/members` (solo `tenant_admin`, `MembersService.list`): DTO explícito, nunca la entidad `User` ni el hash. `userLimit` es `null` sin plan vigente. `totalMembers` cuenta todas las membresías (también las suspendidas); el cupo solo compara las activas. Sin paginación: se asume un máximo de 100 miembros en este corte.
+- **Recuperación** (`PasswordResetService`): `POST /auth/forgot-password` responde antes de tocar la base, así que tarda lo mismo exista o no el correo; la transacción y el envío van en segundo plano, y un fallo se registra sin el correo ni el token. Es una desviación de SPEC-103 §8, que pedía la transacción dentro de la petición. `POST /auth/reset-password` valida el token (hash, propósito, vencimiento, uso) y la política de contraseña, calcula el hash de Argon2id fuera de la transacción, y en una segunda transacción revalida el token con bloqueo, cambia la contraseña, marca `email_verified = true`, consume el token y revoca todas las sesiones.
+- **Limitaciones conocidas**:
+  - Una recuperación nueva invalida también una invitación pendiente (ambas usan `password_reset`). La salida es "Olvidé mi contraseña".
+  - Una invitación pendiente ocupa cupo: la membresía nace `active` y cuenta contra el límite. No hay baja, reenvío ni revocación en este corte (SPEC-102 §3); si cinco personas no aceptan, la organización queda en `USER_LIMIT_EXCEEDED` hasta que se implemente. Pendiente para una spec de seguimiento.
+  - Si la base falla dentro del procesamiento de `forgot-password`, el usuario recibe el `200` genérico y no llega correo: debe volver a pedirlo.
+  - Tras restablecer, las sesiones (refresh) quedan revocadas, pero un access token ya emitido sigue válido hasta vencer (15 min): `JwtStrategy` valida membresía y organización en cada request, no la sesión.
+  - La recuperación no tiene límite de intentos (`429`) en este corte.
+  - Las auditorías `MEMBER_ADDED` y `AUTH_PASSWORD_RESET` llegan con SPEC-405.
+
 ## Integración con frontend (Víctor)
 - `accessToken` solo en memoria; nunca en localStorage. `fetch(..., { credentials: 'include' })` en login, refresh y logout.
 - Ante 401 en ruta protegida: un intento de `/auth/refresh` y reintento; si falla, ir a login.
@@ -111,5 +128,5 @@ Sin paquetes fuera de los que IAM ya usa (`@nestjs/jwt`, `@nestjs/passport`, `pa
 
 ## Pendiente explícito (NO terminado)
 - RBAC completo: solo se asigna `tenant_admin`; `colaborador`, invitaciones y permisos por recurso quedan para después.
-- `requestPasswordReset` (la tabla `one_time_token` ya admite `password_reset`), bloqueo por intentos fallidos (`failed_login_attempts` / `last_login_at` sin usar), reenvío manual de verificación (el reintento ya renueva el token solo; un endpoint de reenvío sigue fuera del corte), `verifyTotp` (MFA fuera de alcance), selector de organización activa.
+- Bloqueo por intentos fallidos (`failed_login_attempts` / `last_login_at` sin usar), reenvío manual de verificación (el reintento ya renueva el token solo; un endpoint de reenvío sigue fuera del corte), `verifyTotp` (MFA fuera de alcance), selector de organización activa.
 - Rate limiting (`429`) en register/login/refresh; limpieza periódica de sesiones y tokens vencidos.
