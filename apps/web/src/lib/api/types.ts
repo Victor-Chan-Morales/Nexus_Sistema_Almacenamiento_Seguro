@@ -209,3 +209,24 @@ export type AddMemberResponse = {
   status: string;
   createdAt: ISODateTime;
 };
+
+export type AuditEvent = {
+  id: UUID;
+  /** Código de CONTRACTS v0.5 «Auditoría». Se tipa como string: la pantalla debe mostrar un código desconocido tal cual. */
+  action: string;
+  resourceType: string | null;
+  resourceId: UUID | null;
+  actorId: UUID;
+  result: string;
+  occurredAt: ISODateTime;
+};
+
+export type AuditEventsResponse = {
+  events: AuditEvent[];
+  nextBefore: ISODateTime | null;
+};
+
+export type AuditEventsQuery = {
+  limit?: number;
+  before?: ISODateTime;
+};
