@@ -34,31 +34,8 @@ export function formatUsd(amount: number | string | null | undefined): string {
   }).format(numeric).replace("$", "US$");
 }
 
-export type BillingOperationType = "charge" | "renewal";
-
-export interface BillingOperationItem {
-  id: string;
-  type: BillingOperationType;
-  planName: string;
-  amount: number;
-  simulated: boolean;
-  occurredAt: string;
-}
-
-export interface BillingOperationsResponse {
-  items: BillingOperationItem[];
-}
-
-export interface RenewSubscriptionResponse {
-  subscriptionId: string;
-  status: "active" | "expired" | "cancelled";
-  simulated: boolean;
-  startDate: string;
-  endDate: string | null;
-}
-
-export function isExpired(expiresAt: string | null | undefined): boolean {
+export function isExpired(expiresAt: string | null | undefined, now: number): boolean {
   if (!expiresAt) return false;
   const time = new Date(expiresAt).getTime();
-  return !Number.isNaN(time) && time < Date.now();
+  return !Number.isNaN(time) && time < now;
 }

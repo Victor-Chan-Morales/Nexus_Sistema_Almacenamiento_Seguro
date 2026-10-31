@@ -145,14 +145,9 @@ export function VerifyForm() {
     } finally { setBusy(false); }
   }
 
-useEffect(() => {
+  useEffect(() => {
     const fromLink = new URLSearchParams(window.location.search).get("token");
-    if (fromLink) {
-      queueMicrotask(() => {
-        setToken(fromLink);
-        void confirm(fromLink);
-      });
-    }
+    if (fromLink) { setToken(fromLink); void confirm(fromLink); }
   }, []);
 
   function submit(e: FormEvent<HTMLFormElement>) {
