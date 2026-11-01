@@ -9,8 +9,9 @@ import { createFolder, deleteFile, downloadFile, getFolderItems, listFolders, up
 import type { DashboardResponse, FileMetadata, Folder } from "@/lib/api/types";
 import { formatBytes, formatIsoDate, usagePercent } from "@/lib/format";
 import { useLoad } from "@/lib/use-load";
-import { initialsOf, RequireSession, useSession, type Session } from "@/lib/session";
+import { RequireSession, useSession, type Session } from "@/lib/session";
 import { Brand } from "@/components/brand";
+import { AccountMenu } from "@/components/account-menu";
 import { UiIcon } from "@/components/ui-icon";
 
 const MAX_FILE_BYTES = 100_000_000;
@@ -191,7 +192,7 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
     </aside>
 
     <main className="drive-main">
-      <header className="drive-topbar"><div><span className="drive-mobile-brand">Nexus</span><span className="drive-breadcrumb-label">{data?.driveName ?? "Mi espacio"} <i>/</i> {displayName}</span></div><div className="drive-top-tools"><Link className="drive-upgrade" href="/planes">Ver planes</Link><span className="drive-user-avatar">{initialsOf(session.user.fullName)}</span><span className="drive-user-name">{session.user.fullName}</span></div></header>
+      <header className="drive-topbar"><div><span className="drive-mobile-brand">Nexus</span><span className="drive-breadcrumb-label">{data?.driveName ?? "Mi espacio"} <i>/</i> {displayName}</span></div><div className="drive-top-tools"><Link className="drive-upgrade" href="/planes">Ver planes</Link><AccountMenu name={session.user.fullName} email={session.user.email} /></div></header>
       <div className={`drive-workspace${selectedFile ? " has-detail" : ""}`}>
         <section className="drive-content">
           <div className="drive-title-row"><div><p className="drive-eyebrow">DRIVE PERSONAL</p><h1>{displayName}</h1><p>{data?.folder?.sizeBytes !== undefined ? `${formatBytes(data.folder.sizeBytes)} en total · Carpetas y archivos guardados en Nexus.` : "Carpetas y archivos guardados en Nexus."}</p></div><button className="drive-create-button" type="button" onClick={() => { setShowCreateFolder(true); setActionError(""); }} disabled={!data || busy}><UiIcon name="plus" size={15} />Crear carpeta</button></div>
