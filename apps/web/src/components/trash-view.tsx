@@ -27,6 +27,8 @@ export function trashErrorMessage(error: unknown): string {
       return "La carpeta original ya no está disponible";
     case "CANNOT_PURGE_ACTIVE_FILE":
       return GONE_ERROR;
+    case "STORAGE_QUOTA_EXCEEDED":
+      return "No hay espacio suficiente en tu plan para restaurar este archivo. Libera espacio o cambia de plan.";
     default:
       return GENERIC_ERROR;
   }
