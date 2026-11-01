@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { type ChangeEvent, type FormEvent, useCallback, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type FormEvent, type ReactNode, useCallback, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/lib/api/client";
 import { getDashboard } from "@/lib/api/dashboard";
-import { createFolder, downloadFile, getFolderItems, listFolders, uploadFile } from "@/lib/api/files";
+import { createFolder, deleteFile, downloadFile, getFolderItems, listFolders, uploadFile } from "@/lib/api/files";
 import type { DashboardResponse, FileMetadata, Folder } from "@/lib/api/types";
 import { formatBytes, formatIsoDate, usagePercent } from "@/lib/format";
 import { useLoad } from "@/lib/use-load";
@@ -46,11 +46,11 @@ function FileGlyph({ name }: { name: string }) {
   return <span aria-hidden="true" className={`drive-file-glyph glyph-${extension.toLowerCase()}`}><span>{label}</span></span>;
 }
 
-export function FileBrowserLive({ trash = false, quotaExceeded = false }: { trash?: boolean; quotaExceeded?: boolean }) {
-  return <RequireSession>{(session) => <FileBrowserSession session={session} trash={trash} quotaExceeded={quotaExceeded} />}</RequireSession>;
+export function FileBrowserLive({ quotaExceeded = false }: { quotaExceeded?: boolean }) {
+  return <RequireSession>{(session) => <FileBrowserSession session={session} quotaExceeded={quotaExceeded} />}</RequireSession>;
 }
 
-function FileBrowserSession({ session, trash, quotaExceeded }: { session: Session; trash: boolean; quotaExceeded: boolean }) {
+function FileBrowserSession({ session, quotaExceeded }: { session: Session; quotaExceeded: boolean }) {
   const params = useParams<{ folderId?: string }>();
   const router = useRouter();
   const { signOut, failSession } = useSession();
@@ -60,7 +60,7 @@ function FileBrowserSession({ session, trash, quotaExceeded }: { session: Sessio
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState<ReactNode>("");
   const [selectedFile, setSelectedFile] = useState<FileMetadata | null>(null);
   const pendingUpload = useRef<{ fingerprint: string; key: string } | null>(null);
   const token = session.accessToken;
@@ -82,7 +82,7 @@ function FileBrowserSession({ session, trash, quotaExceeded }: { session: Sessio
     };
   }, [folderId, token]);
 
-  const { state, reload } = useLoad(fetchData, !trash, LOAD_ERROR);
+  const { state, reload } = useLoad(fetchData, true, LOAD_ERROR);
   const data = state.status === "ready" ? state.data : null;
   const filteredFolders = useMemo(() => data?.folders.filter((item) => item.name.toLowerCase().includes(query.toLowerCase())) ?? [], [data, query]);
   const filteredFiles = useMemo(() => data?.files.filter((item) => item.name.toLowerCase().includes(query.toLowerCase())) ?? [], [data, query]);
@@ -154,8 +154,17 @@ function FileBrowserSession({ session, trash, quotaExceeded }: { session: Sessio
     } finally { setBusy(false); }
   }
 
-  if (trash) {
-    return <main className="drive-shell"><section className="drive-content" style={{ padding: 32 }}><h1>Papelera</h1><p>La API de consulta, restauración y eliminación definitiva de la papelera aún no está incluida en el contrato v0.3. No se muestran datos de demostración.</p><Link href="/archivos">Volver a Mis archivos</Link></section></main>;
+  /** SPEC-205 T2: borrado lógico. El archivo sale de la lista y el aviso enlaza con la papelera. */
+  async function deleteSelected(file: FileMetadata) {
+    setBusy(true); setActionError(""); setNotice("");
+    try {
+      await deleteFile(file.id, token);
+      setSelectedFile((current) => (current?.id === file.id ? null : current));
+      setNotice(<>Archivo movido a la papelera. <Link href="/papelera">Ver papelera</Link></>);
+      reload();
+    } catch (error) {
+      if (!failSession(error)) setActionError(errorMessage(error, "No fue posible mover el archivo a la papelera."));
+    } finally { setBusy(false); }
   }
 
   const displayName = data?.folder.name ?? "Mis archivos";
@@ -202,14 +211,14 @@ function FileBrowserSession({ session, trash, quotaExceeded }: { session: Sessio
           {data && <div className="drive-list-card">
             <div className="drive-list-head"><span>Nombre</span><span>Tipo</span><span>Tamaño</span><span>Modificado</span><span>Acciones</span></div>
             {filteredFolders.map((folder) => <div className="drive-list-row" key={`folder-${folder.id}`}><Link className="drive-item-name" href={`/archivos/${encodeURIComponent(folder.id)}`}><span className="drive-folder-glyph"><UiIcon name="folder" size={17} /></span><b>{folder.name}</b></Link><span>Carpeta</span><span>{formatBytes(folder.sizeBytes ?? 0)}</span><span>{formatIsoDate(folder.createdAt)}</span><span className="drive-row-actions"><Link href={`/archivos/${encodeURIComponent(folder.id)}`}>Abrir</Link></span></div>)}
-            {filteredFiles.map((file) => <div className={`drive-list-row ${selectedFile?.id === file.id ? "selected" : ""}`} key={`file-${file.id}`}><button className="drive-item-name drive-item-button" type="button" onClick={() => setSelectedFile(file)}><FileGlyph name={file.name} /><b>{file.name}</b></button><span>{file.mimeType || extensionOf(file.name)}</span><span>{formatBytes(file.sizeBytes)}</span><span>{formatIsoDate(file.uploadedAt)}</span><span className="drive-row-actions"><button type="button" onClick={() => downloadSelected(file)} disabled={busy}>Descargar</button></span></div>)}
+            {filteredFiles.map((file) => <div className={`drive-list-row ${selectedFile?.id === file.id ? "selected" : ""}`} key={`file-${file.id}`}><button className="drive-item-name drive-item-button" type="button" onClick={() => setSelectedFile(file)}><FileGlyph name={file.name} /><b>{file.name}</b></button><span>{file.mimeType || extensionOf(file.name)}</span><span>{formatBytes(file.sizeBytes)}</span><span>{formatIsoDate(file.uploadedAt)}</span><span className="drive-row-actions"><button type="button" onClick={() => downloadSelected(file)} disabled={busy}>Descargar</button><button type="button" onClick={() => deleteSelected(file)} disabled={busy} aria-label={`Mover a la papelera «${file.name}»`}>Mover a papelera</button></span></div>)}
             {visibleItemsCount === 0 && <div className="drive-empty-state"><span><UiIcon name="files" size={20} /></span><b>{query ? "No encontramos coincidencias" : "Esta carpeta está vacía"}</b><p>{query ? "Prueba con otro término de búsqueda." : "Crea una carpeta o sube un archivo para empezar."}</p>{!query && <button className="drive-empty-button" type="button" onClick={() => setShowCreateFolder(true)}>Crear carpeta</button>}</div>}
           </div>}
 
           <p className="drive-demo-note">Los archivos y carpetas mostrados vienen de la API de Nexus.</p>
         </section>
 
-        {selectedFile && <aside className="drive-detail-panel"><button className="drive-detail-close" type="button" onClick={() => setSelectedFile(null)} aria-label="Cerrar detalles">×</button><div className="drive-preview"><FileGlyph name={selectedFile.name} /><span>Metadatos del archivo</span></div><div className="drive-detail-name"><FileGlyph name={selectedFile.name} /><div><b>{selectedFile.name}</b><small>{selectedFile.mimeType}</small></div></div><dl className="drive-detail-list"><dt>Tamaño</dt><dd>{formatBytes(selectedFile.sizeBytes)}</dd><dt>Versión</dt><dd>{selectedFile.versionId}</dd><dt>Subido</dt><dd>{formatIsoDate(selectedFile.uploadedAt)}</dd></dl><div className="drive-detail-actions"><button className="drive-primary-button" type="button" onClick={() => downloadSelected(selectedFile)} disabled={busy}>Descargar</button></div></aside>}
+        {selectedFile && <aside className="drive-detail-panel"><button className="drive-detail-close" type="button" onClick={() => setSelectedFile(null)} aria-label="Cerrar detalles">×</button><div className="drive-preview"><FileGlyph name={selectedFile.name} /><span>Metadatos del archivo</span></div><div className="drive-detail-name"><FileGlyph name={selectedFile.name} /><div><b>{selectedFile.name}</b><small>{selectedFile.mimeType}</small></div></div><dl className="drive-detail-list"><dt>Tamaño</dt><dd>{formatBytes(selectedFile.sizeBytes)}</dd><dt>Versión</dt><dd>{selectedFile.versionId}</dd><dt>Subido</dt><dd>{formatIsoDate(selectedFile.uploadedAt)}</dd></dl><div className="drive-detail-actions"><button className="drive-primary-button" type="button" onClick={() => downloadSelected(selectedFile)} disabled={busy}>Descargar</button><button className="drive-subtle-button" type="button" onClick={() => deleteSelected(selectedFile)} disabled={busy}>Mover a papelera</button></div></aside>}
       </div>
     </main>
 
