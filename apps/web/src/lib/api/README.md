@@ -8,6 +8,8 @@ La base HTTP compartida y los clientes tipados implementan las rutas del contrat
 - `billing.ts`: catálogo y activación simulada de suscripción.
 - `dashboard.ts`: resumen del espacio de trabajo.
 - `files.ts`: listado/creación de carpetas, elementos, carga y descarga.
+- `members.ts`: listado y alta de miembros de la organización.
+- `audit.ts`: bitácora de auditoría paginada por cursor (solo administradores).
 
 ## Uso
 

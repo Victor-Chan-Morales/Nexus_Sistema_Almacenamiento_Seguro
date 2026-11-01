@@ -12,7 +12,7 @@
 | **Dependencias** | SPEC-402 (API) y SPEC-106 (`getMembers`, para nombres). Puede avanzar con un mock. |
 | **Hito Objetivo** | Corte 80% (30-Oct-2026) |
 | **Estimación** | 1.5 h |
-| **Estado** | Aprobada (2026-10-28, Víctor Chán) |
+| **Estado** | Implementada (pendiente de merge) |
 
 ---
 
@@ -79,9 +79,9 @@ No aplica.
 
 ## 9. Plan de Tareas
 
-- [ ] **T1 (20 min)**: `lib/api/audit.ts` y tipos.
-- [ ] **T2 (45 min)**: tabla con etiquetas, insignias y resolución de actores.
-- [ ] **T3 (25 min)**: filtro, "Cargar más" y estados; vista de `colaborador`.
+- [x] **T1 (20 min)**: `lib/api/audit.ts` y tipos.
+- [x] **T2 (45 min)**: tabla con etiquetas, insignias y resolución de actores.
+- [x] **T3 (25 min)**: filtro, "Cargar más" y estados; vista de `colaborador`.
 
 ---
 
@@ -95,7 +95,7 @@ No aplica.
 
 ## 11. Impacto en Documentación
 
-- [ ] `ENTS_REGISTRY.md` y `docs/FIGMA_MAP.md`: `/auditoria` conectada.
+- [x] `ENTS_REGISTRY.md` y `docs/FIGMA_MAP.md`: `/auditoria` conectada.
 
 ---
 
@@ -111,3 +111,4 @@ Ninguna.
 |---|---|---|
 | 2026-10-27 | Víctor Chán | Versión inicial. |
 | 2026-10-27 | Revisión | Campos del contrato (`occurredAt`, sin `metadata`); nombres desde la lista de miembros; vista de `colaborador`; paginación. |
+| 2026-10-31 | Víctor Chán | Implementada. |

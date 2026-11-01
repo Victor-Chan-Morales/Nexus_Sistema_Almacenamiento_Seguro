@@ -5,6 +5,13 @@
 
 Registro dinámico de decisiones, acuerdos pendientes y bloqueos. Añada entradas nuevas al principio; no borre historia. Los contratos de integración v0.3 fueron aprobados por el integrador para implementación el 2026-10-18.
 
+## 2026-10-31 — Pantalla de auditoría conectada (SPEC-403)
+
+- **Estado:** `/auditoria` deja el `PlaceholderPage` y muestra la bitácora real (`apps/web/src/components/audit-log.tsx`) contra `GET /audit/events` (SPEC-402) mediante el cliente `apps/web/src/lib/api/audit.ts`. Tabla con fecha, actor, acción en español con insignia por familia (`.audit-badge-{auth,files,team,plan}` en `globals.css`) y recurso; filtro visual por acción, "Cargar más" por cursor, estados de carga/vacío/error y aviso para `colaborador` sin llamar a la API. Rama `feat/403-frontend-auditoria` **apilada sobre `feat/106-frontend-miembros-configuracion` (PR #29)**; se rebasará sobre `main` cuando #29 entre.
+- **Decisiones:** `Notice` se extrajo a `apps/web/src/components/notice.tsx` para reutilizarlo entre `/configuracion` y `/auditoria`. El actor se resuelve con el `userId` de la lista de miembros (SPEC-104/106); si no aparece, se muestra "Usuario". Es solo presentación: no se autoriza nada en el cliente.
+- **Límites declarados:** la fecha se muestra sin hora (`formatIsoDate`); el cursor es el `occurredAt` que define SPEC-402, por lo que eventos con el mismo instante podrían omitirse en el borde de página (limitación aceptada en SPEC-402).
+- **Pendiente:** hasta que se mergeen 405-T1 (IAM) y 405-T3 (Billing) solo aparecen eventos `FILE_*`; cotejo visual sin frame específico; verificación manual de los escenarios 1–5.
+
 ## 2026-10-27 — Revisión de specs y decisiones del corte del 80%
 
 - **Estado:** specs 101–601 reescritas y en revisión; `CONTRACTS.md` pasa a **v0.5 (borrador, pendiente de aprobación del coordinador)**. Decisiones registradas en `docs/decisions/ADR-007-decisiones-corte-80.md`; enmienda a ADR-003 (purga por el dueño; reset revoca sesiones).

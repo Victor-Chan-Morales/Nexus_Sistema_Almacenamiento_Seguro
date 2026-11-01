@@ -74,7 +74,7 @@
 |---|---|:---:|---|---|:---:|:---:|
 | `SPEC-401` | Servicio base de auditoría (`AuditModule` global, hash desde la v1) | N2 | Anthony | RF-012, RNF-007 | P1 | Aprobada |
 | `SPEC-402` | `GET /audit/events` (solo `tenant_admin`) | N1 | Miguel (delegado) | RF-012 | P1 | Aprobada |
-| `SPEC-403` | Frontend: pantalla de auditoría | N1 | Víctor | RF-012 | P1 | Aprobada |
+| `SPEC-403` | Frontend: pantalla de auditoría | N1 | Víctor | RF-012 | P1 | En PR |
 | `SPEC-404` | Verificación de la cadena de hashes y checkpoints | N2 | Anthony | RNF-007 | 100% | Pendiente |
 | `SPEC-405` | Enganches de auditoría por dueño de módulo (**nueva**) | N1 | Víctor (IAM) / Miguel (Files) / Anthony (Billing) | RF-012, RNF-007 | P1 | Aprobada |
 
