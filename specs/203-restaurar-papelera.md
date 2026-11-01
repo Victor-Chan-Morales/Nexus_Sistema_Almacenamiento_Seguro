@@ -133,4 +133,4 @@ Ninguna.
 |---|---|---|
 | 2026-10-27 | Víctor Chán | Versión inicial. |
 | 2026-10-27 | Revisión | Sin carpetas; acotado al Drive del solicitante; `FILE_NAME_CONFLICT`; CHECK de borrado lógico; respuesta `{ id, name, folderId }`. |
-| 2026-10-31 | Revisión PR #34 | Escenario 6 corregido: solo aplica a archivos dentro de la retención. Añadido escenario 7 (`422 STORAGE_QUOTA_EXCEEDED` al restaurar un archivo caducado que no cabe en el plan). Opción A (comprobar cuota) elegida en la revisión; pendiente de validación del coordinador. |
+| 2026-10-31 | Revisión PR #34 | Escenario 6 corregido: solo aplica a archivos dentro de la retención. Añadido escenario 7 (`422 STORAGE_QUOTA_EXCEEDED` al restaurar un archivo caducado que no cabe en el plan). Opción A (comprobar cuota) aprobada en la revisión por Víctor Chán Morales. |
