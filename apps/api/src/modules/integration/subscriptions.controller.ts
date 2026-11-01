@@ -9,6 +9,8 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction, AuditResource } from '../audit/audit.types';
 import { SubscriptionCoordinator } from './subscription.coordinator';
 import { BillingService } from '../billing/billing.service';
 import {
@@ -36,6 +38,7 @@ export class SubscriptionsController {
   constructor(
     private readonly subscriptionCoordinator: SubscriptionCoordinator,
     private readonly billingService: BillingService,
+    private readonly audit: AuditService,
   ) {}
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -47,6 +50,16 @@ export class SubscriptionsController {
   ): Promise<SubscriptionActivationResponse> {
     const orgId = req.user.organizationId;
     const subscription = await this.subscriptionCoordinator.activateSubscription(orgId, body.planId);
+
+    // SPEC-405: PLAN_ACTIVATED tras éxito; también en la reactivación idempotente
+    void this.audit.logEvent({
+      organizationId: orgId,
+      actorId: req.user.userId,
+      action: AuditAction.PLAN_ACTIVATED,
+      resourceType: AuditResource.SUBSCRIPTION,
+      resourceId: subscription.id,
+    }).catch(() => {});
+
     return this.toActivationResponse(subscription);
   }
 
@@ -59,6 +72,16 @@ export class SubscriptionsController {
   ): Promise<SubscriptionActivationResponse> {
     const orgId = req.user.organizationId;
     const subscription = await this.billingService.renewSubscription(orgId);
+
+    // SPEC-405: PLAN_RENEWED tras éxito
+    void this.audit.logEvent({
+      organizationId: orgId,
+      actorId: req.user.userId,
+      action: AuditAction.PLAN_RENEWED,
+      resourceType: AuditResource.SUBSCRIPTION,
+      resourceId: subscription.id,
+    }).catch(() => {});
+
     return this.toActivationResponse(subscription);
   }
 
