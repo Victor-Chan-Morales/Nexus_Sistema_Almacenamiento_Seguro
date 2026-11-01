@@ -12,7 +12,7 @@
 | **Dependencias** | Ninguna |
 | **Hito Objetivo** | Corte 80% (30-Oct-2026) — **prioridad P2** |
 | **Estimación** | 1.0 h |
-| **Estado** | En revisión (reescrita 2026-10-27 según ADR-007) |
+| **Estado** | Aprobada (2026-10-31, Víctor Chán Morales) |
 
 ---
 
