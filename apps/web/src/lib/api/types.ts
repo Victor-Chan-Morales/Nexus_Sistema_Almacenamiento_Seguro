@@ -158,6 +158,21 @@ export type UploadFileResponse = {
   uploadedAt: ISODateTime;
 };
 
+/** SPEC-205: elemento de `GET /files/trash`. */
+export type TrashItem = {
+  id: UUID;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  deletedAt: ISODateTime;
+  retentionEndsAt: ISODateTime;
+};
+
+export type TrashResponse = { items: TrashItem[]; totalItems: number };
+export type RestoreFileResponse = { id: UUID; name: string; folderId: UUID };
+export type PurgeFileResponse = { id: UUID; freedBytes: number };
+export type DeleteFileResponse = { success: boolean; id: UUID };
+
 export type BillingOperationType = "charge" | "renewal";
 
 export type BillingOperationItem = {
