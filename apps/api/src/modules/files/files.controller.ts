@@ -3,6 +3,8 @@ import {
   Get,
   Post,
   Delete,
+  HttpCode,
+  HttpStatus,
   Param,
   Body,
   Query,
@@ -19,7 +21,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { pipeline } from 'stream/promises';
 import { FilesService } from './files.service';
-import { TrashResponseDto } from './dto/trash.dto';
+import { RestoreFileResponseDto, TrashResponseDto } from './dto/trash.dto';
 import { CurrentUser } from '../iam/decorators/current-user.decorator';
 import { AuthUser } from '../iam/interfaces/auth-user.interface';
 import { AuditService } from '../audit/audit.service';
@@ -87,6 +89,16 @@ export class FilesController {
   @Get('trash')
   async getTrash(@CurrentUser() user: AuthUser): Promise<TrashResponseDto> {
     return this.filesService.listTrash(user.organizationId, user.userId);
+  }
+
+  /** SPEC-203: `POST` responde 201 por defecto; el contrato exige 200. */
+  @Post(':id/restore')
+  @HttpCode(HttpStatus.OK)
+  async restore(
+    @CurrentUser() user: AuthUser,
+    @Param('id') fileId: string,
+  ): Promise<RestoreFileResponseDto> {
+    return this.filesService.restoreFile(fileId, user.organizationId, user.userId);
   }
 
   @Get()
