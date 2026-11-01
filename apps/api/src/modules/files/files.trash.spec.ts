@@ -1,4 +1,4 @@
-import { HttpException, NotFoundException } from '@nestjs/common';
+import { HttpException, Logger, NotFoundException } from '@nestjs/common';
 import { FilesService } from './files.service';
 import { FileVersion } from './entities/file-version.entity';
 import { FileRecord } from './entities/file-record.entity';
@@ -357,6 +357,204 @@ describe('SPEC-203: FilesService.restoreFile', () => {
 
     await expect(service.restoreFile(FILE_ID, ORG, USER)).resolves.toMatchObject({ id: FILE_ID });
     expect(billing.getStorageLimitBytes).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * SPEC-204: purga definitiva.
+ * Se comprueba el orden de borrado (FK RESTRICT), la cuota reescrita dentro de la transacción y que
+ * los objetos de SeaweedFS se borran solo después del commit.
+ */
+const version = (versionNumber: number, sizeBytes: string) => ({
+  id: `v${versionNumber}`,
+  fileId: FILE_ID,
+  versionNumber,
+  sizeBytes,
+  objectKey: `${ORG}/${FILE_ID}/v${versionNumber}/uuid`,
+});
+
+const buildPurgeService = ({
+  file = trashedFile() as FileRecord | null,
+  folder = activeFolder() as Folder | null,
+  versions = [version(1, '10000000'), version(2, '8000000'), version(3, '5000000')],
+  storageDelete = jest.fn().mockResolvedValue(undefined),
+  transactionFails = false,
+  audit = { logEvent: jest.fn().mockResolvedValue(undefined) },
+}: {
+  file?: FileRecord | null;
+  folder?: Folder | null;
+  versions?: ReturnType<typeof version>[];
+  storageDelete?: jest.Mock;
+  transactionFails?: boolean;
+  audit?: { logEvent: jest.Mock };
+} = {}) => {
+  const driveRepo = { findOne: jest.fn().mockResolvedValue(DRIVE) };
+  const fileRepo = {
+    findOne: jest.fn().mockResolvedValue(file),
+    update: jest.fn().mockResolvedValue(undefined),
+    delete: jest.fn().mockResolvedValue(undefined),
+  };
+  const folderRepo = { findOne: jest.fn().mockResolvedValue(folder) };
+  const versionRepo = {
+    find: jest.fn().mockResolvedValue(versions),
+    delete: jest.fn().mockResolvedValue(undefined),
+  };
+  const manager = {
+    query: jest.fn().mockResolvedValue([]),
+    getRepository: jest.fn((entity: unknown) => {
+      if (entity === FileRecord) return fileRepo;
+      if (entity === FileVersion) return versionRepo;
+      return folderRepo;
+    }),
+  };
+  const commit = { done: false };
+  const dataSource = {
+    getRepository: jest.fn().mockReturnValue(driveRepo),
+    transaction: jest.fn(async (callback: (m: unknown) => Promise<unknown>) => {
+      if (transactionFails) throw new Error('falla de base de datos');
+      const result = await callback(manager);
+      commit.done = true;
+      return result;
+    }),
+  };
+  const storage = {
+    delete: jest.fn(async (key: string) => {
+      if (!commit.done) throw new Error('se borró un objeto antes del commit: ' + key);
+      return storageDelete(key);
+    }),
+  };
+  const service = new FilesService(
+    {} as never,
+    {} as never,
+    {} as never,
+    dataSource as never,
+    storage as never,
+    {} as never,
+    {} as never,
+    audit as unknown as AuditService,
+  );
+  return { service, fileRepo, versionRepo, manager, storage, audit, dataSource };
+};
+
+describe('SPEC-204: FilesService.purgeFile', () => {
+  it('escenario 1: purga las 3 versiones, libera 23 000 000 bytes y borra los objetos después del commit', async () => {
+    const { service, fileRepo, versionRepo, storage } = buildPurgeService();
+
+    const result = await service.purgeFile(FILE_ID, ORG, USER);
+
+    expect(result).toEqual({ id: FILE_ID, freedBytes: 23_000_000 });
+    expect(fileRepo.delete).toHaveBeenCalledWith({ id: FILE_ID });
+    expect(versionRepo.delete).toHaveBeenCalledWith({ fileId: FILE_ID });
+    expect(storage.delete.mock.calls.map(([key]) => key)).toEqual([
+      `${ORG}/${FILE_ID}/v1/uuid`,
+      `${ORG}/${FILE_ID}/v2/uuid`,
+      `${ORG}/${FILE_ID}/v3/uuid`,
+    ]);
+  });
+
+  it('respeta el orden de las FK RESTRICT: desvincula la versión vigente, borra versiones y después el archivo', async () => {
+    const { service, fileRepo, versionRepo } = buildPurgeService();
+
+    await service.purgeFile(FILE_ID, ORG, USER);
+
+    const unlink = fileRepo.update.mock.invocationCallOrder[0];
+    const deleteVersions = versionRepo.delete.mock.invocationCallOrder[0];
+    const deleteFile = fileRepo.delete.mock.invocationCallOrder[0];
+    expect(fileRepo.update).toHaveBeenCalledWith({ id: FILE_ID }, { currentVersionId: null });
+    expect(unlink).toBeLessThan(deleteVersions);
+    expect(deleteVersions).toBeLessThan(deleteFile);
+  });
+
+  it('reescribe los contadores de cuota dentro de la transacción', async () => {
+    const { service, manager } = buildPurgeService();
+
+    await service.purgeFile(FILE_ID, ORG, USER);
+
+    expect(manager.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE files.tenant_quota'), expect.any(Array));
+  });
+
+  it('escenario 2: un archivo activo responde 422 CANNOT_PURGE_ACTIVE_FILE y no cambia nada', async () => {
+    const { service, fileRepo, versionRepo, storage, audit } = buildPurgeService({
+      file: trashedFile({ isDeleted: false, deletedAt: null }),
+    });
+
+    const error = await errorOf(service.purgeFile(FILE_ID, ORG, USER));
+
+    expect((error as HttpException).getStatus()).toBe(422);
+    expect((error as HttpException).getResponse()).toMatchObject({ code: 'CANNOT_PURGE_ACTIVE_FILE' });
+    expect(fileRepo.delete).not.toHaveBeenCalled();
+    expect(versionRepo.delete).not.toHaveBeenCalled();
+    expect(storage.delete).not.toHaveBeenCalled();
+    expect(audit.logEvent).not.toHaveBeenCalled();
+  });
+
+  it('escenario 3: archivo inexistente o de otro Drive responde 404', async () => {
+    const { service, fileRepo } = buildPurgeService({ file: null });
+
+    await expect(errorOf(service.purgeFile(FILE_ID, ORG, USER))).resolves.toBeInstanceOf(NotFoundException);
+    expect(fileRepo.delete).not.toHaveBeenCalled();
+  });
+
+  it('escenario 4: si SeaweedFS falla al borrar, la purga sigue siendo exitosa y se registra la clave huérfana', async () => {
+    const failing = `${ORG}/${FILE_ID}/v2/uuid`;
+    const storageDelete = jest.fn(async (key: string) => {
+      if (key === failing) throw new Error('S3 no responde');
+    });
+    const logError = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const { service } = buildPurgeService({ storageDelete });
+
+    await expect(service.purgeFile(FILE_ID, ORG, USER)).resolves.toEqual({ id: FILE_ID, freedBytes: 23_000_000 });
+    // El borrado de objetos no bloquea la respuesta: se espera solo para comprobar el registro
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(logError).toHaveBeenCalledWith('Objeto huérfano tras purga: ' + failing);
+    logError.mockRestore();
+  });
+
+  it('la respuesta no espera a SeaweedFS: responde aunque el borrado de un objeto nunca termine', async () => {
+    const storageDelete = jest.fn(() => new Promise<void>(() => undefined));
+    const { service } = buildPurgeService({ storageDelete });
+
+    await expect(service.purgeFile(FILE_ID, ORG, USER)).resolves.toEqual({ id: FILE_ID, freedBytes: 23_000_000 });
+    expect(storageDelete).toHaveBeenCalledTimes(3);
+  });
+
+  it('escenario 5: si la transacción falla no se borra ningún objeto de SeaweedFS', async () => {
+    const { service, storage, audit } = buildPurgeService({ transactionFails: true });
+
+    await expect(service.purgeFile(FILE_ID, ORG, USER)).rejects.toThrow('falla de base de datos');
+    expect(storage.delete).not.toHaveBeenCalled();
+    expect(audit.logEvent).not.toHaveBeenCalled();
+  });
+
+  it('registra FILE_PURGE solo tras el commit exitoso', async () => {
+    const { service, audit } = buildPurgeService();
+
+    await service.purgeFile(FILE_ID, ORG, USER);
+
+    expect(audit.logEvent).toHaveBeenCalledWith({
+      organizationId: ORG,
+      actorId: USER,
+      action: AuditAction.FILE_PURGE,
+      resourceType: AuditResource.FILE,
+      resourceId: FILE_ID,
+    });
+  });
+
+  it('un fallo de auditoría no cambia la respuesta de la purga', async () => {
+    const audit = { logEvent: jest.fn().mockRejectedValue(new Error('bitácora caída')) };
+    const { service } = buildPurgeService({ audit });
+
+    await expect(service.purgeFile(FILE_ID, ORG, USER)).resolves.toEqual({ id: FILE_ID, freedBytes: 23_000_000 });
+  });
+
+  it('no busca ni borra nada si el solicitante no tiene Drive personal', async () => {
+    const { service, dataSource, storage } = buildPurgeService();
+    dataSource.getRepository.mockReturnValue({ findOne: jest.fn().mockResolvedValue(null) });
+
+    await expect(errorOf(service.purgeFile(FILE_ID, ORG, USER))).resolves.toBeInstanceOf(NotFoundException);
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+    expect(storage.delete).not.toHaveBeenCalled();
   });
 });
 

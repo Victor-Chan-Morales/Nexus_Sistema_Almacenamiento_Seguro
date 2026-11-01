@@ -27,7 +27,7 @@ import { TenantEncryptionKey } from './entities/tenant-encryption-key.entity';
 import { TenantQuota } from './entities/tenant-quota.entity';
 import { Upload } from './entities/upload.entity';
 import { EncryptedFile, FilesCryptoService } from './files-crypto.service';
-import { RestoreFileResponseDto, TrashItemDto, TrashResponseDto } from './dto/trash.dto';
+import { PurgeFileResponseDto, RestoreFileResponseDto, TrashItemDto, TrashResponseDto } from './dto/trash.dto';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction, AuditResource } from '../audit/audit.types';
 
@@ -1154,5 +1154,78 @@ export class FilesService {
         'La restauración excede la cuota disponible para el plan de la organización',
       );
     }
+  }
+
+  /**
+   * SPEC-204: purga definitiva de un archivo de la papelera del solicitante.
+   * Los objetos de SeaweedFS se borran después del commit, con mejor esfuerzo y sin bloquear la respuesta.
+   */
+  async purgeFile(fileId: string, organizationId: string, userId: string): Promise<PurgeFileResponseDto> {
+    const drive = await this.findPersonalDrive(organizationId, userId);
+    if (!drive) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
+
+    const purged = await this.dataSource.transaction((manager) =>
+      this.applyPurge(manager, fileId, organizationId, drive.id),
+    );
+
+    // Enganche SPEC-405: FILE_PURGE tras el commit
+    void this.auditService?.logEvent({
+      organizationId,
+      actorId: userId,
+      action: AuditAction.FILE_PURGE,
+      resourceType: AuditResource.FILE,
+      resourceId: fileId,
+    }).catch(() => {});
+
+    // No se espera al borrado de objetos: la purga ya está confirmada y SeaweedFS no debe bloquear la respuesta
+    void this.deleteOrphanObjects(purged.objectKeys);
+    return { id: fileId, freedBytes: Number(purged.freedBytes) };
+  }
+
+  private async applyPurge(
+    manager: EntityManager,
+    fileId: string,
+    organizationId: string,
+    driveId: string,
+  ): Promise<{ freedBytes: bigint; objectKeys: string[] }> {
+    await this.lockTenantQuota(manager, organizationId);
+    const located = await this.locateOwnFile(manager, fileId, organizationId, driveId, true);
+    if (!located) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
+    if (!located.file.isDeleted) {
+      throw this.businessError(
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        'CANNOT_PURGE_ACTIVE_FILE',
+        'Solo se puede purgar un archivo que está en la papelera',
+      );
+    }
+
+    const versions = await manager.getRepository(FileVersion).find({ where: { fileId } });
+    const freedBytes = versions.reduce((total, version) => total + BigInt(version.sizeBytes), BigInt(0));
+
+    await this.removeFileRows(manager, fileId);
+    const usage = await this.readStorageUsage(manager, organizationId);
+    await this.writeQuotaCounters(manager, organizationId, usage);
+    return { freedBytes, objectKeys: versions.map((version) => version.objectKey) };
+  }
+
+  /**
+   * Orden obligatorio: fk_file_current_version es RESTRICT, así que la versión vigente
+   * se desvincula antes de borrar las versiones, y estas antes que el archivo.
+   */
+  private async removeFileRows(manager: EntityManager, fileId: string): Promise<void> {
+    const fileRepo = manager.getRepository(FileRecord);
+    await fileRepo.update({ id: fileId }, { currentVersionId: null });
+    await manager.getRepository(FileVersion).delete({ fileId });
+    await fileRepo.delete({ id: fileId });
+  }
+
+  /** Borrado de objetos con mejor esfuerzo. Un fallo se registra con su clave; nunca revierte la purga. */
+  private async deleteOrphanObjects(objectKeys: string[]): Promise<void> {
+    const results = await Promise.allSettled(objectKeys.map((key) => this.storageService.delete(key)));
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        this.logger.error('Objeto huérfano tras purga: ' + objectKeys[index]);
+      }
+    });
   }
 }

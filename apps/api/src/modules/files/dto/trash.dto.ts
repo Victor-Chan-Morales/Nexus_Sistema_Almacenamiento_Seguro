@@ -18,3 +18,9 @@ export class RestoreFileResponseDto {
   name: string;
   folderId: string;
 }
+
+/** SPEC-204: respuesta de `DELETE /files/:id/purge`. `freedBytes` suma todas las versiones. */
+export class PurgeFileResponseDto {
+  id: string;
+  freedBytes: number;
+}

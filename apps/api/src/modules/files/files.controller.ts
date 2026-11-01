@@ -21,7 +21,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { pipeline } from 'stream/promises';
 import { FilesService } from './files.service';
-import { RestoreFileResponseDto, TrashResponseDto } from './dto/trash.dto';
+import { PurgeFileResponseDto, RestoreFileResponseDto, TrashResponseDto } from './dto/trash.dto';
 import { CurrentUser } from '../iam/decorators/current-user.decorator';
 import { AuthUser } from '../iam/interfaces/auth-user.interface';
 import { AuditService } from '../audit/audit.service';
@@ -99,6 +99,15 @@ export class FilesController {
     @Param('id') fileId: string,
   ): Promise<RestoreFileResponseDto> {
     return this.filesService.restoreFile(fileId, user.organizationId, user.userId);
+  }
+
+  /** SPEC-204: purga definitiva. `DELETE` responde 200 por defecto. */
+  @Delete(':id/purge')
+  async purge(
+    @CurrentUser() user: AuthUser,
+    @Param('id') fileId: string,
+  ): Promise<PurgeFileResponseDto> {
+    return this.filesService.purgeFile(fileId, user.organizationId, user.userId);
   }
 
   @Get()
