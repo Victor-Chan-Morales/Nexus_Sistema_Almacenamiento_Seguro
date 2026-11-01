@@ -21,7 +21,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { pipeline } from 'stream/promises';
 import { FilesService } from './files.service';
-import { PurgeFileResponseDto, RestoreFileResponseDto, TrashResponseDto } from './dto/trash.dto';
+import { PurgeFileResponseDto, RestoreFileResponseDto, RestoreFolderResponseDto, TrashResponseDto } from './dto/trash.dto';
 import { CurrentUser } from '../iam/decorators/current-user.decorator';
 import { AuthUser } from '../iam/interfaces/auth-user.interface';
 import { AuditService } from '../audit/audit.service';
@@ -67,6 +67,29 @@ export class FoldersController {
     const orgId = req.user.organizationId;
     const userId = req.user.userId || req.user.id;
     return this.filesService.getFolderItems(orgId, userId, folderId);
+  }
+
+  /** Mueve una carpeta y sus descendientes a la papelera como unidad. */
+  @Delete(':id')
+  async softDeleteFolder(@CurrentUser() user: AuthUser, @Param('id') folderId: string) {
+    return this.filesService.softDeleteFolder(folderId, user.organizationId, user.userId);
+  }
+
+  @Post(':id/restore')
+  @HttpCode(HttpStatus.OK)
+  async restoreFolder(
+    @CurrentUser() user: AuthUser,
+    @Param('id') folderId: string,
+  ): Promise<RestoreFolderResponseDto> {
+    return this.filesService.restoreFolder(folderId, user.organizationId, user.userId);
+  }
+
+  @Delete(':id/purge')
+  async purgeFolder(
+    @CurrentUser() user: AuthUser,
+    @Param('id') folderId: string,
+  ): Promise<PurgeFileResponseDto> {
+    return this.filesService.purgeFolder(folderId, user.organizationId, user.userId);
   }
 }
 

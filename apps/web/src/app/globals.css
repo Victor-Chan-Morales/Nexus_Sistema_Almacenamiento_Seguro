@@ -380,6 +380,54 @@ h1, h2, h3 { font-family: "Inter", Arial, sans-serif; }
 .drive-list-head, .drive-list-row { display: grid; grid-template-columns: minmax(180px, 1.7fr) minmax(70px, .65fr) minmax(80px, .7fr) minmax(90px, .85fr) minmax(80px, .7fr); align-items: center; gap: 11px; padding: 0 15px; }
 .drive-list-head { min-height: 39px; background: #fafafd; color: #9298a6; font-size: 9.45px; font-weight: 700; }
 .drive-list-row { min-height: 53px; border-top: 1px solid #f0f0f4; color: #858b99; font-size: 9.45px; }
+.trash-page { display: grid; gap: 20px; }
+.trash-page-heading { margin-bottom: 0; }
+.trash-page-heading .eyebrow { margin-top: 0; }
+.trash-page-heading h1 { margin: 0 0 7px; color: #282d39; font-size: clamp(25.2px, 2.42vw, 32.55px); letter-spacing: -.035em; }
+.trash-page-heading p:not(.eyebrow) { margin: 0; color: #858b9a; font-size: 11.55px; line-height: 1.6; }
+.trash-back-button { min-height: 37px; gap: 8px; padding: 0 12px; border-radius: 8px; font-size: 10.5px; white-space: nowrap; }
+.trash-retention-note { display: flex; align-items: center; gap: 13px; padding: 15px 17px; border: 1px solid #e6e1f4; border-radius: 11px; background: linear-gradient(110deg, #f8f6ff, #fff 85%); }
+.trash-retention-icon { display: grid; width: 36px; height: 36px; flex: 0 0 36px; place-items: center; border-radius: 10px; background: #eeeafb; color: var(--brand); }
+.trash-retention-note > div { min-width: 0; flex: 1; }
+.trash-retention-note b { color: #414757; font-size: 10.5px; }
+.trash-retention-note p { margin: 4px 0 0; color: #858b99; font-size: 9.45px; line-height: 1.5; }
+.trash-item-count { flex: 0 0 auto; padding: 6px 10px; border-radius: 20px; background: #f0eef9; color: var(--brand); font-size: 9.45px; font-weight: 750; }
+.trash-state-card { min-height: 230px; margin: 0; padding: 35px 20px; border: 1px solid #ececf2; border-radius: 12px; background: #fff; }
+.trash-state-card > span { width: 46px; height: 46px; margin-bottom: 4px; background: #f1effa; color: var(--brand); font-size: initial; }
+.trash-state-card > b { color: #414757; font-size: 12.6px; }
+.trash-state-card p { max-width: 420px; margin: 7px 0 12px; color: #858b99; font-size: 10.5px; line-height: 1.6; }
+.trash-state-card .button { min-height: 35px; padding: 0 13px; border-radius: 8px; font-size: 10.5px; }
+.trash-panel { min-width: 0; padding: 18px; }
+.trash-panel .dashboard-section-heading { margin: 0 0 13px; }
+.trash-panel .dashboard-section-heading h2 { margin: 0; color: #343a49; font-size: 12.6px; }
+.trash-panel .dashboard-section-heading p { margin: 4px 0 0; color: #858b99; font-size: 9.45px; }
+.trash-file-icon { display: grid; width: 28px; height: 28px; flex: 0 0 28px; place-items: center; border-radius: 7px; background: #f0eef9; color: var(--brand); }
+.trash-file-label { display: grid; min-width: 0; gap: 3px; }
+.trash-file-label b { overflow: hidden; color: #4b5160; font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.trash-file-label small { color: #9298a6; font-size: 8.4px; }
+.trash-list-row .drive-item-name { gap: 9px; }
+.trash-row-actions { gap: 2px; }
+.trash-row-actions button { min-height: 30px; gap: 5px; }
+.trash-row-actions .trash-purge-button { color: #bd4d5a; }
+.trash-row-actions .trash-purge-button:hover { background: #fff3f4; color: #a83e4b; }
+.trash-modal-icon { background: #fff0f1; color: #bd4d5a; }
+.trash-purge-confirm { background: #bd4d5a; }
+.trash-purge-confirm:hover { background: #a83e4b; }
+@media (max-width: 700px) {
+  .trash-page { gap: 14px; }
+  .trash-page-heading { align-items: flex-start; }
+  .trash-back-button { min-height: 34px; padding: 0 8px; font-size: 9.45px; }
+  .trash-retention-note { align-items: flex-start; gap: 9px; padding: 12px; }
+  .trash-retention-icon { width: 30px; height: 30px; flex-basis: 30px; }
+  .trash-item-count { display: none; }
+  .trash-panel { padding: 12px; }
+  .trash-panel .drive-list-head { display: none; }
+  .trash-panel .trash-list-row { grid-template-columns: minmax(0, 1fr); gap: 9px; padding: 12px 9px; }
+  .trash-panel .trash-list-row > span:nth-child(2),
+  .trash-panel .trash-list-row > span:nth-child(3),
+  .trash-panel .trash-list-row > span:nth-child(4) { display: none; }
+  .trash-panel .trash-row-actions { justify-content: flex-start; padding-left: 37px; }
+}
 .drive-list-row:hover, .drive-list-row.selected { background: #faf9fd; }
 .drive-item-name { display: flex; min-width: 0; align-items: center; gap: 10px; color: #4b5160; }
 .drive-item-name b { overflow: hidden; font-size: 10.5px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
@@ -391,6 +439,11 @@ h1, h2, h3 { font-family: "Inter", Arial, sans-serif; }
 .drive-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .drive-row-actions button, .drive-row-actions a { display: inline-flex; align-items: center; justify-content: center; min-height: 27px; padding: 0 6px; border: 0; border-radius: 5px; background: transparent; color: var(--brand); cursor: pointer; font-size: 9.45px; font-weight: 700; white-space: nowrap; }
 .drive-row-actions button:hover, .drive-row-actions a:hover { background: var(--color-ice); }
+.drive-row-actions .folder-trash-button { display: inline-flex; width: 30px; min-height: 30px; align-items: center; justify-content: center; padding: 0; color: #bd4d5a; }
+.drive-row-actions .folder-trash-button:hover { background: #fff3f4; color: #a83e4b; }
+.folder-trash-modal-icon { background: #fff0f1; color: #bd4d5a; }
+.folder-delete-confirm { background: #bd4d5a; }
+.folder-delete-confirm:hover { background: #a83e4b; }
 .drive-empty-state { display: grid; justify-items: center; padding: 62px 20px; color: #858b99; text-align: center; }
 .drive-empty-state > span { display: grid; width: 52px; height: 52px; place-items: center; margin-bottom: 12px; border-radius: 14px; background: var(--color-ice); color: var(--brand); font-size: 25.2px; }
 .drive-empty-state > b { color: #414757; font-size: 13.65px; }

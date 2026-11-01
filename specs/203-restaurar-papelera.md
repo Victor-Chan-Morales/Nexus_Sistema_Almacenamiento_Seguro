@@ -24,7 +24,7 @@
 
 ## 3. Fuera de Alcance (YAGNI)
 
-- Restaurar carpetas (no se pueden eliminar en este corte).
+- Restaurar una carpeta como unidad: su flujo está documentado en la enmienda de papelera de carpetas de SPEC-205; este contrato sigue cubriendo solo archivos individuales.
 - Elegir otra carpeta de destino o renombrar al restaurar.
 - Restaurar versiones anteriores de un archivo (el historial es de solo lectura, SPEC-206).
 

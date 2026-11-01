@@ -158,8 +158,9 @@ export type UploadFileResponse = {
   uploadedAt: ISODateTime;
 };
 
-/** SPEC-205: elemento de `GET /files/trash`. */
-export type TrashItem = {
+/** Archivo movido individualmente a `GET /files/trash`. */
+export type TrashFileItem = {
+  kind: "file";
   id: UUID;
   name: string;
   mimeType: string;
@@ -168,6 +169,18 @@ export type TrashItem = {
   retentionEndsAt: ISODateTime;
 };
 
+/** Carpeta y árbol de contenido movidos juntos a `GET /files/trash`. */
+export type TrashFolderItem = {
+  kind: "folder";
+  id: UUID;
+  name: string;
+  parentFolderId: UUID;
+  sizeBytes: number;
+  deletedAt: ISODateTime;
+  retentionEndsAt: ISODateTime;
+};
+
+export type TrashItem = TrashFileItem | TrashFolderItem;
 export type TrashResponse = { items: TrashItem[]; totalItems: number };
 export type RestoreFileResponse = { id: UUID; name: string; folderId: UUID };
 export type PurgeFileResponse = { id: UUID; freedBytes: number };
