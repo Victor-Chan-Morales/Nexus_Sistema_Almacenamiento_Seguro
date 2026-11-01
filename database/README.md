@@ -98,6 +98,12 @@ docker compose run --rm migrate status     # qué migraciones están aplicadas /
 docker compose run --rm migrate rollback   # revierte la ÚLTIMA migración aplicada
 ```
 
+### Política: las migraciones avanzan, no se revierten
+
+- Se aplican hacia adelante (`migrate:up`). Para corregir algo ya aplicado, se escribe una migración nueva.
+- El `migrate:down` nunca debe borrar datos. Si la restauración no es posible porque hay filas que la impiden, debe fallar en lugar de descartarlas. Ejemplo: `20261027090000_allow_password_reset_outbox_kinds.sql`.
+- `rollback` solo se usa en desarrollo, sobre una base sin datos reales.
+
 ### Conectar un microservicio
 
 Dentro de Docker, el hostname de PostgreSQL es el **nombre del servicio de Compose**:

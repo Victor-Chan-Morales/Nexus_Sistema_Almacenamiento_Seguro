@@ -37,6 +37,10 @@ export class TypeOrmUserRepository implements UserRepository {
     return managerOf(this.dataSource, tx).findOne(User, { where: { email } });
   }
 
+  findByEmailForUpdate(email: string, tx: TransactionContext): Promise<User | null> {
+    return tx.findOne(User, { where: { email }, lock: { mode: 'pessimistic_write' } });
+  }
+
   findById(id: string, tx?: TransactionContext): Promise<User | null> {
     return managerOf(this.dataSource, tx).findOne(User, { where: { id } });
   }
@@ -59,6 +63,10 @@ export class TypeOrmUserRepository implements UserRepository {
   async markEmailVerified(tx: TransactionContext, userId: string): Promise<void> {
     await tx.update(User, { id: userId }, { emailVerified: true });
   }
+
+  async setPasswordAndVerifyEmail(tx: TransactionContext, userId: string, passwordHash: string): Promise<void> {
+    await tx.update(User, { id: userId }, { passwordHash, emailVerified: true });
+  }
 }
 
 @Injectable()
@@ -74,6 +82,14 @@ export class TypeOrmOrganizationRepository implements OrganizationRepository {
         deploymentModel: data.deploymentModel,
       }),
     );
+  }
+
+  async lockById(tx: TransactionContext, organizationId: string): Promise<boolean> {
+    const row = await tx.findOne(Organization, {
+      where: { id: organizationId },
+      lock: { mode: 'pessimistic_write' },
+    });
+    return row !== null;
   }
 }
 
@@ -117,6 +133,31 @@ export class TypeOrmMembershipRepository implements MembershipRepository {
       relations: { user: true, organization: true, roleRef: true },
       order: { createdAt: 'ASC' },
     });
+  }
+
+  listByOrganization(organizationId: string): Promise<Membership[]> {
+    return this.dataSource.getRepository(Membership).find({
+      where: { organizationId },
+      relations: { user: true, roleRef: true },
+      select: {
+        id: true,
+        userId: true,
+        status: true,
+        createdAt: true,
+        user: { fullName: true, email: true },
+        roleRef: { name: true },
+      },
+      order: { createdAt: 'ASC' },
+    });
+  }
+
+  async organizationIdsOfUser(tx: TransactionContext, userId: string): Promise<string[]> {
+    const rows = await tx.find(Membership, { where: { userId }, select: { organizationId: true } });
+    return rows.map((row) => row.organizationId);
+  }
+
+  countActiveInOrganization(tx: TransactionContext, organizationId: string): Promise<number> {
+    return tx.count(Membership, { where: { organizationId, status: MembershipStatus.ACTIVE } });
   }
 }
 
@@ -176,6 +217,10 @@ export class TypeOrmOneTimeTokenRepository implements OneTimeTokenRepository {
   async markUsed(tx: TransactionContext, token: OneTimeToken): Promise<void> {
     await tx.update(OneTimeToken, { id: token.id }, { usedAt: () => 'now()' });
     token.usedAt = new Date();
+  }
+
+  async invalidateUnused(tx: TransactionContext, userId: string, purpose: TokenPurpose): Promise<void> {
+    await tx.update(OneTimeToken, { userId, purpose, usedAt: IsNull() }, { usedAt: () => 'now()' });
   }
 }
 

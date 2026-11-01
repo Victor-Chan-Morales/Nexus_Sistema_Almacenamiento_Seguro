@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { TokenPurpose } from './domain/enums';
 import { OutboxCipher } from './infrastructure/outbox-cipher';
 import { EmailOutboxService } from './services/email-outbox.service';
 
@@ -42,6 +43,7 @@ const build = (claimed: unknown[] = []) => {
   const uow = { run: jest.fn((work: (tx: unknown) => unknown) => work('tx')) };
   const tokens = {
     issue: jest.fn().mockResolvedValue({ rawToken: TOKEN_NUEVO, expiresAt: new Date(Date.now() + 15 * MIN) }),
+    issueFor: jest.fn().mockResolvedValue({ rawToken: TOKEN, expiresAt: new Date(Date.now() + 24 * HOUR) }),
   };
   const service = new EmailOutboxService(uow as never, outbox as never, cipher, mailer as never, tokens as never);
   return { service, outbox, mailer, uow, tokens };
@@ -62,6 +64,28 @@ describe('EmailOutboxService (outbox persistente de correo)', () => {
     const stored = t.outbox.create.mock.calls[0][1] as { kind: string; encryptedPayload: string; userId: string };
     expect(stored.kind).toBe('password_reset');
     expect(stored.userId).toBe('u1'); // permite emitir un token nuevo al reintentar
+    expect(stored.encryptedPayload).not.toContain(TOKEN);
+    expect(cipher.decrypt(stored.encryptedPayload)).toBe(TOKEN);
+  });
+
+  it('enqueueWithToken emite el token con su propósito y vigencia, y el mensaje guarda la misma vigencia y el token cifrado', async () => {
+    const t = build();
+    const expiresAt = new Date(Date.now() + 24 * HOUR);
+    t.tokens.issueFor.mockResolvedValueOnce({ rawToken: TOKEN, expiresAt });
+
+    await t.service.enqueueWithToken('tx' as never, {
+      kind: 'member_invitation',
+      userId: 'u1',
+      recipientEmail: EMAIL,
+      recipientName: 'Ana',
+      purpose: TokenPurpose.PASSWORD_RESET,
+      ttlMinutes: 24 * 60,
+    });
+
+    expect(t.tokens.issueFor).toHaveBeenCalledWith('tx', 'u1', TokenPurpose.PASSWORD_RESET, 24 * 60);
+    const stored = t.outbox.create.mock.calls[0][1] as { kind: string; expiresAt: Date; encryptedPayload: string };
+    expect(stored.kind).toBe('member_invitation');
+    expect(stored.expiresAt).toBe(expiresAt);
     expect(stored.encryptedPayload).not.toContain(TOKEN);
     expect(cipher.decrypt(stored.encryptedPayload)).toBe(TOKEN);
   });

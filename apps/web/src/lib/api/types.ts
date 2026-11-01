@@ -175,6 +175,7 @@ export type BillingOperationsResponse = {
 
 export type RenewSubscriptionResponse = ActivateSubscriptionResponse;
 
+// SPEC-106: Gestión de miembros
 export type MemberRole = "tenant_admin" | "colaborador";
 
 export type OrganizationMember = {
@@ -208,6 +209,24 @@ export type AddMemberResponse = {
   role: MemberRole;
   status: string;
   createdAt: ISODateTime;
+};
+
+// SPEC-105: Recuperación de contraseña
+export type ForgotPasswordInput = {
+  email: string;
+};
+
+export type ForgotPasswordResponse = {
+  message: string;
+};
+
+export type ResetPasswordInput = {
+  token: string;
+  newPassword: string;
+};
+
+export type ResetPasswordResponse = {
+  message: string;
 };
 
 export type AuditEvent = {
