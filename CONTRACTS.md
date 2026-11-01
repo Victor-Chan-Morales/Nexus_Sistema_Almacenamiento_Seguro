@@ -32,6 +32,9 @@ Los tipos del frontend viven en `apps/web/src/lib/api/types.ts`. Son tipos de co
 | Files | `GET /folders` | Bearer token | `{ drive: { id, name, rootFolderId }, items: [{ id, name, parentFolderId, driveId }] }` | Miguel |
 | Files | `POST /folders` | `{ name, parentFolderId? }` | `{ id, name, parentFolderId, driveId, createdAt }` | Miguel |
 | Files | `GET /folders/:id/items` | Bearer token | `{ folder: { id, name, parentFolderId, driveId }, folders: [{ id, name, parentFolderId, driveId }], files: [{ id, name, mimeType, sizeBytes, versionId, uploadedAt }] }` | Miguel |
+| Files | `DELETE /folders/:id` | ****** | `{ success, id }`; mueve el árbol a la papelera | Miguel |
+| Files | `POST /folders/:id/restore` | ****** | `{ id, name, parentFolderId }`; restaura el árbol como unidad | Miguel |
+| Files | `DELETE /folders/:id/purge` | ****** | `{ id, freedBytes }`; purga todo el árbol | Miguel |
 | Files | `POST /files/upload` | Multipart: `folderId`, `file`; opcional `Idempotency-Key` | `{ id, name, mimeType, sizeBytes, versionId, uploadedAt }` | Miguel |
 | Files | `GET /files/:id/download` | Bearer token | Bytes del archivo y `Content-Disposition` seguro | Miguel |
 | IAM **[v0.5]** | `POST /auth/forgot-password` | `{ email }` | `200 { message }` genérico (exista o no el correo) | Sebastián |
@@ -186,11 +189,14 @@ getUsedStorageBytes(organizationId: string): Promise<bigint>
 
 ## Papelera y versiones [v0.5]
 
-Todas estas rutas se acotan al **Drive personal del solicitante** y tratan un archivo ajeno o inexistente como `404`.
+Todas estas rutas se acotan al **Drive personal del solicitante** y tratan un recurso ajeno o inexistente como `404`.
 
-- `GET /files/trash` → `{ "items": [{ "id", "name", "mimeType", "sizeBytes", "deletedAt", "retentionEndsAt" }], "totalItems" }`. Solo archivos eliminados; `sizeBytes` es el de la versión actual; `retentionEndsAt` = `deletedAt` + 30 días (informativo: no hay purga automática).
+- `GET /files/trash` → `{ "items": [...], "totalItems" }`. Cada elemento indica `kind: "file" | "folder"`. Un archivo contiene `{ id, name, mimeType, sizeBytes, deletedAt, retentionEndsAt }`; una carpeta raíz de papelera contiene `{ id, name, parentFolderId, sizeBytes, deletedAt, retentionEndsAt }`. `sizeBytes` de carpeta suma la versión actual de cada archivo del árbol. `retentionEndsAt` = `deletedAt` + 30 días (informativo: no hay purga automática). Los archivos dentro de un árbol de carpeta no se listan por separado.
 - `POST /files/:id/restore` → `200 { "id", "name", "folderId" }`. `404` si no está en la papelera del solicitante; `409 FILE_NAME_CONFLICT` si la carpeta ya tiene un archivo activo con ese nombre; `409 PARENT_FOLDER_UNAVAILABLE` si la carpeta ya no está disponible. `422 STORAGE_QUOTA_EXCEEDED` si el archivo lleva más de 30 días en la papelera (ya no cuenta para la cuota) y al restaurarlo se supera el límite del plan; en ese caso el archivo sigue en la papelera.
 - `DELETE /files/:id/purge` → `200 { "id", "freedBytes" }`. `freedBytes` es la suma de **todas** las versiones. `422 CANNOT_PURGE_ACTIVE_FILE` si el archivo no está en la papelera. Borra metadatos y versiones en una transacción (reescribe los contadores de cuota) y elimina los objetos de SeaweedFS **después** del commit, con mejor esfuerzo: un objeto que no se pudo borrar queda huérfano y se registra, nunca al revés.
+- `DELETE /folders/:id` mueve la carpeta y todo su árbol de descendientes a la papelera como una unidad con una fecha de eliminación común. La raíz del Drive no se puede eliminar.
+- `POST /folders/:id/restore` restaura el árbol y los archivos que se eliminaron junto con él; los archivos y subcarpetas que ya estaban eliminados individualmente conservan su fecha y permanecen en la papelera. `409 FOLDER_NAME_CONFLICT` si el nombre raíz está ocupado; `409 PARENT_FOLDER_UNAVAILABLE` si su carpeta contenedora no está activa; `422 STORAGE_QUOTA_EXCEEDED` si los archivos que ya excedieron la retención no caben en la cuota. Si falla, el árbol sigue en la papelera.
+- `DELETE /folders/:id/purge` elimina definitivamente la carpeta y todo su contenido, libera la suma de todas las versiones y borra objetos de SeaweedFS después del commit con mejor esfuerzo. La interfaz requiere confirmación explícita.
 - `GET /files/:id/versions` → `{ "fileId", "fileName", "currentVersion", "versions": [{ "versionId", "versionNumber", "sizeBytes", "uploadedAt", "isCurrent" }] }`, de la más reciente a la más antigua. Solo archivos activos.
 - Cuota (sin cambio respecto de v0.4): un archivo eliminado sigue contando para la cuota **durante 30 días desde `deleted_at`**; pasado ese plazo deja de contar aunque sus objetos sigan almacenados hasta la purga. No hay purga automática en este corte, así que `retentionEndsAt` indica cuándo deja de contar, no cuándo se borra.
 
@@ -231,7 +237,7 @@ Catálogo común. El filtro emite `VALIDATION_ERROR` para cualquier `400` de val
 | 403 | `FORBIDDEN_ROLE` | Rol insuficiente. |
 | 403 | `EMAIL_NOT_VERIFIED` | Login sin correo verificado (v0.4). |
 | 404 | `NOT_FOUND` | Recurso inexistente o ajeno. |
-| 409 | `FILE_NAME_CONFLICT`, `PARENT_FOLDER_UNAVAILABLE`, `CONCURRENT_SUBSCRIPTION_CONFLICT` | Conflicto de estado. |
+| 409 | `FILE_NAME_CONFLICT`, `FOLDER_NAME_CONFLICT`, `PARENT_FOLDER_UNAVAILABLE`, `CONCURRENT_SUBSCRIPTION_CONFLICT` | Conflicto de estado. |
 | 422 | `STORAGE_QUOTA_EXCEEDED`, `MEMBER_ALREADY_EXISTS`, `EMAIL_BELONGS_TO_OTHER_ORGANIZATION`, `USER_LIMIT_EXCEEDED`, `CANNOT_PURGE_ACTIVE_FILE`, `NO_ACTIVE_SUBSCRIPTION`, `PLAN_NOT_RENEWABLE` | Regla de negocio. |
 
 ## Cambios de forma en Files ya implementados [v0.5]

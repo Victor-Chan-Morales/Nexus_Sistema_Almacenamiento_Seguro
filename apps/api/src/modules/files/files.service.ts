@@ -14,7 +14,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { Readable } from 'stream';
-import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
 import { BillingService } from '../billing/billing.service';
 import { StorageService } from '../storage/storage.service';
 import { Destination } from './entities/destination.entity';
@@ -27,7 +27,7 @@ import { TenantEncryptionKey } from './entities/tenant-encryption-key.entity';
 import { TenantQuota } from './entities/tenant-quota.entity';
 import { Upload } from './entities/upload.entity';
 import { EncryptedFile, FilesCryptoService } from './files-crypto.service';
-import { PurgeFileResponseDto, RestoreFileResponseDto, TrashItemDto, TrashResponseDto } from './dto/trash.dto';
+import { PurgeFileResponseDto, RestoreFileResponseDto, RestoreFolderResponseDto, TrashItemDto, TrashResponseDto } from './dto/trash.dto';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction, AuditResource } from '../audit/audit.types';
 
@@ -36,6 +36,14 @@ const MAX_ACTIVE_UPLOADS_PER_USER = 3;
 const RESERVATION_TTL_MS = 24 * 60 * 60 * 1000;
 /** Días en papelera tras los que un archivo eliminado deja de contar para la cuota (SPEC-202). */
 const TRASH_RETENTION_DAYS = 30;
+
+interface FolderTreeRow {
+  id: string;
+  name: string;
+  parentFolderId: string | null;
+  depth: number;
+  deletedAt: Date | null;
+}
 
 const ALLOWED_MIME_BY_EXT: Record<string, string[]> = {
   '.pdf': ['application/pdf'],
@@ -107,7 +115,7 @@ export class FilesService {
   }
 
   /**
-   * SPEC-202: Listado de archivos en papelera para el Drive personal del solicitante.
+   * SPEC-202: lista archivos y carpetas eliminados del Drive del solicitante.
    */
   async listTrash(organizationId: string, userId: string): Promise<TrashResponseDto> {
     const drive = await this.findPersonalDrive(organizationId, userId);
@@ -117,12 +125,13 @@ export class FilesService {
     }
 
     // 2. Archivos borrados lógicamente del Drive del solicitante, con su versión vigente en la misma consulta
-    const [files, totalItems] = (await this.fileRepository
+    const [files, fileCount] = (await this.fileRepository
       .createQueryBuilder('file')
       .innerJoin('file.folder', 'folder')
       .leftJoinAndMapOne('file.currentVersion', FileVersion, 'version', 'version.id = file.currentVersionId')
       .where('file.organizationId = :organizationId', { organizationId })
       .andWhere('folder.driveId = :driveId', { driveId: drive.id })
+      .andWhere('folder.isDeleted = false')
       .andWhere('file.isDeleted = :isDeleted', { isDeleted: true })
       .andWhere('file.deletedAt IS NOT NULL')
       .orderBy('file.deletedAt', 'DESC')
@@ -131,13 +140,14 @@ export class FilesService {
       .getManyAndCount()) as [Array<FileRecord & { currentVersion: FileVersion | null }>, number];
 
     // 3. Mapear DTOs calculando retentionEndsAt (deletedAt + 30 días)
-    const items: TrashItemDto[] = files.map((file) => {
+    const fileItems: TrashItemDto[] = files.map((file) => {
       const deletedDate = new Date(file.deletedAt as Date);
       const retentionDate = new Date(deletedDate.getTime() + TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000);
 
       const sizeNum = file.currentVersion?.sizeBytes ? Number(file.currentVersion.sizeBytes) : 0;
 
       return {
+        kind: 'file' as const,
         id: file.id,
         name: file.name,
         mimeType: file.mimeType || 'application/octet-stream',
@@ -147,9 +157,68 @@ export class FilesService {
       };
     });
 
+    const folderRows = await this.dataSource.query<Array<{
+      id: string;
+      name: string;
+      parentFolderId: string;
+      sizeBytes: string;
+      deletedAt: Date | string;
+    }>>(
+      `WITH RECURSIVE roots AS (
+        SELECT folder.folder_id, folder.parent_folder_id, folder.name, folder.deleted_at
+        FROM files.folder folder
+        LEFT JOIN files.folder parent
+          ON parent.organization_id = folder.organization_id
+          AND parent.folder_id = folder.parent_folder_id
+        WHERE folder.organization_id = $1
+          AND folder.drive_id = $2
+          AND folder.is_deleted = true
+          AND folder.deleted_at IS NOT NULL
+          AND folder.parent_folder_id IS NOT NULL
+          AND (parent.folder_id IS NULL OR parent.is_deleted = false)
+      ),
+      tree AS (
+        SELECT root.folder_id AS root_id, root.folder_id AS folder_id
+        FROM roots root
+        UNION ALL
+        SELECT tree.root_id, child.folder_id
+        FROM tree
+        INNER JOIN files.folder child
+          ON child.parent_folder_id = tree.folder_id
+        WHERE child.organization_id = $1
+          AND child.drive_id = $2
+      )
+      SELECT root.folder_id AS id,
+        root.name,
+        root.parent_folder_id AS "parentFolderId",
+        COALESCE(SUM(version.size_bytes), 0)::text AS "sizeBytes",
+        root.deleted_at AS "deletedAt"
+      FROM roots root
+      INNER JOIN tree ON tree.root_id = root.folder_id
+      LEFT JOIN files.file file ON file.folder_id = tree.folder_id
+      LEFT JOIN files.file_version version ON version.version_id = file.current_version_id
+      GROUP BY root.folder_id, root.parent_folder_id, root.name, root.deleted_at
+      ORDER BY root.deleted_at DESC, root.folder_id ASC
+      LIMIT 500`,
+      [organizationId, drive.id],
+    );
+    const folderItems: TrashItemDto[] = folderRows.map((folder) => {
+      const deletedDate = new Date(folder.deletedAt);
+      return {
+        kind: 'folder',
+        id: folder.id,
+        name: folder.name,
+        parentFolderId: folder.parentFolderId,
+        sizeBytes: Number(folder.sizeBytes),
+        deletedAt: deletedDate.toISOString(),
+        retentionEndsAt: new Date(deletedDate.getTime() + TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString(),
+      };
+    });
+
+    const items = [...fileItems, ...folderItems].sort((a, b) => Date.parse(b.deletedAt) - Date.parse(a.deletedAt));
     return {
       items,
-      totalItems,
+      totalItems: fileCount + folderItems.length,
     };
   }
 
@@ -389,6 +458,7 @@ export class FilesService {
     }
 
     return this.dataSource.transaction(async (manager) => {
+      await this.lockTenantQuota(manager, organizationId);
       const drive = await this.ensureUserDrive(manager, organizationId, userId);
       const parentFolder = await this.requirePersonalFolder(
         organizationId,
@@ -1072,6 +1142,173 @@ export class FilesService {
     }).catch(() => {});
 
     return saved;
+  }
+
+  /** Mueve una carpeta y todo su árbol de contenido a la papelera como una unidad restaurable. */
+  async softDeleteFolder(folderId: string, organizationId: string, userId: string): Promise<{ success: true; id: string }> {
+    const drive = await this.findPersonalDrive(organizationId, userId);
+    if (!drive) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
+
+    await this.dataSource.transaction(async (manager) => {
+      await this.lockTenantQuota(manager, organizationId);
+      const folderRepo = manager.getRepository(Folder);
+      const root = await folderRepo.findOne({
+        where: { id: folderId, organizationId, driveId: drive.id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!root || root.isDeleted || !root.parentId) {
+        throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
+      }
+
+      const tree = await this.getFolderTree(manager, folderId, organizationId, drive.id);
+      const folderIds = tree.map((folder) => folder.id);
+      const deletedAt = new Date();
+      await manager.query(
+        'UPDATE files.folder SET is_deleted = true, deleted_at = $3 ' +
+        'WHERE organization_id = $1 AND folder_id = ANY($2::uuid[]) AND is_deleted = false',
+        [organizationId, folderIds, deletedAt],
+      );
+      await manager.query(
+        'UPDATE files.file SET is_deleted = true, deleted_at = $3 ' +
+        'WHERE organization_id = $1 AND folder_id = ANY($2::uuid[]) AND is_deleted = false',
+        [organizationId, folderIds, deletedAt],
+      );
+    });
+
+    return { success: true, id: folderId };
+  }
+
+  /** Restaura la unidad de carpeta; archivos previamente eliminados individualmente permanecen en la papelera. */
+  async restoreFolder(folderId: string, organizationId: string, userId: string): Promise<RestoreFolderResponseDto> {
+    const drive = await this.findPersonalDrive(organizationId, userId);
+    if (!drive) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
+
+    return this.dataSource.transaction(async (manager) => {
+      await this.lockTenantQuota(manager, organizationId);
+      const folderRepo = manager.getRepository(Folder);
+      const root = await folderRepo.findOne({
+        where: { id: folderId, organizationId, driveId: drive.id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!root || !root.isDeleted || !root.deletedAt || !root.parentId) {
+        throw new NotFoundException('Carpeta ' + folderId + ' no encontrada en la papelera');
+      }
+
+      const tree = await this.getFolderTree(manager, folderId, organizationId, drive.id);
+      const folderIds = tree.map((folder) => folder.id);
+      const parent = await folderRepo.findOne({
+        where: { id: root.parentId, organizationId, driveId: drive.id },
+      });
+      if (!parent || parent.isDeleted) {
+        throw this.businessError(HttpStatus.CONFLICT, 'PARENT_FOLDER_UNAVAILABLE', 'La carpeta contenedora no está disponible');
+      }
+
+      const nameTaken = await folderRepo.exists({
+        where: { organizationId, driveId: drive.id, parentId: root.parentId, name: root.name, isDeleted: false },
+      });
+      if (nameTaken) {
+        throw this.businessError(HttpStatus.CONFLICT, 'FOLDER_NAME_CONFLICT', 'Ya existe una carpeta con ese nombre');
+      }
+
+      const expiredBytesRows = await manager.query<Array<{ total: string }>>(
+        'SELECT COALESCE(SUM(version.size_bytes), 0)::text AS total ' +
+        'FROM files.file file INNER JOIN files.file_version version ON version.file_id = file.file_id ' +
+        'WHERE file.organization_id = $1 AND file.folder_id = ANY($2::uuid[]) ' +
+        'AND file.is_deleted = true AND file.deleted_at = $3 ' +
+        `AND file.deleted_at <= now() - interval '${TRASH_RETENTION_DAYS} days'`,
+        [organizationId, folderIds, root.deletedAt],
+      );
+      const expiredBytes = BigInt(expiredBytesRows[0]?.total ?? 0);
+      if (expiredBytes > 0n) {
+        const usage = await this.readStorageUsage(manager, organizationId);
+        const limit = await this.billingService.getStorageLimitBytes(organizationId);
+        if (usage.totalBytes + expiredBytes > limit) {
+          throw this.businessError(
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            'STORAGE_QUOTA_EXCEEDED',
+            'La restauración excede la cuota disponible para el plan de la organización',
+          );
+        }
+      }
+
+      await manager.query(
+        'UPDATE files.folder SET is_deleted = false, deleted_at = NULL ' +
+        'WHERE organization_id = $1 AND folder_id = ANY($2::uuid[]) AND deleted_at = $3',
+        [organizationId, folderIds, root.deletedAt],
+      );
+      await manager.query(
+        'UPDATE files.file SET is_deleted = false, deleted_at = NULL ' +
+        'WHERE organization_id = $1 AND folder_id = ANY($2::uuid[]) AND is_deleted = true AND deleted_at = $3',
+        [organizationId, folderIds, root.deletedAt],
+      );
+
+      const usage = await this.readStorageUsage(manager, organizationId);
+      await this.writeQuotaCounters(manager, organizationId, usage);
+      return { id: root.id, name: root.name, parentFolderId: root.parentId };
+    });
+  }
+
+  /** Purga una carpeta con todo su contenido y elimina los objetos tras confirmar la transacción. */
+  async purgeFolder(folderId: string, organizationId: string, userId: string): Promise<PurgeFileResponseDto> {
+    const drive = await this.findPersonalDrive(organizationId, userId);
+    if (!drive) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
+
+    const purged = await this.dataSource.transaction(async (manager) => {
+      await this.lockTenantQuota(manager, organizationId);
+      const folderRepo = manager.getRepository(Folder);
+      const root = await folderRepo.findOne({
+        where: { id: folderId, organizationId, driveId: drive.id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!root || !root.isDeleted || !root.parentId) {
+        throw new NotFoundException('Carpeta ' + folderId + ' no encontrada en la papelera');
+      }
+
+      const tree = await this.getFolderTree(manager, folderId, organizationId, drive.id);
+      const folderIds = tree.map((folder) => folder.id);
+      const files = await manager.getRepository(FileRecord).find({
+        where: { organizationId, folderId: In(folderIds) },
+      });
+      const fileIds = files.map((file) => file.id);
+      const versions = fileIds.length
+        ? await manager.getRepository(FileVersion).find({ where: { fileId: In(fileIds) } })
+        : [];
+      const freedBytes = versions.reduce((total, version) => total + BigInt(version.sizeBytes), 0n);
+
+      for (const fileId of fileIds) await this.removeFileRows(manager, fileId);
+      for (const folder of tree) await folderRepo.delete({ id: folder.id, organizationId });
+
+      const usage = await this.readStorageUsage(manager, organizationId);
+      await this.writeQuotaCounters(manager, organizationId, usage);
+      return { freedBytes, objectKeys: versions.map((version) => version.objectKey) };
+    });
+
+    void this.deleteOrphanObjects(purged.objectKeys);
+    return { id: folderId, freedBytes: Number(purged.freedBytes) };
+  }
+
+  private getFolderTree(
+    manager: EntityManager,
+    folderId: string,
+    organizationId: string,
+    driveId: string,
+  ): Promise<FolderTreeRow[]> {
+    return manager.query<FolderTreeRow[]>(
+      `WITH RECURSIVE folder_tree AS (
+        SELECT folder_id AS id, name, parent_folder_id AS "parentFolderId", 0 AS depth, deleted_at AS "deletedAt"
+        FROM files.folder
+        WHERE folder_id = $1 AND organization_id = $2 AND drive_id = $3
+        UNION ALL
+        SELECT child.folder_id, child.name, child.parent_folder_id, tree.depth + 1, child.deleted_at
+        FROM files.folder child
+        INNER JOIN folder_tree tree ON child.parent_folder_id = tree.id
+        WHERE child.organization_id = $2 AND child.drive_id = $3
+      )
+      SELECT id, name, "parentFolderId", depth, "deletedAt"
+      FROM folder_tree
+      ORDER BY depth DESC, id ASC`,
+      [folderId, organizationId, driveId],
+    );
   }
 
   /**
