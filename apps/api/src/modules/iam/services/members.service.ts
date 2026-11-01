@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { AuditService } from '../../audit/audit.service';
+import { AuditAction, AuditResource } from '../../audit/audit.types';
 import { MEMBER_INVITATION_TOKEN_TTL_HOURS } from '../constants';
 import { TokenPurpose } from '../domain/enums';
 import { AddMemberDto } from '../dto/add-member.dto';
@@ -30,6 +32,7 @@ export class MembersService {
     private readonly opaque: OpaqueTokens,
     private readonly outbox: EmailOutboxService,
     private readonly admission: MemberAdmission,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -113,6 +116,15 @@ export class MembersService {
 
     // Tras el commit y sin esperarlo: si el correo falla queda pendiente en la outbox (nunca lanza).
     void this.outbox.dispatch(created.outboxId);
+
+    // SPEC-405: MEMBER_ADDED tras el commit
+    void this.audit.logEvent({
+      organizationId: actor.organizationId,
+      actorId: actor.userId,
+      action: AuditAction.MEMBER_ADDED,
+      resourceType: AuditResource.MEMBERSHIP,
+      resourceId: created.membership.id,
+    }).catch(() => {});
 
     return {
       id: created.membership.id,

@@ -1,4 +1,5 @@
 import { HttpException } from '@nestjs/common';
+import { AuditAction, AuditResource } from '../audit/audit.types';
 import { Role, UserStatus } from './domain/enums';
 import { AuthService } from './services/auth.service';
 import { SessionService } from './services/session.service';
@@ -36,8 +37,14 @@ describe('AuthService.authenticate (sin base de datos: puertos simulados)', () =
       hash: jest.fn(async (p: string) => `hash:${p}`),
       verify: jest.fn(async (h: string, p: string) => h === `hash:${p}`),
     };
-    const sessions = { open: jest.fn().mockResolvedValue({ accessToken: 'jwt' }) };
+    const sessionResult = {
+      accessToken: 'jwt',
+      user: { id: user.id, fullName: user.fullName, email: user.email },
+      organization: membership.organization,
+    };
+    const sessions = { open: jest.fn().mockResolvedValue(sessionResult) };
     const uow = { run: jest.fn((work: (tx: unknown) => unknown) => work('tx')) };
+    const audit = { logEvent: jest.fn().mockResolvedValue(undefined) };
     const service = new AuthService(
       users as never,
       memberships as never,
@@ -46,8 +53,9 @@ describe('AuthService.authenticate (sin base de datos: puertos simulados)', () =
       { verify: jest.fn() } as never,
       uow as never,
       { requireVerifiedEmail: requireVerified } as never,
+      audit as never,
     );
-    return { service, users, memberships, hasher, sessions, user, membership };
+    return { service, users, memberships, hasher, sessions, uow, audit, user, membership };
   };
 
   it('correo inexistente: verifica contra el hash señuelo y responde INVALID_CREDENTIALS', async () => {
@@ -106,6 +114,58 @@ describe('AuthService.authenticate (sin base de datos: puertos simulados)', () =
     await t.service.authenticate('ANA@test.com ', 'Password123');
     expect(t.users.findByEmail).toHaveBeenCalledWith('ana@test.com'); // correo normalizado
     expect(t.sessions.open).toHaveBeenCalledWith('tx', t.user, t.membership);
+  });
+
+  describe('SPEC-405: AUTH_LOGIN', () => {
+    it('Escenario 1: tras abrir la sesión registra AUTH_LOGIN con la organización y el usuario del resultado', async () => {
+      const t = build();
+      await t.service.onModuleInit();
+      await t.service.authenticate('ana@test.com', 'Password123');
+      expect(t.audit.logEvent).toHaveBeenCalledTimes(1);
+      expect(t.audit.logEvent).toHaveBeenCalledWith({
+        organizationId: 'o1',
+        actorId: 'u1',
+        action: AuditAction.AUTH_LOGIN,
+        resourceType: AuditResource.USER,
+        resourceId: 'u1',
+      });
+    });
+
+    it('Escenario 2: contraseña incorrecta o sin membresía activa no registra evento', async () => {
+      const wrongPassword = build();
+      await wrongPassword.service.onModuleInit();
+      await codeOf(wrongPassword.service.authenticate('ana@test.com', 'Incorrecta1'));
+      expect(wrongPassword.audit.logEvent).not.toHaveBeenCalled();
+
+      const noMembership = build();
+      await noMembership.service.onModuleInit();
+      noMembership.memberships.findActive.mockResolvedValue(null);
+      await codeOf(noMembership.service.authenticate('ana@test.com', 'Password123'));
+      expect(noMembership.audit.logEvent).not.toHaveBeenCalled();
+    });
+
+    it('Escenario 3: si logEvent falla, el login responde igual que sin auditoría', async () => {
+      const t = build();
+      await t.service.onModuleInit();
+      t.audit.logEvent.mockRejectedValueOnce(new Error('Audit DB down'));
+      await expect(t.service.authenticate('ana@test.com', 'Password123')).resolves.toMatchObject({
+        accessToken: 'jwt',
+      });
+    });
+
+    it('Escenario 4: el evento se registra después de confirmar la transacción', async () => {
+      const t = build();
+      await t.service.onModuleInit();
+      const order: string[] = [];
+      t.uow.run.mockImplementationOnce(async (work: (tx: unknown) => Promise<unknown>) => {
+        const result = await work('tx');
+        order.push('commit');
+        return result;
+      });
+      t.audit.logEvent.mockImplementationOnce(async () => void order.push('audit'));
+      await t.service.authenticate('ana@test.com', 'Password123');
+      expect(order).toEqual(['commit', 'audit']);
+    });
   });
 });
 
