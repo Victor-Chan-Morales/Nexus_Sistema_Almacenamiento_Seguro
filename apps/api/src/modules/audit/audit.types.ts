@@ -8,6 +8,10 @@ export enum AuditAction {
   FILE_DELETE = 'FILE_DELETE',
   FILE_RESTORE = 'FILE_RESTORE',
   FILE_PURGE = 'FILE_PURGE',
+  FOLDER_CREATE = 'FOLDER_CREATE',
+  FOLDER_DELETE = 'FOLDER_DELETE',
+  FOLDER_RESTORE = 'FOLDER_RESTORE',
+  FOLDER_PURGE = 'FOLDER_PURGE',
   PLAN_ACTIVATED = 'PLAN_ACTIVATED',
   PLAN_RENEWED = 'PLAN_RENEWED',
 }
@@ -17,6 +21,7 @@ export enum AuditResource {
   USER = 'user',
   MEMBERSHIP = 'membership',
   FILE = 'file',
+  FOLDER = 'folder',
   SUBSCRIPTION = 'subscription',
 }
 

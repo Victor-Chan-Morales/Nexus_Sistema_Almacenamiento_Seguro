@@ -457,7 +457,7 @@ export class FilesService {
       throw new BadRequestException('El nombre de carpeta debe tener entre 1 y 255 caracteres');
     }
 
-    return this.dataSource.transaction(async (manager) => {
+    const created = await this.dataSource.transaction(async (manager) => {
       await this.lockTenantQuota(manager, organizationId);
       const drive = await this.ensureUserDrive(manager, organizationId, userId);
       const parentFolder = await this.requirePersonalFolder(
@@ -485,6 +485,16 @@ export class FilesService {
         createdAt: saved.createdAt,
       };
     });
+
+    void this.auditService?.logEvent({
+      organizationId,
+      actorId: userId,
+      action: AuditAction.FOLDER_CREATE,
+      resourceType: AuditResource.FOLDER,
+      resourceId: created.id,
+    }).catch(() => {});
+
+    return created;
   }
 
   async getFolderItems(
@@ -1175,6 +1185,14 @@ export class FilesService {
       );
     });
 
+    void this.auditService?.logEvent({
+      organizationId,
+      actorId: userId,
+      action: AuditAction.FOLDER_DELETE,
+      resourceType: AuditResource.FOLDER,
+      resourceId: folderId,
+    }).catch(() => {});
+
     return { success: true, id: folderId };
   }
 
@@ -1183,7 +1201,7 @@ export class FilesService {
     const drive = await this.findPersonalDrive(organizationId, userId);
     if (!drive) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
 
-    return this.dataSource.transaction(async (manager) => {
+    const restored = await this.dataSource.transaction(async (manager) => {
       await this.lockTenantQuota(manager, organizationId);
       const folderRepo = manager.getRepository(Folder);
       const root = await folderRepo.findOne({
@@ -1246,6 +1264,16 @@ export class FilesService {
       await this.writeQuotaCounters(manager, organizationId, usage);
       return { id: root.id, name: root.name, parentFolderId: root.parentId };
     });
+
+    void this.auditService?.logEvent({
+      organizationId,
+      actorId: userId,
+      action: AuditAction.FOLDER_RESTORE,
+      resourceType: AuditResource.FOLDER,
+      resourceId: restored.id,
+    }).catch(() => {});
+
+    return restored;
   }
 
   /** Purga una carpeta con todo su contenido y elimina los objetos tras confirmar la transacción. */
@@ -1282,6 +1310,14 @@ export class FilesService {
       await this.writeQuotaCounters(manager, organizationId, usage);
       return { freedBytes, objectKeys: versions.map((version) => version.objectKey) };
     });
+
+    void this.auditService?.logEvent({
+      organizationId,
+      actorId: userId,
+      action: AuditAction.FOLDER_PURGE,
+      resourceType: AuditResource.FOLDER,
+      resourceId: folderId,
+    }).catch(() => {});
 
     void this.deleteOrphanObjects(purged.objectKeys);
     return { id: folderId, freedBytes: Number(purged.freedBytes) };
