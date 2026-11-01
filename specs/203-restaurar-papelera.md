@@ -12,7 +12,7 @@
 | **Dependencias** | Ninguna (el evento de auditoría va en SPEC-405) |
 | **Hito Objetivo** | Corte 80% (30-Oct-2026) — **prioridad P2** (ver `specs/README.md`) |
 | **Estimación** | 1.5 h |
-| **Estado** | En revisión (reescrita 2026-10-27 según ADR-007) |
+| **Estado** | Aprobada (2026-10-31, Víctor Chán Morales) |
 
 ---
 

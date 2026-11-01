@@ -12,7 +12,7 @@
 | **Dependencias** | SPEC-202 y 203 (API). Purga: SPEC-204 (P2). Puede avanzar con un mock del contrato v0.5. |
 | **Hito Objetivo** | Corte 80% (30-Oct-2026) — **prioridad P2** (ver `specs/README.md`) |
 | **Estimación** | 2.0 h |
-| **Estado** | En revisión (reescrita 2026-10-27 según ADR-007) |
+| **Estado** | Aprobada (2026-10-31, Víctor Chán Morales) |
 
 ---
 
