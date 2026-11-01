@@ -139,8 +139,10 @@ const trashedFile = (overrides: Partial<FileRecord> = {}) =>
     organizationId: ORG,
     folderId: 'folder-1',
     name: 'contrato.pdf',
+    currentVersionId: 'v1',
     isDeleted: true,
-    deletedAt: new Date('2026-10-01T10:00:00.000Z'),
+    // Por defecto, dentro de la retención de 30 días: el archivo ya cuenta para la cuota
+    deletedAt: new Date(Date.now() - DAY_MS),
     ...overrides,
   });
 
@@ -152,12 +154,18 @@ const buildRestoreService = ({
   file = trashedFile() as FileRecord | null,
   folder = activeFolder() as Folder | null,
   nameTaken = false,
+  usedBytes = 0,
+  limitBytes = 1000,
+  versionSize = '50',
   audit = { logEvent: jest.fn().mockResolvedValue(undefined) },
 }: {
   drive?: unknown;
   file?: FileRecord | null;
   folder?: Folder | null;
   nameTaken?: boolean;
+  usedBytes?: number;
+  limitBytes?: number;
+  versionSize?: string;
   audit?: { logEvent: jest.Mock };
 } = {}) => {
   const driveRepo = { findOne: jest.fn().mockResolvedValue(drive) };
@@ -167,26 +175,41 @@ const buildRestoreService = ({
     save: jest.fn(async (entity: FileRecord) => entity),
   };
   const folderRepo = { findOne: jest.fn().mockResolvedValue(folder) };
+  const versionRepo = { findOne: jest.fn().mockResolvedValue({ id: 'v1', sizeBytes: versionSize }) };
   const manager = {
-    query: jest.fn().mockResolvedValue([]),
-    getRepository: jest.fn((entity: unknown) => (entity === FileRecord ? fileRepo : folderRepo)),
+    // readStorageUsage: uso confirmado (file_version) y reservas (reservation); el resto de consultas no devuelve filas
+    query: jest.fn(async (sql: string) => {
+      if (sql.includes('files.reservation')) return [{ total: '0' }];
+      if (sql.includes('files.file_version')) return [{ total: String(usedBytes) }];
+      return [];
+    }),
+    getRepository: jest.fn((entity: unknown) => {
+      if (entity === FileRecord) return fileRepo;
+      if (entity === FileVersion) return versionRepo;
+      return folderRepo;
+    }),
   };
   const dataSource = {
     getRepository: jest.fn().mockReturnValue(driveRepo),
     transaction: jest.fn((callback: (m: unknown) => Promise<unknown>) => callback(manager)),
   };
+  const billing = { getStorageLimitBytes: jest.fn().mockResolvedValue(BigInt(limitBytes)) };
   const service = new FilesService(
     {} as never,
     {} as never,
     {} as never,
     dataSource as never,
     {} as never,
-    {} as never,
+    billing as never,
     {} as never,
     audit as unknown as AuditService,
   );
-  return { service, fileRepo, folderRepo, manager, audit };
+  return { service, fileRepo, folderRepo, manager, audit, billing };
 };
+
+/** Un archivo eliminado hace 31 días: ya no cuenta para la cuota (ADR-007 §7). */
+const expiredTrashedFile = () =>
+  trashedFile({ deletedAt: new Date(Date.now() - 31 * DAY_MS) });
 
 /** Devuelve el error lanzado por una promesa rechazada, o falla si no hubo error. */
 const errorOf = async (promise: Promise<unknown>): Promise<unknown> => {
@@ -294,6 +317,46 @@ describe('SPEC-203: FilesService.restoreFile', () => {
       name: 'contrato.pdf',
       folderId: 'folder-1',
     });
+  });
+
+  it('escenario 7: un archivo caducado que cabe en la cuota se restaura y vuelve a contar', async () => {
+    const { service, fileRepo, billing } = buildRestoreService({
+      file: expiredTrashedFile(),
+      usedBytes: 100,
+      limitBytes: 1000,
+      versionSize: '50',
+    });
+
+    await expect(service.restoreFile(FILE_ID, ORG, USER)).resolves.toEqual({
+      id: FILE_ID,
+      name: 'contrato.pdf',
+      folderId: 'folder-1',
+    });
+    expect(billing.getStorageLimitBytes).toHaveBeenCalledWith(ORG);
+    expect(fileRepo.save).toHaveBeenCalledWith(expect.objectContaining({ isDeleted: false, deletedAt: null }));
+  });
+
+  it('escenario 7: un archivo caducado que no cabe en la cuota responde 422 STORAGE_QUOTA_EXCEEDED y sigue en la papelera', async () => {
+    const { service, fileRepo, audit } = buildRestoreService({
+      file: expiredTrashedFile(),
+      usedBytes: 980,
+      limitBytes: 1000,
+      versionSize: '50',
+    });
+
+    const error = await errorOf(service.restoreFile(FILE_ID, ORG, USER));
+
+    expect((error as HttpException).getStatus()).toBe(422);
+    expect((error as HttpException).getResponse()).toMatchObject({ code: 'STORAGE_QUOTA_EXCEEDED' });
+    expect(fileRepo.save).not.toHaveBeenCalled();
+    expect(audit.logEvent).not.toHaveBeenCalled();
+  });
+
+  it('un archivo dentro de la retención ya cuenta para la cuota: no se vuelve a comprobar', async () => {
+    const { service, billing } = buildRestoreService({ usedBytes: 1000, limitBytes: 1000 });
+
+    await expect(service.restoreFile(FILE_ID, ORG, USER)).resolves.toMatchObject({ id: FILE_ID });
+    expect(billing.getStorageLimitBytes).not.toHaveBeenCalled();
   });
 });
 

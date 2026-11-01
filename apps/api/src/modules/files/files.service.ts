@@ -1123,10 +1123,36 @@ export class FilesService {
       throw this.businessError(HttpStatus.CONFLICT, 'FILE_NAME_CONFLICT', 'Ya existe un archivo con ese nombre en la carpeta');
     }
 
+    await this.assertRestoreFitsQuota(manager, file, organizationId);
+
     // Ambos campos a la vez: el CHECK ck_file_soft_delete_consistent lo exige
     file.isDeleted = false;
     file.deletedAt = null;
     const saved = await fileRepo.save(file);
     return { id: saved.id, name: saved.name, folderId: saved.folderId };
+  }
+
+  /**
+   * Un archivo eliminado hace más de 30 días ya no cuenta para la cuota (readStorageUsage).
+   * Restaurarlo lo vuelve a contar, así que debe caber en el límite del plan, igual que una carga.
+   * Si todavía está dentro de la retención ya cuenta, y no se vuelve a comprobar.
+   */
+  private async assertRestoreFitsQuota(manager: EntityManager, file: FileRecord, organizationId: string): Promise<void> {
+    const retentionCutoff = Date.now() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    if (!file.deletedAt || file.deletedAt.getTime() > retentionCutoff) return;
+
+    const version = file.currentVersionId
+      ? await manager.getRepository(FileVersion).findOne({ where: { id: file.currentVersionId, fileId: file.id } })
+      : null;
+    const sizeBytes = BigInt(version?.sizeBytes ?? 0);
+    const usage = await this.readStorageUsage(manager, organizationId);
+    const limit = await this.billingService.getStorageLimitBytes(organizationId);
+    if (usage.totalBytes + sizeBytes > limit) {
+      throw this.businessError(
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        'STORAGE_QUOTA_EXCEEDED',
+        'La restauración excede la cuota disponible para el plan de la organización',
+      );
+    }
   }
 }
