@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Brand } from "@/components/brand";
+import { AccountMenu } from "@/components/account-menu";
 import { DemoBanner } from "@/components/demo-banner";
 import { UiIcon } from "@/components/ui-icon";
 import { initialsOf, RequireSession, useSession } from "@/lib/session";
@@ -26,10 +27,10 @@ const roleLabels: Record<string, string> = { tenant_admin: "Administrador", owne
  * `demo` solo se activa en pantallas que todavía no consumen la API.
  */
 export function AppShell({ active, children, superAdmin = false, demo = false }: { active: string; children: React.ReactNode; superAdmin?: boolean; demo?: boolean }) {
-  return <RequireSession>{(session) => <ShellFrame active={active} superAdmin={superAdmin} demo={demo} name={session.user.fullName} organization={session.organization.name} role={session.role}>{children}</ShellFrame>}</RequireSession>;
+  return <RequireSession>{(session) => <ShellFrame active={active} superAdmin={superAdmin} demo={demo} name={session.user.fullName} email={session.user.email} organization={session.organization.name} role={session.role}>{children}</ShellFrame>}</RequireSession>;
 }
 
-function ShellFrame({ active, children, superAdmin, demo, name, organization, role }: { active: string; children: React.ReactNode; superAdmin: boolean; demo: boolean; name: string; organization: string; role: string }) {
+function ShellFrame({ active, children, superAdmin, demo, name, email, organization, role }: { active: string; children: React.ReactNode; superAdmin: boolean; demo: boolean; name: string; email: string; organization: string; role: string }) {
   const pathname = usePathname();
   const router = useRouter();
   const { signOut } = useSession();
@@ -47,7 +48,7 @@ function ShellFrame({ active, children, superAdmin, demo, name, organization, ro
       <div className="sidebar-bottom"><Link href="/perfil" className="sidebar-account-link" aria-label="Ver mi perfil"><span className="avatar">{initials}</span><span><strong>{name}</strong><small>{roleLabels[role] ?? role}</small></span></Link><button className="icon-button" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={async () => { await signOut(); router.push("/login"); }}><UiIcon name="logout" size={17} /></button></div>
     </aside>
     <div className="main-area">
-      <header className="topbar"><div className="breadcrumb">Nexus <span>/</span> {currentLabel}</div><div className="top-actions"><button className="icon-button" aria-label="Notificaciones"><UiIcon name="notifications" size={18} /><i /></button>{superAdmin ? <span className="org-chip"><span className="org-avatar">N</span> Consola global</span> : <span className="org-chip"><span className="org-avatar">{organization.charAt(0).toUpperCase()}</span> {organization} <span className="chevron"><UiIcon name="chevron" size={13} /></span></span>}</div></header>
+      <header className="topbar"><div className="breadcrumb">Nexus <span>/</span> {currentLabel}</div><div className="top-actions"><button className="icon-button" aria-label="Notificaciones"><UiIcon name="notifications" size={18} /><i /></button><AccountMenu name={name} email={email} /></div></header>
       {demo && <DemoBanner />}
       <main className="page-content">{children}</main>
     </div>
