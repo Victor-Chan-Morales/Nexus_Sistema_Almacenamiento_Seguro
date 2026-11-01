@@ -1,5 +1,10 @@
+import { HttpException, NotFoundException } from '@nestjs/common';
 import { FilesService } from './files.service';
 import { FileVersion } from './entities/file-version.entity';
+import { FileRecord } from './entities/file-record.entity';
+import { Folder } from './entities/folder.entity';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction, AuditResource } from '../audit/audit.types';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DRIVE = { id: 'drive-1', name: 'Mi unidad', rootFolderId: 'root-1' };
@@ -119,3 +124,176 @@ describe('FilesService.listTrash', () => {
     await expect(service.listTrash('org-1', 'user-1')).resolves.toEqual({ items: [], totalItems: 0 });
   });
 });
+
+/**
+ * SPEC-203: restaurar un archivo de la papelera.
+ * El doble de EntityManager expone los repositorios de FileRecord y Folder; la transacción ejecuta el callback con él.
+ */
+const ORG = 'org-1';
+const USER = 'user-1';
+const FILE_ID = 'file-1';
+
+const trashedFile = (overrides: Partial<FileRecord> = {}) =>
+  Object.assign(new FileRecord(), {
+    id: FILE_ID,
+    organizationId: ORG,
+    folderId: 'folder-1',
+    name: 'contrato.pdf',
+    isDeleted: true,
+    deletedAt: new Date('2026-10-01T10:00:00.000Z'),
+    ...overrides,
+  });
+
+const activeFolder = (overrides: Partial<Folder> = {}) =>
+  Object.assign(new Folder(), { id: 'folder-1', organizationId: ORG, driveId: DRIVE.id, isDeleted: false, ...overrides });
+
+const buildRestoreService = ({
+  drive = DRIVE as unknown,
+  file = trashedFile() as FileRecord | null,
+  folder = activeFolder() as Folder | null,
+  nameTaken = false,
+  audit = { logEvent: jest.fn().mockResolvedValue(undefined) },
+}: {
+  drive?: unknown;
+  file?: FileRecord | null;
+  folder?: Folder | null;
+  nameTaken?: boolean;
+  audit?: { logEvent: jest.Mock };
+} = {}) => {
+  const driveRepo = { findOne: jest.fn().mockResolvedValue(drive) };
+  const fileRepo = {
+    findOne: jest.fn().mockResolvedValue(file),
+    exists: jest.fn().mockResolvedValue(nameTaken),
+    save: jest.fn(async (entity: FileRecord) => entity),
+  };
+  const folderRepo = { findOne: jest.fn().mockResolvedValue(folder) };
+  const manager = {
+    query: jest.fn().mockResolvedValue([]),
+    getRepository: jest.fn((entity: unknown) => (entity === FileRecord ? fileRepo : folderRepo)),
+  };
+  const dataSource = {
+    getRepository: jest.fn().mockReturnValue(driveRepo),
+    transaction: jest.fn((callback: (m: unknown) => Promise<unknown>) => callback(manager)),
+  };
+  const service = new FilesService(
+    {} as never,
+    {} as never,
+    {} as never,
+    dataSource as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    audit as unknown as AuditService,
+  );
+  return { service, fileRepo, folderRepo, manager, audit };
+};
+
+/** Devuelve el error lanzado por una promesa rechazada, o falla si no hubo error. */
+const errorOf = async (promise: Promise<unknown>): Promise<unknown> => {
+  try {
+    await promise;
+  } catch (error) {
+    return error;
+  }
+  throw new Error('se esperaba un error');
+};
+
+describe('SPEC-203: FilesService.restoreFile', () => {
+  it('escenario 1: devuelve el archivo a su carpeta, sin borrado lógico y con deleted_at nulo', async () => {
+    const { service, fileRepo, audit } = buildRestoreService();
+
+    const result = await service.restoreFile(FILE_ID, ORG, USER);
+
+    expect(result).toEqual({ id: FILE_ID, name: 'contrato.pdf', folderId: 'folder-1' });
+    expect(fileRepo.save).toHaveBeenCalledWith(expect.objectContaining({ isDeleted: false, deletedAt: null }));
+    expect(audit.logEvent).toHaveBeenCalledWith({
+      organizationId: ORG,
+      actorId: USER,
+      action: AuditAction.FILE_RESTORE,
+      resourceType: AuditResource.FILE,
+      resourceId: FILE_ID,
+    });
+  });
+
+  it('escenario 2: archivo inexistente, de otra organización o de otro Drive responde 404 sin cambios', async () => {
+    const { service, fileRepo, audit } = buildRestoreService({ file: null });
+
+    await expect(errorOf(service.restoreFile(FILE_ID, ORG, USER))).resolves.toBeInstanceOf(NotFoundException);
+    expect(fileRepo.save).not.toHaveBeenCalled();
+    expect(audit.logEvent).not.toHaveBeenCalled();
+  });
+
+  it('escenario 2: carpeta de otro Drive se trata como inexistente', async () => {
+    const { service, fileRepo } = buildRestoreService({ folder: activeFolder({ driveId: 'drive-otro' }) });
+
+    await expect(errorOf(service.restoreFile(FILE_ID, ORG, USER))).resolves.toBeInstanceOf(NotFoundException);
+    expect(fileRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('escenario 3: si ya hay un archivo activo con el mismo nombre responde 409 FILE_NAME_CONFLICT', async () => {
+    const { service, fileRepo, audit } = buildRestoreService({ nameTaken: true });
+
+    const error = await errorOf(service.restoreFile(FILE_ID, ORG, USER));
+
+    expect(error).toBeInstanceOf(HttpException);
+    expect((error as HttpException).getStatus()).toBe(409);
+    expect((error as HttpException).getResponse()).toMatchObject({ code: 'FILE_NAME_CONFLICT' });
+    expect(fileRepo.save).not.toHaveBeenCalled();
+    expect(audit.logEvent).not.toHaveBeenCalled();
+  });
+
+  it('escenario 4: si la carpeta original está en la papelera responde 409 PARENT_FOLDER_UNAVAILABLE', async () => {
+    const { service, fileRepo } = buildRestoreService({ folder: activeFolder({ isDeleted: true }) });
+
+    const error = await errorOf(service.restoreFile(FILE_ID, ORG, USER));
+
+    expect((error as HttpException).getStatus()).toBe(409);
+    expect((error as HttpException).getResponse()).toMatchObject({ code: 'PARENT_FOLDER_UNAVAILABLE' });
+    expect(fileRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('escenario 5: un archivo activo no se restaura y responde 404', async () => {
+    const { service, fileRepo } = buildRestoreService({ file: trashedFile({ isDeleted: false, deletedAt: null }) });
+
+    await expect(errorOf(service.restoreFile(FILE_ID, ORG, USER))).resolves.toBeInstanceOf(NotFoundException);
+    expect(fileRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('escenario 6: no modifica tenant_quota más allá del bloqueo de la transacción', async () => {
+    const { service, manager } = buildRestoreService();
+
+    await service.restoreFile(FILE_ID, ORG, USER);
+
+    const quotaWrites = manager.query.mock.calls.filter(([sql]) => /UPDATE files\.tenant_quota/.test(String(sql)));
+    expect(quotaWrites).toHaveLength(0);
+  });
+
+  it('bloquea la fila del archivo y serializa con la cuota de la organización', async () => {
+    const { service, fileRepo, manager } = buildRestoreService();
+
+    await service.restoreFile(FILE_ID, ORG, USER);
+
+    expect(fileRepo.findOne).toHaveBeenCalledWith(expect.objectContaining({ lock: { mode: 'pessimistic_write' } }));
+    expect(manager.query).toHaveBeenCalledWith(expect.stringContaining('FOR UPDATE'), [ORG]);
+  });
+
+  it('no escribe nada ni lanza transacción si el solicitante no tiene Drive personal', async () => {
+    const { service, manager, audit } = buildRestoreService({ drive: null });
+
+    await expect(errorOf(service.restoreFile(FILE_ID, ORG, USER))).resolves.toBeInstanceOf(NotFoundException);
+    expect(manager.query).not.toHaveBeenCalled();
+    expect(audit.logEvent).not.toHaveBeenCalled();
+  });
+
+  it('un fallo de auditoría no cambia la respuesta de la restauración', async () => {
+    const audit = { logEvent: jest.fn().mockRejectedValue(new Error('bitácora caída')) };
+    const { service } = buildRestoreService({ audit });
+
+    await expect(service.restoreFile(FILE_ID, ORG, USER)).resolves.toEqual({
+      id: FILE_ID,
+      name: 'contrato.pdf',
+      folderId: 'folder-1',
+    });
+  });
+});
+

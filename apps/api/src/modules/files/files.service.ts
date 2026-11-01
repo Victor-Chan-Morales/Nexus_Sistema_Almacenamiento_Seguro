@@ -27,7 +27,7 @@ import { TenantEncryptionKey } from './entities/tenant-encryption-key.entity';
 import { TenantQuota } from './entities/tenant-quota.entity';
 import { Upload } from './entities/upload.entity';
 import { EncryptedFile, FilesCryptoService } from './files-crypto.service';
-import { TrashItemDto, TrashResponseDto } from './dto/trash.dto';
+import { RestoreFileResponseDto, TrashItemDto, TrashResponseDto } from './dto/trash.dto';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction, AuditResource } from '../audit/audit.types';
 
@@ -110,11 +110,7 @@ export class FilesService {
    * SPEC-202: Listado de archivos en papelera para el Drive personal del solicitante.
    */
   async listTrash(organizationId: string, userId: string): Promise<TrashResponseDto> {
-    // 1. Buscar el Drive personal sin crearlo: un GET no debe escribir
-    const drive = await this.dataSource.getRepository(Drive).findOne({
-      where: { organizationId, ownerUserId: userId, teamId: IsNull(), type: 'personal' },
-      order: { createdAt: 'ASC' },
-    });
+    const drive = await this.findPersonalDrive(organizationId, userId);
 
     if (!drive) {
       return { items: [], totalItems: 0 };
@@ -155,6 +151,53 @@ export class FilesService {
       items,
       totalItems,
     };
+  }
+
+  /**
+   * Drive personal del solicitante. No lo crea: las lecturas y acciones sobre la papelera no escriben.
+   */
+  private async findPersonalDrive(
+    organizationId: string,
+    userId: string,
+    manager?: EntityManager,
+  ): Promise<Drive | null> {
+    const driveRepo = (manager ?? this.dataSource).getRepository(Drive);
+    return driveRepo.findOne({
+      where: { organizationId, ownerUserId: userId, teamId: IsNull(), type: 'personal' },
+      order: { createdAt: 'ASC' },
+    });
+  }
+
+  /**
+   * Localiza un archivo de la organización y comprueba que su carpeta pertenece al Drive indicado.
+   * No filtra por estado de papelera: cada operación decide qué hacer con él.
+   */
+  private async locateOwnFile(
+    manager: EntityManager,
+    fileId: string,
+    organizationId: string,
+    driveId: string,
+    lock = false,
+  ): Promise<{ file: FileRecord; folder: Folder } | null> {
+    const file = await manager.getRepository(FileRecord).findOne({
+      where: { id: fileId, organizationId },
+      lock: lock ? { mode: 'pessimistic_write' } : undefined,
+    });
+    if (!file) return null;
+
+    const folder = await manager.getRepository(Folder).findOne({
+      where: { id: file.folderId, organizationId },
+    });
+    if (!folder || folder.driveId !== driveId) return null;
+    return { file, folder };
+  }
+
+  /** Error de regla de negocio con la misma forma que STORAGE_QUOTA_EXCEEDED. */
+  private businessError(status: HttpStatus, code: string, message: string): HttpException {
+    return new HttpException(
+      { statusCode: status, error: HttpStatus[status] ?? 'Error', code, message },
+      status,
+    );
   }
 
   private async ensureUserDrive(
@@ -1029,5 +1072,61 @@ export class FilesService {
     }).catch(() => {});
 
     return saved;
+  }
+
+  /**
+   * SPEC-203: devuelve un archivo de la papelera del solicitante a su carpeta original.
+   */
+  async restoreFile(fileId: string, organizationId: string, userId: string): Promise<RestoreFileResponseDto> {
+    const drive = await this.findPersonalDrive(organizationId, userId);
+    if (!drive) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
+
+    const restored = await this.dataSource.transaction((manager) =>
+      this.applyRestore(manager, fileId, organizationId, drive.id),
+    );
+
+    // Enganche SPEC-405: FILE_RESTORE tras el commit
+    void this.auditService?.logEvent({
+      organizationId,
+      actorId: userId,
+      action: AuditAction.FILE_RESTORE,
+      resourceType: AuditResource.FILE,
+      resourceId: fileId,
+    }).catch(() => {});
+
+    return restored;
+  }
+
+  private async applyRestore(
+    manager: EntityManager,
+    fileId: string,
+    organizationId: string,
+    driveId: string,
+  ): Promise<RestoreFileResponseDto> {
+    // Serializa con las cargas de la organización (mismo lock que uploadMultipartFile)
+    await this.lockTenantQuota(manager, organizationId);
+    const located = await this.locateOwnFile(manager, fileId, organizationId, driveId, true);
+    if (!located || !located.file.isDeleted) {
+      throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
+    }
+
+    const { file, folder } = located;
+    if (folder.isDeleted) {
+      throw this.businessError(HttpStatus.CONFLICT, 'PARENT_FOLDER_UNAVAILABLE', 'La carpeta original ya no está disponible');
+    }
+
+    const fileRepo = manager.getRepository(FileRecord);
+    const nameTaken = await fileRepo.exists({
+      where: { organizationId, folderId: file.folderId, name: file.name, isDeleted: false },
+    });
+    if (nameTaken) {
+      throw this.businessError(HttpStatus.CONFLICT, 'FILE_NAME_CONFLICT', 'Ya existe un archivo con ese nombre en la carpeta');
+    }
+
+    // Ambos campos a la vez: el CHECK ck_file_soft_delete_consistent lo exige
+    file.isDeleted = false;
+    file.deletedAt = null;
+    const saved = await fileRepo.save(file);
+    return { id: saved.id, name: saved.name, folderId: saved.folderId };
   }
 }
