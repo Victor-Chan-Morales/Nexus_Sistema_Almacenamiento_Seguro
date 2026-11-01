@@ -1123,6 +1123,8 @@ export class FilesService {
       throw this.businessError(HttpStatus.CONFLICT, 'FILE_NAME_CONFLICT', 'Ya existe un archivo con ese nombre en la carpeta');
     }
 
+    await this.assertRestoreFitsQuota(manager, file, organizationId);
+
     // Ambos campos a la vez: el CHECK ck_file_soft_delete_consistent lo exige
     file.isDeleted = false;
     file.deletedAt = null;
@@ -1131,8 +1133,32 @@ export class FilesService {
   }
 
   /**
+   * Un archivo eliminado hace más de 30 días ya no cuenta para la cuota (readStorageUsage).
+   * Restaurarlo lo vuelve a contar, así que debe caber en el límite del plan, igual que una carga.
+   * Si todavía está dentro de la retención ya cuenta, y no se vuelve a comprobar.
+   */
+  private async assertRestoreFitsQuota(manager: EntityManager, file: FileRecord, organizationId: string): Promise<void> {
+    const retentionCutoff = Date.now() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    if (!file.deletedAt || file.deletedAt.getTime() > retentionCutoff) return;
+
+    const version = file.currentVersionId
+      ? await manager.getRepository(FileVersion).findOne({ where: { id: file.currentVersionId, fileId: file.id } })
+      : null;
+    const sizeBytes = BigInt(version?.sizeBytes ?? 0);
+    const usage = await this.readStorageUsage(manager, organizationId);
+    const limit = await this.billingService.getStorageLimitBytes(organizationId);
+    if (usage.totalBytes + sizeBytes > limit) {
+      throw this.businessError(
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        'STORAGE_QUOTA_EXCEEDED',
+        'La restauración excede la cuota disponible para el plan de la organización',
+      );
+    }
+  }
+
+  /**
    * SPEC-204: purga definitiva de un archivo de la papelera del solicitante.
-   * Los objetos de SeaweedFS se borran después del commit, con mejor esfuerzo.
+   * Los objetos de SeaweedFS se borran después del commit, con mejor esfuerzo y sin bloquear la respuesta.
    */
   async purgeFile(fileId: string, organizationId: string, userId: string): Promise<PurgeFileResponseDto> {
     const drive = await this.findPersonalDrive(organizationId, userId);
@@ -1151,7 +1177,8 @@ export class FilesService {
       resourceId: fileId,
     }).catch(() => {});
 
-    await this.deleteOrphanObjects(purged.objectKeys);
+    // No se espera al borrado de objetos: la purga ya está confirmada y SeaweedFS no debe bloquear la respuesta
+    void this.deleteOrphanObjects(purged.objectKeys);
     return { id: fileId, freedBytes: Number(purged.freedBytes) };
   }
 
