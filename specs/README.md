@@ -51,11 +51,11 @@
 |---|---|:---:|---|---|:---:|:---:|
 | `SPEC-201` | Tamaño y fecha de carpetas en el explorador | N0 | Víctor | RF-007 | — | ✅ Hecho (sin commit) |
 | `SPEC-202` | `GET /files/trash` (solo archivos, Drive propio) | N1 | Miguel | RF-009 | **P2** | En revisión |
-| `SPEC-203` | `POST /files/:id/restore` | N2 | Miguel | RF-009 | **P2** | En revisión |
-| `SPEC-204` | `DELETE /files/:id/purge` | N2 | Miguel | RF-009, RF-013 | **P2** | En revisión |
-| `SPEC-205` | Frontend: papelera y "Mover a papelera" | N1 | Miguel | RF-009 | **P2** | En revisión |
-| `SPEC-206` | `GET /files/:id/versions` (solo lectura) | N1 | Miguel | RF-008 (parcial) | **P2** | En revisión |
-| `SPEC-207` | Frontend: modal de versiones | N1 | Miguel | RF-008 (parcial) | **P2** | En revisión |
+| `SPEC-203` | `POST /files/:id/restore` | N2 | Miguel | RF-009 | **P2** | Aprobada |
+| `SPEC-204` | `DELETE /files/:id/purge` | N2 | Miguel | RF-009, RF-013 | **P2** | Aprobada |
+| `SPEC-205` | Frontend: papelera y "Mover a papelera" | N1 | Miguel | RF-009 | **P2** | Aprobada |
+| `SPEC-206` | `GET /files/:id/versions` (solo lectura) | N1 | Miguel | RF-008 (parcial) | **P2** | Aprobada |
+| `SPEC-207` | Frontend: modal de versiones | N1 | Miguel | RF-008 (parcial) | **P2** | Aprobada |
 | `SPEC-208` | Descarga de carpeta en ZIP | N2 | Miguel | Usabilidad | 100% | Pendiente |
 | `SPEC-209` | Enlaces compartidos temporales | N2 | Miguel | RF-010, RF-011 | 100% | Pendiente |
 
