@@ -27,7 +27,7 @@
 ## 3. Fuera de Alcance (YAGNI)
 
 - Purga masiva ("vaciar papelera") y purga automática a los 30 días.
-- Purgar carpetas.
+- Purgar una carpeta como unidad: su flujo está documentado en la enmienda de papelera de carpetas de SPEC-205; este contrato sigue cubriendo solo archivos individuales.
 
 ---
 

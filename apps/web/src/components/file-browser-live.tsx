@@ -5,12 +5,14 @@ import { useParams, useRouter } from "next/navigation";
 import { type ChangeEvent, type FormEvent, type ReactNode, useCallback, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/lib/api/client";
 import { getDashboard } from "@/lib/api/dashboard";
-import { createFolder, deleteFile, downloadFile, getFolderItems, listFolders, uploadFile } from "@/lib/api/files";
+import { createFolder, deleteFile, deleteFolder, downloadFile, getFolderItems, listFolders, uploadFile } from "@/lib/api/files";
 import type { DashboardResponse, FileMetadata, Folder } from "@/lib/api/types";
 import { formatBytes, formatIsoDate, usagePercent } from "@/lib/format";
 import { useLoad } from "@/lib/use-load";
-import { initialsOf, RequireSession, useSession, type Session } from "@/lib/session";
+import { RequireSession, useSession, type Session } from "@/lib/session";
 import { Brand } from "@/components/brand";
+import { AccountMenu } from "@/components/account-menu";
+import { Dialog } from "@/components/dialog";
 import { UiIcon } from "@/components/ui-icon";
 
 const MAX_FILE_BYTES = 100_000_000;
@@ -58,6 +60,7 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
   const [query, setQuery] = useState("");
   const [folderName, setFolderName] = useState("");
   const [showCreateFolder, setShowCreateFolder] = useState(false);
+  const [folderDeleteTarget, setFolderDeleteTarget] = useState<Folder | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
   const [notice, setNotice] = useState<ReactNode>("");
@@ -110,6 +113,18 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
       reload();
     } catch (error) {
       if (!failSession(error)) setActionError(errorMessage(error, "No fue posible crear la carpeta."));
+    } finally { setBusy(false); }
+  }
+
+  async function deleteFolderSelected(folder: Folder) {
+    setBusy(true); setActionError(""); setNotice("");
+    try {
+      await deleteFolder(folder.id, token);
+      setFolderDeleteTarget(null);
+      setNotice(<>La carpeta y su contenido se movieron a la papelera. <Link href="/papelera">Ver papelera</Link></>);
+      reload();
+    } catch (error) {
+      if (!failSession(error)) setActionError(errorMessage(error, "No fue posible mover la carpeta a la papelera."));
     } finally { setBusy(false); }
   }
 
@@ -191,7 +206,7 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
     </aside>
 
     <main className="drive-main">
-      <header className="drive-topbar"><div><span className="drive-mobile-brand">Nexus</span><span className="drive-breadcrumb-label">{data?.driveName ?? "Mi espacio"} <i>/</i> {displayName}</span></div><div className="drive-top-tools"><Link className="drive-upgrade" href="/planes">Ver planes</Link><span className="drive-user-avatar">{initialsOf(session.user.fullName)}</span><span className="drive-user-name">{session.user.fullName}</span></div></header>
+      <header className="drive-topbar"><div><span className="drive-mobile-brand">Nexus</span><span className="drive-breadcrumb-label">{data?.driveName ?? "Mi espacio"} <i>/</i> {displayName}</span></div><div className="drive-top-tools"><Link className="drive-upgrade" href="/planes">Ver planes</Link><AccountMenu name={session.user.fullName} email={session.user.email} /></div></header>
       <div className={`drive-workspace${selectedFile ? " has-detail" : ""}`}>
         <section className="drive-content">
           <div className="drive-title-row"><div><p className="drive-eyebrow">DRIVE PERSONAL</p><h1>{displayName}</h1><p>{data?.folder?.sizeBytes !== undefined ? `${formatBytes(data.folder.sizeBytes)} en total · Carpetas y archivos guardados en Nexus.` : "Carpetas y archivos guardados en Nexus."}</p></div><button className="drive-create-button" type="button" onClick={() => { setShowCreateFolder(true); setActionError(""); }} disabled={!data || busy}><UiIcon name="plus" size={15} />Crear carpeta</button></div>
@@ -210,7 +225,7 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
 
           {data && <div className="drive-list-card">
             <div className="drive-list-head"><span>Nombre</span><span>Tipo</span><span>Tamaño</span><span>Modificado</span><span>Acciones</span></div>
-            {filteredFolders.map((folder) => <div className="drive-list-row" key={`folder-${folder.id}`}><Link className="drive-item-name" href={`/archivos/${encodeURIComponent(folder.id)}`}><span className="drive-folder-glyph"><UiIcon name="folder" size={17} /></span><b>{folder.name}</b></Link><span>Carpeta</span><span>{formatBytes(folder.sizeBytes ?? 0)}</span><span>{formatIsoDate(folder.createdAt)}</span><span className="drive-row-actions"><Link href={`/archivos/${encodeURIComponent(folder.id)}`}>Abrir</Link></span></div>)}
+            {filteredFolders.map((folder) => <div className="drive-list-row" key={`folder-${folder.id}`}><Link className="drive-item-name" href={`/archivos/${encodeURIComponent(folder.id)}`}><span className="drive-folder-glyph"><UiIcon name="folder" size={17} /></span><b>{folder.name}</b></Link><span>Carpeta</span><span>{formatBytes(folder.sizeBytes ?? 0)}</span><span>{formatIsoDate(folder.createdAt)}</span><span className="drive-row-actions"><Link href={`/archivos/${encodeURIComponent(folder.id)}`}>Abrir</Link><button className="folder-trash-button" type="button" onClick={() => setFolderDeleteTarget(folder)} disabled={busy} aria-label={`Mover carpeta y contenido a la papelera: ${folder.name}`} title="Mover carpeta y contenido a la papelera"><UiIcon name="trash" size={15} /></button></span></div>)}
             {filteredFiles.map((file) => <div className={`drive-list-row ${selectedFile?.id === file.id ? "selected" : ""}`} key={`file-${file.id}`}><button className="drive-item-name drive-item-button" type="button" onClick={() => setSelectedFile(file)}><FileGlyph name={file.name} /><b>{file.name}</b></button><span>{file.mimeType || extensionOf(file.name)}</span><span>{formatBytes(file.sizeBytes)}</span><span>{formatIsoDate(file.uploadedAt)}</span><span className="drive-row-actions"><button type="button" onClick={() => downloadSelected(file)} disabled={busy}>Descargar</button><button type="button" onClick={() => deleteSelected(file)} disabled={busy} aria-label={`Mover a la papelera «${file.name}»`}>Mover a papelera</button></span></div>)}
             {visibleItemsCount === 0 && <div className="drive-empty-state"><span><UiIcon name="files" size={20} /></span><b>{query ? "No encontramos coincidencias" : "Esta carpeta está vacía"}</b><p>{query ? "Prueba con otro término de búsqueda." : "Crea una carpeta o sube un archivo para empezar."}</p>{!query && <button className="drive-empty-button" type="button" onClick={() => setShowCreateFolder(true)}>Crear carpeta</button>}</div>}
           </div>}
@@ -222,6 +237,7 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
       </div>
     </main>
 
+    {folderDeleteTarget && <Dialog labelledBy="delete-folder-title" onClose={() => setFolderDeleteTarget(null)} disabled={busy}><span className="drive-modal-icon folder-trash-modal-icon"><UiIcon name="trash" size={20} /></span><h2 id="delete-folder-title">¿Mover «{folderDeleteTarget.name}» a la papelera?</h2><p>La carpeta, sus subcarpetas y todos sus archivos se moverán juntos. Podrás restaurar la carpeta completa desde la papelera durante 30 días.</p><div className="drive-modal-actions"><button type="button" className="drive-subtle-button" onClick={() => setFolderDeleteTarget(null)}>Cancelar</button><button type="button" className="drive-primary-button folder-delete-confirm" onClick={() => deleteFolderSelected(folderDeleteTarget)} disabled={busy}>{busy ? "Moviendo…" : "Mover a papelera"}</button></div></Dialog>}
     {showCreateFolder && <div className="drive-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setShowCreateFolder(false); }}><section className="drive-modal" role="dialog" aria-modal="true" aria-labelledby="create-folder-title"><button className="drive-modal-close" type="button" onClick={() => setShowCreateFolder(false)} aria-label="Cerrar">×</button><span className="drive-modal-icon"><UiIcon name="folder" size={20} /></span><h2 id="create-folder-title">Crear carpeta</h2><p>Se creará dentro de <b>{data?.folder.name}</b>.</p><form onSubmit={createFolderSubmit}><label className="drive-form-label" htmlFor="folder-name">Nombre de la carpeta</label><input className="drive-modal-input" id="folder-name" autoFocus value={folderName} onChange={(event) => { setFolderName(event.target.value); setActionError(""); }} maxLength={255} required />{actionError && <span className="drive-form-error" role="alert">{actionError}</span>}<div className="drive-modal-actions"><button type="button" className="drive-subtle-button" onClick={() => setShowCreateFolder(false)} disabled={busy}>Cancelar</button><button className="drive-primary-button" type="submit" disabled={busy}>{busy ? "Creando…" : "Crear carpeta"}</button></div></form></section></div>}
   </div>;
 }
