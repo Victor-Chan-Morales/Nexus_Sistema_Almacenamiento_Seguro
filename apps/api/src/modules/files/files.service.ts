@@ -1302,13 +1302,22 @@ export class FilesService {
         ? await manager.getRepository(FileVersion).find({ where: { fileId: In(fileIds) } })
         : [];
       const freedBytes = versions.reduce((total, version) => total + BigInt(version.sizeBytes), 0n);
+      // fk_upload_folder es RESTRICT: las cargas deben borrarse antes que sus carpetas. Una carga en
+      // «Limpieza pendiente» es el único registro de su objeto, por lo que su clave también se elimina.
+      const uploadRepo = manager.getRepository(Upload);
+      const uploads = await uploadRepo.find({ where: { organizationId, folderId: In(folderIds) } });
 
       for (const fileId of fileIds) await this.removeFileRows(manager, fileId);
+      if (uploads.length) await uploadRepo.delete({ organizationId, folderId: In(folderIds) });
       for (const folder of tree) await folderRepo.delete({ id: folder.id, organizationId });
 
       const usage = await this.readStorageUsage(manager, organizationId);
       await this.writeQuotaCounters(manager, organizationId, usage);
-      return { freedBytes, objectKeys: versions.map((version) => version.objectKey) };
+      const objectKeys = [
+        ...versions.map((version) => version.objectKey),
+        ...uploads.flatMap((upload) => (upload.objectKey ? [upload.objectKey] : [])),
+      ];
+      return { freedBytes, objectKeys: [...new Set(objectKeys)] };
     });
 
     void this.auditService?.logEvent({

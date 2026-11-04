@@ -3,10 +3,10 @@ import { FilesService } from './files.service';
 import { Destination } from './entities/destination.entity';
 import { Drive } from './entities/drive.entity';
 import { FileRecord } from './entities/file-record.entity';
-import { FileVersion } from './entities/file-version.entity';
 import { Folder } from './entities/folder.entity';
 import { TenantEncryptionKey } from './entities/tenant-encryption-key.entity';
 import { TenantQuota } from './entities/tenant-quota.entity';
+import { Upload } from './entities/upload.entity';
 import { AuditAction, AuditResource } from '../audit/audit.types';
 
 const ORG = 'org-1';
@@ -39,6 +39,7 @@ function buildService({
   tree = TREE,
   fileRows = [{ id: 'file-1' }],
   versions = [{ id: 'version-1', fileId: 'file-1', sizeBytes: '1024', objectKey: 'org/file-1' }],
+  uploads = [] as Array<{ id: string; objectKey: string | null }>,
   nameTaken = false,
   expiredBytes = '0',
   storageLimit = 10_000n,
@@ -49,6 +50,7 @@ function buildService({
   tree?: typeof TREE;
   fileRows?: Array<{ id: string }>;
   versions?: Array<{ id: string; fileId: string; sizeBytes: string; objectKey: string }>;
+  uploads?: Array<{ id: string; objectKey: string | null }>;
   nameTaken?: boolean;
   expiredBytes?: string;
   storageLimit?: bigint;
@@ -75,6 +77,10 @@ function buildService({
     find: jest.fn().mockResolvedValue(versions),
     delete: jest.fn().mockResolvedValue(undefined),
   };
+  const uploadRepo = {
+    find: jest.fn().mockResolvedValue(uploads),
+    delete: jest.fn().mockResolvedValue(undefined),
+  };
   const driveRepo = { findOne: jest.fn().mockResolvedValue(DRIVE) };
   const destinationRepo = { findOne: jest.fn().mockResolvedValue({ id: 'destination-1' }) };
   const keyRepo = { findOne: jest.fn().mockResolvedValue({ id: 'key-1' }) };
@@ -94,6 +100,7 @@ function buildService({
       if (entity === Destination) return destinationRepo;
       if (entity === TenantEncryptionKey) return keyRepo;
       if (entity === TenantQuota) return quotaRepo;
+      if (entity === Upload) return uploadRepo;
       return versionRepo;
     }),
   };
@@ -114,7 +121,7 @@ function buildService({
     {} as never,
     audit as never,
   );
-  return { service, folderRepo, fileRepo, versionRepo, manager, dataSource, storage, billing, audit };
+  return { service, folderRepo, fileRepo, versionRepo, uploadRepo, manager, dataSource, storage, billing, audit };
 }
 
 describe('FilesService folder trash', () => {
@@ -297,5 +304,28 @@ describe('FilesService folder trash', () => {
       resourceType: AuditResource.FOLDER,
       resourceId: 'folder-1',
     });
+  });
+
+  it('removes upload rows before their folders and deletes objects pending cleanup once', async () => {
+    const deletedRoot = Object.assign(new Folder(), {
+      id: 'folder-1', organizationId: ORG, driveId: DRIVE.id, parentId: 'root-1', name: 'Proyectos',
+      isDeleted: true, deletedAt: DELETED_AT,
+    });
+    const { service, folderRepo, uploadRepo, storage } = buildService({
+      root: deletedRoot,
+      uploads: [
+        { id: 'upload-1', objectKey: 'org/file-1' },
+        { id: 'upload-2', objectKey: 'org/pending-cleanup' },
+        { id: 'upload-3', objectKey: null },
+      ],
+    });
+
+    await service.purgeFolder('folder-1', ORG, USER);
+
+    expect(uploadRepo.delete).toHaveBeenCalledTimes(1);
+    expect(uploadRepo.delete.mock.invocationCallOrder[0])
+      .toBeLessThan(folderRepo.delete.mock.invocationCallOrder[0]);
+    expect(storage.delete.mock.calls.map(([key]) => key).sort())
+      .toEqual(['org/file-1', 'org/pending-cleanup']);
   });
 });
