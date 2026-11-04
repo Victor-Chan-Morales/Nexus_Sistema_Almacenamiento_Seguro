@@ -118,7 +118,7 @@ services:
       MAIL_HOST: mailpit # dentro de Docker, localhost no es Mailpit
       MAIL_PORT: 1025
     ports:
-      - "3001:3001"
+      - "${API_PORT:-3001}:3001"
     networks:
       - nexus_backend
     depends_on:
