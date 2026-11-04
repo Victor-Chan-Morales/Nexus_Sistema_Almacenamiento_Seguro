@@ -25,8 +25,11 @@ Reemplazar el aviso de `/papelera` por una pantalla real (listar, restaurar, eli
 ## 3. Fuera de Alcance (YAGNI)
 
 - Selección múltiple y "vaciar papelera".
-- Papelera de carpetas.
 - Ver la papelera de otros miembros.
+
+### Enmienda: papelera de carpetas
+
+La decisión original de excluir las carpetas queda sustituida por esta ampliación: eliminar una carpeta mueve a la papelera la carpeta y sus descendientes activos como una unidad restaurable. La interfaz pide confirmación e informa que también se moverán las subcarpetas y archivos. La papelera muestra solo la carpeta raíz eliminada, con tamaño agregado; restaurar o purgar actúa sobre el árbol completo. Los archivos y subcarpetas que ya estaban eliminados individualmente conservan su fecha y siguen en la papelera tras restaurar la carpeta.
 
 ---
 
@@ -54,13 +57,25 @@ Escenario 4: Eliminar definitivamente (si SPEC-204 está disponible)
 
 Escenario 5: Estados
   Entonces existen cargando, vacío ("La papelera está vacía"), error con reintento y datos
+
+Escenario 6: Mover carpeta y contenido a la papelera
+  Dada una carpeta propia que no es la raíz del Drive
+  Cuando el usuario elige "Mover a papelera" y confirma
+  Entonces la carpeta, sus subcarpetas activas y archivos activos se eliminan lógicamente con una fecha común
+  Y la papelera muestra la carpeta como un único elemento con el tamaño agregado del árbol
+
+Escenario 7: Restaurar o purgar carpeta
+  Cuando el usuario restaura la carpeta
+  Entonces se restaura el árbol como unidad, sujeto a conflicto de nombre, disponibilidad del padre y cuota
+  Cuando el usuario purga la carpeta y confirma
+  Entonces se eliminan permanentemente sus metadatos, versiones y objetos almacenados
 ```
 
 ---
 
 ## 5. Contrato de API
 
-Consume `CONTRACTS.md` v0.5 ("Papelera y versiones") y `DELETE /files/:id` (v0.4 implícito). Funciones `getTrash()`, `restoreFile(id)`, `purgeFile(id)` y `deleteFile(id)` en `lib/api/files.ts`.
+Consume `CONTRACTS.md` v0.5 ("Papelera y versiones") y `DELETE /files/:id` (v0.4 implícito), además de `DELETE /folders/:id`, `POST /folders/:id/restore` y `DELETE /folders/:id/purge`. Las acciones de carpeta requieren clientes API correspondientes y se despachan por el `kind` del elemento.
 
 ---
 

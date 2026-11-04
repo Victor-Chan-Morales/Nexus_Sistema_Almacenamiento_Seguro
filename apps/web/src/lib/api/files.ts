@@ -17,6 +17,19 @@ export function getFolderItems<TFile = FileMetadata>(folderId: UUID, accessToken
   return apiRequest<FolderItemsResponse<TFile>>(`/folders/${encodeURIComponent(folderId)}/items`, { method: "GET" }, { ...options, accessToken });
 }
 
+/** Mueve una carpeta y su contenido a la papelera como unidad restaurable. */
+export function deleteFolder(folderId: UUID, accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
+  return apiRequest<DeleteFileResponse>(`/folders/${encodeURIComponent(folderId)}`, { method: "DELETE" }, { ...options, accessToken });
+}
+
+export function restoreFolder(folderId: UUID, accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
+  return apiRequest<{ id: UUID; name: string; parentFolderId: UUID }>(`/folders/${encodeURIComponent(folderId)}/restore`, { method: "POST" }, { ...options, accessToken });
+}
+
+export function purgeFolder(folderId: UUID, accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
+  return apiRequest<PurgeFileResponse>(`/folders/${encodeURIComponent(folderId)}/purge`, { method: "DELETE" }, { ...options, accessToken });
+}
+
 export function uploadFile(folderId: UUID, file: File, accessToken: string, idempotencyKey?: string, options?: Omit<ApiRequestOptions, "accessToken">) {
   const body = new FormData();
   body.set("folderId", folderId);

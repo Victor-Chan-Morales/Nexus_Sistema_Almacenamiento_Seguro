@@ -25,10 +25,24 @@ const buildQueryBuilder = (rows: unknown[], total: number) => {
   return qb;
 };
 
-const buildService = ({ drive = DRIVE, rows = [], total = rows.length }: { drive?: unknown; rows?: unknown[]; total?: number }) => {
+const buildService = ({
+  drive = DRIVE,
+  rows = [],
+  total = rows.length,
+  folderRows = [],
+}: {
+  drive?: unknown;
+  rows?: unknown[];
+  total?: number;
+  folderRows?: Array<{ id: string; name: string; parentFolderId: string; sizeBytes: string; deletedAt: Date }>;
+}) => {
   const qb = buildQueryBuilder(rows, total);
   const driveRepository = { findOne: jest.fn().mockResolvedValue(drive) };
-  const dataSource = { getRepository: jest.fn().mockReturnValue(driveRepository), transaction: jest.fn() };
+  const dataSource = {
+    getRepository: jest.fn().mockReturnValue(driveRepository),
+    transaction: jest.fn(),
+    query: jest.fn().mockResolvedValue(folderRows),
+  };
   const fileRepository = { createQueryBuilder: jest.fn().mockReturnValue(qb) };
   const service = new FilesService(
     fileRepository as never,
@@ -63,6 +77,7 @@ describe('FilesService.listTrash', () => {
     expect(result.totalItems).toBe(2);
     expect(result.items).toEqual([
       {
+        kind: 'file',
         id: 'f1',
         name: 'a.pdf',
         mimeType: 'application/pdf',
@@ -70,7 +85,7 @@ describe('FilesService.listTrash', () => {
         deletedAt: deletedAt.toISOString(),
         retentionEndsAt: new Date(deletedAt.getTime() + 30 * DAY_MS).toISOString(),
       },
-      expect.objectContaining({ id: 'f2', mimeType: 'application/octet-stream', sizeBytes: 0 }),
+      expect.objectContaining({ kind: 'file', id: 'f2', mimeType: 'application/octet-stream', sizeBytes: 0 }),
     ]);
   });
 
@@ -95,6 +110,7 @@ describe('FilesService.listTrash', () => {
 
     expect(qb.where).toHaveBeenCalledWith('file.organizationId = :organizationId', { organizationId: 'org-1' });
     expect(qb.andWhere).toHaveBeenCalledWith('folder.driveId = :driveId', { driveId: 'drive-1' });
+    expect(qb.andWhere).toHaveBeenCalledWith('folder.isDeleted = false');
     expect(qb.andWhere).toHaveBeenCalledWith('file.isDeleted = :isDeleted', { isDeleted: true });
     expect(qb.andWhere).not.toHaveBeenCalledWith('file.isDeleted = :isDeleted', { isDeleted: false });
   });
@@ -122,6 +138,33 @@ describe('FilesService.listTrash', () => {
     const { service } = buildService({});
 
     await expect(service.listTrash('org-1', 'user-1')).resolves.toEqual({ items: [], totalItems: 0 });
+  });
+
+  it('incluye carpetas raíz eliminadas en la papelera con su contenido y retención', async () => {
+    const deletedAt = new Date('2026-10-01T10:00:00.000Z');
+    const { service, dataSource } = buildService({
+      folderRows: [{
+        id: 'folder-1',
+        name: 'Proyectos',
+        parentFolderId: 'root-1',
+        sizeBytes: '4096',
+        deletedAt,
+      }],
+    });
+
+    await expect(service.listTrash('org-1', 'user-1')).resolves.toEqual({
+      items: [{
+        kind: 'folder',
+        id: 'folder-1',
+        name: 'Proyectos',
+        parentFolderId: 'root-1',
+        sizeBytes: 4096,
+        deletedAt: deletedAt.toISOString(),
+        retentionEndsAt: new Date(deletedAt.getTime() + 30 * DAY_MS).toISOString(),
+      }],
+      totalItems: 1,
+    });
+    expect(dataSource.query).toHaveBeenCalledWith(expect.stringContaining('WITH RECURSIVE roots'), ['org-1', 'drive-1']);
   });
 });
 
@@ -557,4 +600,3 @@ describe('SPEC-204: FilesService.purgeFile', () => {
     expect(storage.delete).not.toHaveBeenCalled();
   });
 });
-

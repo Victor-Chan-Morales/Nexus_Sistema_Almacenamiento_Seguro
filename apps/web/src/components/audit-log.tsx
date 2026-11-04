@@ -22,11 +22,15 @@ const ACTIONS: Partial<Record<string, { label: string; family: ActionFamily }>> 
   FILE_DELETE: { label: "Archivo movido a la papelera", family: "files" },
   FILE_RESTORE: { label: "Archivo restaurado", family: "files" },
   FILE_PURGE: { label: "Archivo eliminado definitivamente", family: "files" },
+  FOLDER_CREATE: { label: "Carpeta creada", family: "files" },
+  FOLDER_DELETE: { label: "Carpeta movida a la papelera", family: "files" },
+  FOLDER_RESTORE: { label: "Carpeta restaurada", family: "files" },
+  FOLDER_PURGE: { label: "Carpeta eliminada definitivamente", family: "files" },
   PLAN_ACTIVATED: { label: "Plan activado", family: "plan" },
   PLAN_RENEWED: { label: "Plan renovado", family: "plan" },
 };
 
-const RESOURCES: Partial<Record<string, string>> = { user: "Usuario", membership: "Membresía", file: "Archivo", subscription: "Suscripción" };
+const RESOURCES: Partial<Record<string, string>> = { user: "Usuario", membership: "Membresía", file: "Archivo", folder: "Carpeta", subscription: "Suscripción" };
 
 type AuditLogData = { events: AuditEvent[]; nextBefore: string | null; actorNames: Map<string, string> };
 

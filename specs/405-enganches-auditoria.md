@@ -64,10 +64,14 @@ No cambia ninguna respuesta HTTP. Eventos (nombres de `CONTRACTS.md` v0.5):
 | `FILE_DELETE` | `softDelete`, tras guardar | `file` / id del archivo | Miguel |
 | `FILE_RESTORE` | `restoreFile`, tras el commit | `file` / id del archivo | Miguel |
 | `FILE_PURGE` | `purgeFile`, tras el commit | `file` / id del archivo | Miguel |
+| `FOLDER_CREATE` | `createFolder`, tras el commit | `folder` / id de la carpeta | Miguel |
+| `FOLDER_DELETE` | `softDeleteFolder`, tras mover el árbol a papelera | `folder` / id de la carpeta raíz | Miguel |
+| `FOLDER_RESTORE` | `restoreFolder`, tras el commit | `folder` / id de la carpeta raíz | Miguel |
+| `FOLDER_PURGE` | `purgeFolder`, tras el commit | `folder` / id de la carpeta raíz | Miguel |
 | `PLAN_ACTIVATED` | `SubscriptionsController.activate`, tras responder con éxito (también en la reactivación idempotente) | `subscription` / `subscriptionId` | Anthony |
 | `PLAN_RENEWED` | `SubscriptionsController.renew`, tras el éxito | `subscription` / `subscriptionId` | Anthony |
 
-> **Pendiente de Files:** `FILE_RESTORE` y `FILE_PURGE` no tienen métodos en `main` (`restoreFile`/`purgeFile`). Se añaden con SPEC-203 y SPEC-204 (tarea T2b).
+> Los eventos de carpeta identifican la carpeta raíz afectada; las operaciones de eliminación, restauración y purga abarcan su árbol completo.
 
 ---
 
@@ -126,3 +130,4 @@ Ninguna. Decisión: ADR-007 §8.
 |---|---|---|
 | 2026-10-27 | Revisión | Spec nueva: separa los enganches de la creación del servicio para respetar la propiedad por directorio (la spec 401 original pedía a Anthony editar `AuthService` y `FilesService`). |
 | 2026-10-31 | Revisión | T2 queda con tres eventos (`FILE_UPLOAD`, `FILE_DOWNLOAD`, `FILE_DELETE`). `FILE_RESTORE` y `FILE_PURGE` pasan a T2b, diferida con SPEC-203 y SPEC-204 (P2). |
+| 2026-10-31 | Víctor Chán | Añadidos los eventos de creación, movimiento a papelera, restauración y purga de carpetas. |
