@@ -43,6 +43,7 @@ cp .env.example .env                  # y completar JWT_SECRET y FILES_MASTER_KE
 # Entorno e Infraestructura
 docker compose up -d                  # postgres, seaweedfs y mailpit
 npm run migration:run                 # aplica las migraciones pendientes (dbmate)
+npm run seed:demo                     # opcional: cuentas demo para iniciar sesión (requiere DEMO_PASSWORD en .env)
 #   Ojo: `npm run infra:up` levanta SOLO postgres y seaweedfs (sin mailpit):
 #   con ese script no llegan los correos de verificación, recuperación ni invitación.
 

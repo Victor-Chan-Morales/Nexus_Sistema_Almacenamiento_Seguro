@@ -71,6 +71,18 @@ docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
   < database/seeds/001_dev_seed.sql
 ```
 
+Este seed solo carga datos de referencia: sus usuarios **no pueden iniciar sesión** porque su `password_hash` es texto de relleno.
+
+### Cuentas demo para iniciar sesión
+
+Con la infraestructura levantada y las migraciones aplicadas, defina `DEMO_PASSWORD` en `.env` y ejecute:
+
+``` bash
+npm run seed:demo
+```
+
+Crea `admin@demo.test` (`tenant_admin`) y `colaborador@demo.test` (`colaborador`) en una misma organización, con los casos de uso de la API: suscripción, cuota, Drive y llave de cifrado son reales. Puede repetirse: no duplica cuentas y deja vigente la `DEMO_PASSWORD` actual. Se niega a correr con `NODE_ENV=production` o si `POSTGRES_HOST` no es local. El alta también genera sus correos de verificación e invitación; llegan a Mailpit y se pueden ignorar.
+
 ### Conectarse con psql (desde el host)
 
 ``` bash
