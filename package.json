@@ -24,6 +24,8 @@
     "infra:down": "docker compose down",
     "infra:logs": "docker compose logs -f",
 
+    "seed:demo": "cd apps/api && npm run seed:demo",
+
     "migration:run": "docker compose run --rm migrate",
     "migration:revert": "docker compose run --rm migrate rollback"
   }
