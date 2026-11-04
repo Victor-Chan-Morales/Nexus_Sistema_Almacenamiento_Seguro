@@ -1,4 +1,5 @@
 import { HttpException } from '@nestjs/common';
+import { AuditAction, AuditResource } from '../audit/audit.types';
 import { MEMBER_INVITATION_TOKEN_TTL_HOURS } from './constants';
 import { Role, TokenPurpose } from './domain/enums';
 import { MemberAdmission } from './member-admission';
@@ -94,6 +95,8 @@ const build = (opts: Options = {}) => {
     admission.register(async () => (log.push('limit'), opts.limit ?? 5));
   }
 
+  const audit = { logEvent: jest.fn().mockResolvedValue(undefined) };
+
   const service = new MembersService(
     uow as never,
     users as never,
@@ -103,8 +106,9 @@ const build = (opts: Options = {}) => {
     opaque as never,
     outbox as never,
     admission,
+    audit as never,
   );
-  return { service, log, db, uow, users, organizations, memberships, hasher, opaque, outbox };
+  return { service, log, db, uow, users, organizations, memberships, hasher, opaque, outbox, audit };
 };
 
 describe('MembersService.addMember (sin base de datos: puertos simulados)', () => {
@@ -222,7 +226,7 @@ describe('MembersService.addMember (sin base de datos: puertos simulados)', () =
     admission.register(async () => null);
     const service = new MembersService(
       t.uow as never, t.users as never, t.organizations as never, t.memberships as never,
-      t.hasher as never, t.opaque as never, t.outbox as never, admission,
+      t.hasher as never, t.opaque as never, t.outbox as never, admission, t.audit as never,
     );
     expect(await codeOf(service.addMember(ACTOR, DTO))).toBe('USER_LIMIT_EXCEEDED');
   });
@@ -250,6 +254,43 @@ describe('MembersService.addMember (sin base de datos: puertos simulados)', () =
     expect(t.organizations.lockById).toHaveBeenCalledWith('tx', 'ORG-1');
     expect(t.memberships.create).toHaveBeenCalledWith('tx', expect.objectContaining({ organizationId: 'ORG-1' }));
     expect(JSON.stringify(t.memberships.create.mock.calls)).not.toContain('ORG-AJENA');
+  });
+});
+
+describe('SPEC-405: MembersService.addMember registra MEMBER_ADDED', () => {
+  it('Escenario 1: tras el commit registra el evento con la organización del actor y la membresía creada', async () => {
+    const t = build();
+    await t.service.addMember(ACTOR, DTO);
+    expect(t.audit.logEvent).toHaveBeenCalledTimes(1);
+    expect(t.audit.logEvent).toHaveBeenCalledWith({
+      organizationId: 'ORG-1',
+      actorId: 'admin-1',
+      action: AuditAction.MEMBER_ADDED,
+      resourceType: AuditResource.MEMBERSHIP,
+      resourceId: 'm-new',
+    });
+  });
+
+  it.each<[string, Options]>([
+    ['MEMBER_ALREADY_EXISTS', { existing: { id: 'u-ana' }, organizationIds: ['ORG-1'] }],
+    ['USER_LIMIT_EXCEEDED', { activeCount: 5, limit: 5 }],
+  ])('Escenario 2: si el alta se rechaza (%s) no registra evento', async (code, opts) => {
+    const t = build(opts);
+    expect(await codeOf(t.service.addMember(ACTOR, DTO))).toBe(code);
+    expect(t.audit.logEvent).not.toHaveBeenCalled();
+  });
+
+  it('Escenario 3: si logEvent falla, el alta responde igual', async () => {
+    const t = build();
+    t.audit.logEvent.mockRejectedValueOnce(new Error('Audit DB down'));
+    await expect(t.service.addMember(ACTOR, DTO)).resolves.toMatchObject({ id: 'm-new', userId: 'u-new' });
+  });
+
+  it('Escenario 4: el evento se registra después del commit y del envío de la invitación', async () => {
+    const t = build();
+    t.audit.logEvent.mockImplementationOnce(async () => void t.log.push('audit'));
+    await t.service.addMember(ACTOR, DTO);
+    expect(t.log).toEqual(['limit', 'lock', 'commit', 'dispatch', 'audit']);
   });
 });
 
@@ -288,7 +329,7 @@ describe('MembersService.list (SPEC-104)', () => {
     if (limit !== null) admission.register(async () => limit);
     const service = new MembersService(
       {} as never, {} as never, {} as never, memberships as never,
-      {} as never, {} as never, {} as never, admission,
+      {} as never, {} as never, {} as never, admission, {} as never,
     );
     return { service, memberships, admission };
   };

@@ -337,6 +337,19 @@ h1, h2, h3 { font-family: "Inter", Arial, sans-serif; }
 .drive-upgrade { display: inline-flex; min-height: 37px; align-items: center; padding: 0 15px; border-radius: 8px; background: var(--brand); color: #fff; font-size: 11.55px; font-weight: 700; }
 .drive-user-avatar { display: grid; width: 31px; height: 31px; place-items: center; border-radius: 50%; background: var(--color-ice); color: var(--brand); font-size: 9.45px; font-weight: 800; }
 .drive-user-name { color: #586071; font-size: 10.5px; font-weight: 600; }
+.account-menu { position: relative; }
+.account-menu > summary { display: flex; align-items: center; gap: 8px; color: #586071; cursor: pointer; list-style: none; }
+.account-menu > summary::-webkit-details-marker { display: none; }
+.account-menu > summary > svg { color: #858b99; transition: transform .15s ease; }
+.account-menu[open] > summary > svg { transform: rotate(180deg); }
+.account-menu-dropdown { position: absolute; z-index: 20; top: calc(100% + 10px); right: 0; width: 238px; padding: 7px; border: 1px solid #ececf1; border-radius: 10px; background: #fff; box-shadow: 0 12px 32px rgb(34 39 52 / 14%); }
+.account-menu-summary { display: grid; gap: 4px; padding: 10px 11px 12px; border-bottom: 1px solid #eeeef3; }
+.account-menu-summary b { overflow: hidden; color: #343a49; font-size: 11.55px; text-overflow: ellipsis; white-space: nowrap; }
+.account-menu-summary span { overflow: hidden; color: #858b99; font-size: 9.45px; text-overflow: ellipsis; white-space: nowrap; }
+.account-menu-dropdown > a, .account-menu-dropdown > button { display: flex; width: 100%; min-height: 38px; align-items: center; gap: 9px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: #586071; cursor: pointer; font: inherit; font-size: 10.5px; text-align: left; }
+.account-menu-dropdown > a:hover, .account-menu-dropdown > button:hover { background: var(--color-ice); color: var(--brand); }
+.account-menu-dropdown > button { color: #bd4d5a; }
+.account-menu-dropdown > button:hover { background: #fff3f4; color: #a83e4b; }
 .drive-mobile-brand { display: none; }
 .drive-workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; padding: clamp(24px, 3.2vw, 46px); }
 .drive-workspace.has-detail { grid-template-columns: minmax(0, 1fr) 285px; padding-right: 24px; }

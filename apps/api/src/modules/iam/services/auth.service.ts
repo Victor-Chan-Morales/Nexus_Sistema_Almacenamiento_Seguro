@@ -1,5 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { randomBytes } from 'crypto';
+import { AuditService } from '../../audit/audit.service';
+import { AuditAction, AuditResource } from '../../audit/audit.types';
 import { AuthResult } from '../domain/auth-result';
 import { UserStatus } from '../domain/enums';
 import { IamErrors } from '../iam.errors';
@@ -30,6 +32,7 @@ export class AuthService implements OnModuleInit {
     private readonly verification: EmailVerificationService,
     private readonly uow: UnitOfWork,
     private readonly settings: IamSettings,
+    private readonly audit: AuditService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -57,7 +60,18 @@ export class AuthService implements OnModuleInit {
     const membership = await this.memberships.findActive(user.id);
     if (!membership) throw IamErrors.noActiveMembership();
 
-    return this.uow.run((tx) => this.sessions.open(tx, user, membership));
+    const result = await this.uow.run((tx) => this.sessions.open(tx, user, membership));
+
+    // SPEC-405: AUTH_LOGIN tras abrir la sesión, fuera de la transacción
+    void this.audit.logEvent({
+      organizationId: result.organization.id,
+      actorId: result.user.id,
+      action: AuditAction.AUTH_LOGIN,
+      resourceType: AuditResource.USER,
+      resourceId: result.user.id,
+    }).catch(() => {});
+
+    return result;
   }
 
   verifyEmail(token: string): Promise<void> {

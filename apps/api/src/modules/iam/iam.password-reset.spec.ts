@@ -1,4 +1,5 @@
 import { BadRequestException, HttpException, Logger, ValidationPipe } from '@nestjs/common';
+import { AuditAction, AuditResource } from '../audit/audit.types';
 import { PASSWORD_RESET_TOKEN_TTL_MINUTES } from './constants';
 import { TokenPurpose, UserStatus } from './domain/enums';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
@@ -27,6 +28,7 @@ const activeUser = { id: 'u1', email: 'usuario@nexus.com', fullName: 'Ana', stat
 interface Options {
   user?: typeof activeUser | null;
   record?: Record<string, unknown> | null;
+  membership?: { organizationId: string } | null;
   failOn?: 'revoke' | 'markUsed';
 }
 
@@ -86,6 +88,11 @@ const build = (opts: Options = {}) => {
     dispatch: jest.fn(async () => void log.push('dispatch')),
   };
 
+  const memberships = {
+    findActive: jest.fn().mockResolvedValue(opts.membership === undefined ? { organizationId: 'o1' } : opts.membership),
+  };
+  const audit = { logEvent: jest.fn().mockResolvedValue(undefined) };
+
   const service = new PasswordResetService(
     uow as never,
     users as never,
@@ -94,8 +101,10 @@ const build = (opts: Options = {}) => {
     hasher as never,
     opaque as never,
     outbox as never,
+    memberships as never,
+    audit as never,
   );
-  return { service, log, state, uow, users, tokensRepo, sessions, hasher, opaque, outbox };
+  return { service, log, state, uow, users, tokensRepo, sessions, hasher, opaque, outbox, memberships, audit };
 };
 
 describe('PasswordResetService.requestReset', () => {
@@ -296,5 +305,50 @@ describe('Validación de entrada y rutas (ValidationPipe como en main.ts)', () =
     const result = await controllerWith(service).resetPassword({ token: TOKEN, newPassword: 'NuevaClave123' });
     expect(service.reset).toHaveBeenCalledWith(TOKEN, 'NuevaClave123');
     expect(result).toEqual({ message: 'Contraseña actualizada. Ya puedes iniciar sesión.' });
+  });
+});
+
+describe('SPEC-405: PasswordResetService.reset registra AUTH_PASSWORD_RESET', () => {
+  it('Escenario 1: tras el commit registra el evento con la organización de la membresía activa', async () => {
+    const t = build();
+    await t.service.reset(TOKEN, 'NuevaClave123');
+
+    expect(t.memberships.findActive).toHaveBeenCalledWith('u1', undefined, 'tx');
+    expect(t.audit.logEvent).toHaveBeenCalledTimes(1);
+    expect(t.audit.logEvent).toHaveBeenCalledWith({
+      organizationId: 'o1',
+      actorId: 'u1',
+      action: AuditAction.AUTH_PASSWORD_RESET,
+      resourceType: AuditResource.USER,
+      resourceId: 'u1',
+    });
+  });
+
+  it('Escenario 2: token inexistente no registra evento', async () => {
+    const t = build({ record: null });
+    await codeOf(t.service.reset(TOKEN, 'NuevaClave123'));
+    expect(t.audit.logEvent).not.toHaveBeenCalled();
+  });
+
+  it('sin membresía activa no hay organización que registrar: no se llama a logEvent', async () => {
+    const t = build({ membership: null });
+    await t.service.reset(TOKEN, 'NuevaClave123');
+    expect(t.users.setPasswordAndVerifyEmail).toHaveBeenCalled();
+    expect(t.audit.logEvent).not.toHaveBeenCalled();
+  });
+
+  it('Escenario 3: si logEvent falla, el restablecimiento responde igual', async () => {
+    const t = build();
+    t.audit.logEvent.mockRejectedValueOnce(new Error('Audit DB down'));
+    await expect(t.service.reset(TOKEN, 'NuevaClave123')).resolves.toBeUndefined();
+    expect(t.state.passwordHash).toBe('argon2id:NuevaClave123');
+  });
+
+  it('Escenario 4: el evento se registra después de confirmar la segunda transacción', async () => {
+    const t = build();
+    t.audit.logEvent.mockImplementationOnce(async () => void t.log.push('audit'));
+    await t.service.reset(TOKEN, 'NuevaClave123');
+    expect(t.log.at(-2)).toBe('commit');
+    expect(t.log.at(-1)).toBe('audit');
   });
 });

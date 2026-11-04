@@ -5,6 +5,8 @@ import { SubscriptionsController } from './subscriptions.controller';
 import { SubscriptionCoordinator } from './subscription.coordinator';
 import { BillingService } from '../billing/billing.service';
 import { Subscription, SubscriptionStatus } from '../billing/entities/subscription.entity';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction, AuditResource } from '../audit/audit.types';
 import { RolesGuard } from '../iam/guards/roles.guard';
 import { ROLES_KEY } from '../iam/decorators/roles.decorator';
 import { Role } from '../iam/domain/enums';
@@ -14,6 +16,7 @@ describe('SubscriptionsController — Pruebas de contratos HTTP y RBAC (SPEC-302
   let controller: SubscriptionsController;
   let coordinator: jest.Mocked<Partial<SubscriptionCoordinator>>;
   let billingService: jest.Mocked<Partial<BillingService>>;
+  let audit: { logEvent: jest.Mock };
 
   const mockSubscription: Subscription = {
     id: 'sub-team-uuid',
@@ -44,11 +47,14 @@ describe('SubscriptionsController — Pruebas de contratos HTTP y RBAC (SPEC-302
       renewSubscription: jest.fn().mockResolvedValue(mockSubscription),
     };
 
+    audit = { logEvent: jest.fn().mockResolvedValue(undefined) };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [SubscriptionsController],
       providers: [
         { provide: SubscriptionCoordinator, useValue: coordinator },
         { provide: BillingService, useValue: billingService },
+        { provide: AuditService, useValue: audit },
       ],
     }).compile();
 
@@ -87,6 +93,69 @@ describe('SubscriptionsController — Pruebas de contratos HTTP y RBAC (SPEC-302
         startDate: '2026-10-10T00:00:00.000Z',
         endDate: '2026-12-10T00:00:00.000Z',
       });
+    });
+  });
+
+  describe('SPEC-405: PLAN_ACTIVATED y PLAN_RENEWED', () => {
+    it('Escenario 1: activate registra PLAN_ACTIVATED con la organización del token y la suscripción resultante', async () => {
+      await controller.activate({ user: tenantAdminUser }, { planId: 'plan-team-uuid' });
+      expect(audit.logEvent).toHaveBeenCalledTimes(1);
+      expect(audit.logEvent).toHaveBeenCalledWith({
+        organizationId: 'org-tenant-uuid',
+        actorId: 'user-admin-uuid',
+        action: AuditAction.PLAN_ACTIVATED,
+        resourceType: AuditResource.SUBSCRIPTION,
+        resourceId: 'sub-team-uuid',
+      });
+    });
+
+    it('Escenario 1: renew registra PLAN_RENEWED con la suscripción renovada', async () => {
+      await controller.renew({ user: tenantAdminUser });
+      expect(audit.logEvent).toHaveBeenCalledTimes(1);
+      expect(audit.logEvent).toHaveBeenCalledWith({
+        organizationId: 'org-tenant-uuid',
+        actorId: 'user-admin-uuid',
+        action: AuditAction.PLAN_RENEWED,
+        resourceType: AuditResource.SUBSCRIPTION,
+        resourceId: 'sub-team-uuid',
+      });
+    });
+
+    it('Escenario 1: la reactivación idempotente también registra PLAN_ACTIVATED', async () => {
+      // El coordinador devuelve la suscripción vigente sin crear otra: el evento se registra igualmente
+      jest.mocked(coordinator.activateSubscription).mockResolvedValueOnce(mockSubscription);
+      await controller.activate({ user: tenantAdminUser }, { planId: 'plan-team-uuid' });
+      expect(audit.logEvent).toHaveBeenCalledWith(expect.objectContaining({ action: AuditAction.PLAN_ACTIVATED }));
+    });
+
+    it('Escenario 2: si la activación o la renovación fallan no se registra evento', async () => {
+      jest.mocked(coordinator.activateSubscription).mockRejectedValueOnce(new Error('NO_ACTIVE_SUBSCRIPTION'));
+      await expect(controller.activate({ user: tenantAdminUser }, { planId: 'plan-team-uuid' })).rejects.toThrow();
+
+      jest.mocked(billingService.renewSubscription).mockRejectedValueOnce(new Error('PLAN_NOT_RENEWABLE'));
+      await expect(controller.renew({ user: tenantAdminUser })).rejects.toThrow();
+
+      expect(audit.logEvent).not.toHaveBeenCalled();
+    });
+
+    it('Escenario 3: si logEvent falla, la respuesta es la misma que sin auditoría', async () => {
+      audit.logEvent.mockRejectedValueOnce(new Error('Audit DB down'));
+      const response = await controller.renew({ user: tenantAdminUser });
+      expect(response).toEqual({
+        subscriptionId: 'sub-team-uuid',
+        status: 'active',
+        simulated: true,
+        startDate: '2026-10-10T00:00:00.000Z',
+        endDate: '2026-12-10T00:00:00.000Z',
+      });
+    });
+
+    it('Escenario 4: el evento se registra después de que la operación resuelva', async () => {
+      const order: string[] = [];
+      jest.mocked(coordinator.activateSubscription).mockImplementationOnce(async () => (order.push('operation'), mockSubscription));
+      audit.logEvent.mockImplementationOnce(async () => void order.push('audit'));
+      await controller.activate({ user: tenantAdminUser }, { planId: 'plan-team-uuid' });
+      expect(order).toEqual(['operation', 'audit']);
     });
   });
 

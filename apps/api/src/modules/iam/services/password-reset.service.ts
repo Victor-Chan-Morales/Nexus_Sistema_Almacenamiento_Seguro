@@ -1,10 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { AuditService } from '../../audit/audit.service';
+import { AuditAction, AuditResource } from '../../audit/audit.types';
 import { PASSWORD_RESET_TOKEN_TTL_MINUTES } from '../constants';
 import { TokenPurpose, UserStatus } from '../domain/enums';
 import { OneTimeToken } from '../entities/one-time-token.entity';
 import { IamErrors } from '../iam.errors';
 import { normalizeEmail } from '../iam.utils';
-import { OneTimeTokenRepository, SessionRepository, UserRepository } from '../ports/repositories';
+import {
+  MembershipRepository,
+  OneTimeTokenRepository,
+  SessionRepository,
+  UserRepository,
+} from '../ports/repositories';
 import { OpaqueTokens, PasswordHasher } from '../ports/security';
 import { TransactionContext, UnitOfWork } from '../ports/transaction';
 import { EmailOutboxService } from './email-outbox.service';
@@ -25,6 +32,8 @@ export class PasswordResetService {
     private readonly hasher: PasswordHasher,
     private readonly opaque: OpaqueTokens,
     private readonly outbox: EmailOutboxService,
+    private readonly memberships: MembershipRepository,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -76,12 +85,25 @@ export class PasswordResetService {
 
     const passwordHash = await this.hasher.hash(newPassword);
 
-    await this.uow.run(async (tx) => {
+    const reset = await this.uow.run(async (tx) => {
       const record = await this.findUsableToken(tx, tokenHash);
       await this.tokensRepo.markUsed(tx, record);
       await this.users.setPasswordAndVerifyEmail(tx, record.userId, passwordHash);
       await this.sessions.revokeAllActiveOf(tx, record.userId);
+      const membership = await this.memberships.findActive(record.userId, undefined, tx);
+      return { userId: record.userId, organizationId: membership?.organizationId };
     });
+
+    // SPEC-405: AUTH_PASSWORD_RESET tras el commit. Sin membresía activa no hay organización que registrar.
+    if (reset.organizationId) {
+      void this.audit.logEvent({
+        organizationId: reset.organizationId,
+        actorId: reset.userId,
+        action: AuditAction.AUTH_PASSWORD_RESET,
+        resourceType: AuditResource.USER,
+        resourceId: reset.userId,
+      }).catch(() => {});
+    }
   }
 
   /** Token de restablecimiento vigente, sin usar y de una cuenta activa; si no, INVALID_OR_EXPIRED_TOKEN. */
