@@ -1,8 +1,8 @@
 -- Datos de desarrollo/demo. NO se ejecuta con las migraciones (ver database/README.md, "Seeds").
 -- Separado a propósito: un entorno de producción corre las migraciones y nunca este archivo.
 -- Idempotente: se puede correr varias veces sin duplicar filas (ON CONFLICT DO NOTHING).
--- Los password_hash son texto de relleno, NO hashes reales — nadie puede iniciar sesión con
--- estos usuarios hasta que el equipo los reemplace con un hash Argon2id real.
+-- Los usuarios de demo usan el mismo password de desarrollo (solo local, nunca producción).
+-- El hash es Argon2id con los parámetros de Argon2PasswordHasher (apps/api).
 
 BEGIN;
 
@@ -39,8 +39,8 @@ ON CONFLICT (key_id) DO NOTHING;
 
 -- Usuarios de demo
 INSERT INTO iam."user" (user_id, email, password_hash, full_name, email_verified, status) VALUES
-  ('00000000-0000-0000-0000-0000000000e1', 'admin@prueba.test', 'seed-data-not-a-real-hash-do-not-use', 'Admin de Prueba', true, 'active'),
-  ('00000000-0000-0000-0000-0000000000e2', 'colaborador@prueba.test', 'seed-data-not-a-real-hash-do-not-use', 'Colaborador de Prueba', true, 'active')
+  ('00000000-0000-0000-0000-0000000000e1', 'admin@prueba.test', '$argon2id$v=19$m=19456,p=1,t=2$LNYfmWIv6z2kfC+RkcUcFg$l379qqi2YFaxIDuPiNrV8EWYnQwaFDEwkvWOstOBh+o', 'Admin de Prueba', true, 'active'),
+  ('00000000-0000-0000-0000-0000000000e2', 'colaborador@prueba.test', '$argon2id$v=19$m=19456,p=1,t=2$LNYfmWIv6z2kfC+RkcUcFg$l379qqi2YFaxIDuPiNrV8EWYnQwaFDEwkvWOstOBh+o', 'Colaborador de Prueba', true, 'active')
 ON CONFLICT (user_id) DO NOTHING;
 
 INSERT INTO iam.membership (membership_id, user_id, organization_id, role_id, status) VALUES
