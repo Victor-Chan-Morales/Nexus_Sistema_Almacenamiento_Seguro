@@ -2,6 +2,8 @@
 
 > **SPEC-702 · Borrador asistido, 2026-10-27.** Los diagramas están en Mermaid (se ven en GitHub y en cualquier visor de Markdown con soporte) y salen del código, las migraciones y `docker-compose.yml`, no de la propuesta. **Pendiente de revisión de Víctor Chán Morales** antes de exportar a PDF.
 >
+> **Actualización del 2026-11-04.** Se anotan las decisiones de `ADR-008`, que prevalece donde choque. Los estados de implementación siguen siendo los de la fecha de redacción.
+>
 > **Leyenda de estado** (igual que en `REQUISITOS_CASOS_USO.md`): línea **continua** = implementado en el código (no verificado de punta a punta); línea **punteada** o la marca *«planificado»* = especificado para el corte del 80% pero aún sin código; elementos con la marca *«fuera del corte»* = existen en la base de datos pero sin lógica.
 >
 > | Diagrama | Qué muestra |
@@ -390,7 +392,7 @@ erDiagram
   }
 ```
 
-> **Estado por esquema.** `iam` (6 tablas) y, de `billing` (4 tablas), `plan` y `subscription`: en uso. `files` (13 tablas; en uso `drive`, `folder`, `file`, `file_version`, `destination`, `tenant_encryption_key`, `tenant_quota`, `reservation`, `upload`): `team`, `team_member`, `resource_access` y `share_link`: **sin código**. `audit`: sin código hasta SPEC-401. `admin` (5 tablas): solo `organization` en uso; `installation_request`, `installation`, `installation_check` y `connection_secret_ref`: **sin código**. `billing.plan_revision` y `billing.billing_operation`: sin código hasta SPEC-301.
+> **Estado por esquema.** `iam` (6 tablas) y, de `billing` (4 tablas), `plan` y `subscription`: en uso. `files` (13 tablas; en uso `drive`, `folder`, `file`, `file_version`, `destination`, `tenant_encryption_key`, `tenant_quota`, `reservation`, `upload`): `team`, `team_member`, `resource_access` y `share_link`: **sin código** (`resource_access` no se implementará, ADR-008 §2). `audit`: sin código hasta SPEC-401. `admin` (5 tablas): solo `organization` en uso; `installation_request`, `installation`, `installation_check` y `connection_secret_ref`: **sin código**. `billing.plan_revision` y `billing.billing_operation`: sin código hasta SPEC-301.
 
 ---
 
@@ -725,8 +727,10 @@ stateDiagram-v2
   Purgado --> [*]
 
   note right of EnPapelera
-    Cuenta para la cuota durante 30 días
-    desde deleted_at. No hay purga automática.
+    Hoy cuenta para la cuota durante 30 días
+    desde deleted_at, sin purga automática.
+    Con SPEC-215 cuenta hasta su borrado físico
+    y una tarea lo purga pasados 30 días.
   end note
 ```
 

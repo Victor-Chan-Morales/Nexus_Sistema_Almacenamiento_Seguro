@@ -2,13 +2,15 @@
 
 > **SPEC-701 · Borrador asistido, 2026-10-27.** Redactado a partir del código, las migraciones, `CONTRACTS.md` v0.5 (borrador), las ADR 001–007, las specs de `specs/` y las dos fuentes del curso (la propuesta y el enunciado). **Pendiente de revisión de Víctor Chán Morales** antes de exportarlo a PDF.
 >
+> **Actualización del 2026-11-04.** El alcance final, las desviaciones y las reglas se alinearon con `ADR-008`, que prevalece donde choque. Los estados de implementación siguen siendo los de la fecha de redacción: lo que se construyó después puede figurar como pendiente.
+>
 > **Cómo leer los estados.** Este documento describe un sistema que se está terminando; no todo lo escrito existe. Cada requisito y caso de uso lleva su estado:
 >
 > | Marca | Significado |
 > |---|---|
 > | ✅ **Implementado** | Existe en el código de `main`/árbol de trabajo. **No** significa verificado de punta a punta: las pruebas existentes son unitarias con simulaciones y nadie ha ejecutado el flujo completo contra PostgreSQL y SeaweedFS reales. |
 > | 🟡 **Especificado (corte 80%)** | Tiene spec en `specs/`; se construye hasta el viernes 30 de octubre de 2026. Los marcados **P2** solo entran si sobra tiempo. |
-> | ⛔ **Fuera del corte** | No se construye en el corte del 80%; se declara en la exposición. |
+> | ⛔ **Fuera del corte** | No se construye en el corte del 80%: queda para el alcance final (§2.2) o fuera de alcance (§2.4). |
 
 ---
 
@@ -18,13 +20,13 @@
 Este documento define los requisitos funcionales y no funcionales de **Nexus** y detalla sus casos de uso, para que el equipo, el docente y los usuarios piloto compartan una misma descripción de lo que el sistema hace, de lo que hará en el corte del 80% y de lo que queda fuera.
 
 ### 1.2 El producto
-Nexus es una plataforma **PaaS de almacenamiento seguro híbrido (STaaS)**. Una organización (tenant) se registra, contrata un plan simulado y administra archivos y carpetas desde una interfaz web. La plataforma separa el control de acceso y los metadatos (PostgreSQL) de los bytes del archivo (almacenamiento de objetos S3 compatible, hoy SeaweedFS), que se guardan **cifrados**. La propuesta prevé que el cliente decida dónde residen sus datos (nube, servidores propios o híbrido); en el corte actual existe un único destino de nube.
+Nexus es una plataforma **PaaS de almacenamiento seguro híbrido (STaaS)**. Una organización (tenant) se registra, contrata un plan simulado y administra archivos y carpetas desde una interfaz web. La plataforma separa el control de acceso y los metadatos (PostgreSQL) de los bytes del archivo (almacenamiento de objetos S3 compatible, hoy SeaweedFS), que se guardan **cifrados**. La propuesta prevé que el cliente decida dónde residen sus datos (nube, servidores propios o híbrido); hoy existe un único destino de nube, y SPEC-801 a 804 agregan los destinos reales (ADR-008 §4).
 
 ### 1.3 Arquitectura vigente
-**Monolito modular** NestJS (IAM, Billing, Files, Storage, Integration, Dashboard, Health y, en el corte, Audit) con una aplicación Next.js independiente, PostgreSQL 16 y SeaweedFS en Docker Compose. Reemplaza a la arquitectura de microservicios de la propuesta (ADR-001).
+**Monolito modular** NestJS (IAM, Billing, Files, Storage, Integration, Dashboard, Health y, en el corte, Audit) con una aplicación Next.js independiente, PostgreSQL 16 y SeaweedFS en Docker Compose. Reemplaza a la arquitectura de microservicios de la propuesta (ADR-001) y se mantiene en el alcance final (ADR-008 §1).
 
 ### 1.4 Fuentes
-Propuesta PaaS Almacenamiento Seguro Híbrido (§6–§10, §19) · Enunciado del Proyecto Final de Ingeniería de Software 2026 (§4, §7) · `BUSINESS_RULES.md` · `CONTRACTS.md` · `docs/decisions/ADR-001…007` · `specs/README.md`.
+Propuesta PaaS Almacenamiento Seguro Híbrido (§6–§10, §19) · Enunciado del Proyecto Final de Ingeniería de Software 2026 (§4, §7) · `BUSINESS_RULES.md` · `CONTRACTS.md` · `docs/decisions/ADR-001…008` · `specs/README.md`.
 
 ---
 
@@ -33,8 +35,8 @@ Propuesta PaaS Almacenamiento Seguro Híbrido (§6–§10, §19) · Enunciado de
 ### 2.1 Alcance del corte del 80% (viernes 30 de octubre de 2026)
 Registro y autenticación con verificación de correo y recuperación de contraseña · roles de organización y alta de miembros · espacios personales con carpetas, subida, descarga y versionado de archivos con cifrado envelope · planes, suscripción simulada, historial de operaciones y renovación · panel de uso de almacenamiento · auditoría de acciones relevantes · despliegue local reproducible con Docker Compose.
 
-### 2.2 Fuera del corte (se declara en la exposición)
-Papelera completa (listar, restaurar, purgar) y versiones consultables si no entran como P2 · carpetas de equipo y permisos por recurso · enlaces compartidos temporales y su revocación · selección del modelo de despliegue y aprovisionamiento on-premises · panel del Super Admin con datos reales · rol Auditor · MFA/TOTP · rotación de llaves y cifrado en streaming · verificación de la cadena de hashes de auditoría.
+### 2.2 Pendiente para el alcance final (ADR-008, `specs/README.md`)
+Versiones consultables y restaurables · purga automática de la papelera · carpetas de equipo con niveles de lectura y edición · enlaces compartidos temporales y su revocación · administración de miembros y cierre de empresa · pago simulado con tarjetas de prueba · selección del modelo de despliegue, destinos reales e instalación on-premises · HTTPS y cabeceras de seguridad · panel del Super Admin con datos reales · rotación de llaves · verificación de la cadena de hashes de auditoría.
 
 ### 2.3 Fuera del producto (propuesta §5.2)
 Pasarelas de pago reales, edición colaborativa en vivo, aplicaciones móviles nativas y sincronización P2P.
@@ -43,11 +45,14 @@ Pasarelas de pago reales, edición colaborativa en vivo, aplicaciones móviles n
 
 | La propuesta dice | Nexus hace | Referencia |
 |---|---|---|
-| Microservicios con API Gateway | Monolito modular; **no hay API Gateway** (la API se expone directamente) | ADR-001 |
-| libsodium, cifrado en streaming | AES-256-GCM de `node:crypto`, en memoria, límite de 100 MB | ADR-006 |
-| Redis Streams para auditoría asíncrona | Sin bus; el evento se registra tras el commit de la operación | Constitución art. 3, ADR-007 §8 |
+| Microservicios con API Gateway | Monolito modular; **no hay API Gateway**. Hoy la API se expone directamente; SPEC-806 agrega un proxy inverso | ADR-001, ADR-008 §1 |
+| libsodium, cifrado en streaming | AES-256-GCM de `node:crypto`, en memoria, límite de 100 MB; el streaming queda fuera de alcance | ADR-006, ADR-008 §2 |
+| Redis Streams para auditoría asíncrona | Sin Redis; escritura directa tras el commit, con respaldo en el outbox de PostgreSQL | Constitución art. 3, ADR-007 §8, ADR-008 §1 |
 | MinIO/S3 | SeaweedFS con API S3 | ADR-004 |
-| MFA/TOTP en IAM | Fuera de alcance por tiempo | ADR-002 |
+| MFA/TOTP en IAM | Fuera de alcance | ADR-002, ADR-008 §2 |
+| Modo oscuro | Fuera de alcance | ADR-008 §2 |
+| Rol Auditor | No se implementa; la propuesta §7 define tres roles | ADR-008 §2 |
+| Permisos por archivo individual | No se implementan; el permiso se asigna por miembro de equipo | ADR-008 §2 |
 | Oficial de cumplimiento y Equipo de ingeniería como usuarios | Son **interesados del proyecto** (propuesta §6), no roles del sistema | ADR-007 §3 |
 
 ---
@@ -60,7 +65,7 @@ Pasarelas de pago reales, edición colaborativa en vivo, aplicaciones móviles n
 | **Tenant Admin** (`tenant_admin`) | Administra su organización: miembros, plan y auditoría. También opera archivos. Se crea automáticamente al registrar la organización. | ✅ (autorización por rol: 🟡 SPEC-101) |
 | **Colaborador** (`colaborador`) | Opera archivos dentro de su espacio personal y consulta el panel. | ✅ rol en BD/JWT; 🟡 alta de colaboradores (SPEC-102) |
 | **Super Admin** | Administra la plataforma (tenants, planes). Es la marca `is_super_admin` de un usuario, **no un rol de organización**. | ⛔ solo existe una maqueta |
-| **Auditor** | Consulta trazabilidad sin alterar nada. | ⛔ no se implementa en el corte; se documenta como actor futuro |
+| **Auditor** | Consulta trazabilidad sin alterar nada. | ⛔ no se implementa (ADR-008 §2) |
 | **Sistema** | Procesos automáticos: envío de correos desde el outbox con reintentos. | ✅ |
 
 > Los **interesados** de la propuesta (Oficial de cumplimiento, Equipo de ingeniería) orientan los requisitos de trazabilidad y calidad, pero no son actores del sistema.
@@ -77,7 +82,7 @@ Pasarelas de pago reales, edición colaborativa en vivo, aplicaciones móviles n
 | RF-002 | Emisión y validación de JWT | ✅ | JWT de 15 min + refresh de 7 días en cookie `HttpOnly`; revalida la membresía en cada petición | UC-03, 04 |
 | RF-003 | Control de acceso RBAC | 🟡 | Roles en BD y JWT ✅; falta el guard por rol: SPEC-101, 102, 104 | UC-06 y todos los administrativos |
 | RF-004 | Cifrado de archivos en streaming con libsodium | 🟡 parcial | AES-256-GCM en memoria (ADR-006); **no es streaming ni libsodium** | UC-14, 15 |
-| RF-005 | Gestión de llaves DEK/KEK | ✅ (sin rotación) | DEK por versión, KEK por tenant (HKDF); ver ADR-006 | UC-14, 15 |
+| RF-005 | Gestión de llaves DEK/KEK | ✅ (sin rotación) | DEK por versión, KEK por tenant (HKDF); ver ADR-006. SPEC-005 agrega la rotación | UC-14, 15 |
 | RF-006 | Carpetas de equipo | ⛔ | Tablas `files.team*` existen sin código | UC-22 |
 | RF-007 | Espacios personales | ✅ | Drive `Mi espacio` y carpeta raíz `Archivos` creados en el registro | UC-12, 13 |
 | RF-008 | Versionado | 🟡 parcial | Se crean versiones al repetir un nombre ✅; consulta: SPEC-206 (P2); restaurar una versión ⛔ | UC-14, 18 |
@@ -116,12 +121,12 @@ Pasarelas de pago reales, edición colaborativa en vivo, aplicaciones móviles n
 | ID | Requisito | Estado | Evidencia o brecha |
 |---|---|:---:|---|
 | RNF-001 | Disponibilidad objetivo del 99.5% en la nube | ⛔ | Sin despliegue productivo ni medición |
-| RNF-002 | TLS 1.3 para comunicaciones externas | ⛔ | Solo HTTP en desarrollo; la cookie lleva `Secure` en producción; TLS se resolvería en el despliegue |
+| RNF-002 | TLS 1.3 para comunicaciones externas | ⛔ | Solo HTTP en desarrollo; la cookie lleva `Secure` en producción; SPEC-806 agrega TLS en el despliegue |
 | RNF-003 | Cifrado de datos en reposo | ✅ | AES-256-GCM antes de guardar el objeto (ADR-006) |
 | RNF-004 | Hash de contraseñas con Argon2id | ✅ | `memoryCost` 19 456 KiB, `timeCost` 2, `parallelism` 1 |
 | RNF-005 | API < 300 ms en el percentil 95 | ⛔ | Sin pruebas de rendimiento |
-| RNF-006 | Escalabilidad horizontal de microservicios | ⛔ | No aplica: la arquitectura es un monolito modular (ADR-001) |
-| RNF-007 | Auditoría inmutable | 🟡 | Triggers de BD rechazan `UPDATE`/`DELETE`/`TRUNCATE` en `audit.audit_event` ✅; `record_hash` y `prev_hash` desde la v1 (SPEC-401); verificación de la cadena: SPEC-404 (100%) |
+| RNF-006 | Escalabilidad horizontal de microservicios | ⛔ | Se reformula: la arquitectura es un monolito modular, portable con Docker Compose, y el escalado por servicios no forma parte del alcance (ADR-001, ADR-008 §1) |
+| RNF-007 | Auditoría inmutable | 🟡 | Triggers de BD rechazan `UPDATE`/`DELETE`/`TRUNCATE` en `audit.audit_event` ✅; `record_hash` y `prev_hash` desde la v1 (SPEC-401); verificación de la cadena: SPEC-404; sin checkpoints firmados (ADR-008 §10) |
 | RNF-008 | Compatibilidad con navegadores modernos | 🟡 | Next.js 16 / React 19; sin matriz de pruebas por navegador |
 | RNF-009 | Onboarding sin capacitación formal | 🟡 | Sin pruebas con usuarios piloto |
 | RNF-010 | Despliegue portable con Docker Compose | 🟡 | `docker compose up -d` levanta la infraestructura; la web no está contenerizada |
@@ -144,9 +149,9 @@ Aislamiento multi-tenant en cada consulta; respuesta `404` ante recursos de otra
 | RN-06 | El registro crea, en una sola transacción, usuario, organización, membresía `tenant_admin`, suscripción Demo, cuota, Drive `Mi espacio` y carpeta `Archivos`; si algo falla, no se crea nada. | ADR-003 |
 | RN-07 | Archivos: máximo 100 MB; PDF, DOCX, XLSX, PPTX, JPG, PNG, TXT y ZIP (se valida extensión, tipo declarado y contenido); máximo 3 cargas simultáneas por usuario. | CONTRACTS, `FilesService` |
 | RN-08 | Repetir un nombre en la misma carpeta crea una **nueva versión** del mismo archivo; `Idempotency-Key` evita duplicados en reintentos. | CONTRACTS |
-| RN-09 | Cuota en bytes: suma el tamaño real de **todas** las versiones almacenadas, más las reservas de carga activas; los archivos eliminados cuentan durante 30 días. Sin suscripción vigente el límite es 0. | CONTRACTS, ADR-007 §7 |
+| RN-09 | Cuota en bytes: suma el tamaño real de **todas** las versiones almacenadas, más las reservas de carga activas; los archivos eliminados cuentan durante 30 días; con SPEC-215, hasta su eliminación física (ADR-008 §9). Sin suscripción vigente el límite es 0. | CONTRACTS, ADR-007 §7 |
 | RN-10 | Una organización tiene como máximo una suscripción activa; reactivar el mismo plan no crea otra; reducir de plan solo se acepta si el uso confirmado más las reservas caben en el nuevo límite. | CONTRACTS, ADR-003 |
-| RN-11 | Los planes y precios salen del catálogo persistido (Demo, Team, Business, Enterprise); toda operación de pago es simulada. | CONTRACTS, `BillingService` |
+| RN-11 | Los planes y precios salen del catálogo persistido (Demo, Team, Business, Enterprise); toda operación de pago es simulada. SPEC-305 agrega tarjetas de prueba para los planes con precio (ADR-008 §5). | CONTRACTS, `BillingService` |
 | RN-12 | Los planes pagados vencen a los 30 días; Demo no vence ni se renueva. | CONTRACTS v0.5 |
 | RN-13 | Solo `tenant_admin` gestiona miembros, plan, historial de facturación y consulta la auditoría. | ADR-007 §4 |
 | RN-14 | El límite de usuarios lo fija el plan vigente (Demo: 5). | CONTRACTS v0.5 |
@@ -265,9 +270,9 @@ El diagrama de casos de uso está en `DIAGRAMAS_UML.md` (§1).
 
 #### UC-17 Gestionar la papelera · 🟡 P2 SPEC-202–205 · RF-009
 - **Endpoints:** `GET /files/trash`, `POST /files/:id/restore`, `DELETE /files/:id/purge`. **Alcance:** solo archivos y solo del espacio del solicitante.
-- **Flujo principal:** el usuario ve sus archivos eliminados y la fecha en que dejan de contar para la cuota; puede **restaurar** uno a su carpeta original o **eliminarlo definitivamente** (se borran sus versiones y objetos y se libera la cuota).
+- **Flujo principal:** el usuario ve sus archivos eliminados y la fecha de fin de retención; puede **restaurar** uno a su carpeta original o **eliminarlo definitivamente** (se borran sus versiones y objetos y se libera la cuota).
 - **Alternativos:** restaurar con un nombre ya usado en la carpeta → `409 FILE_NAME_CONFLICT`; purgar un archivo activo → `422 CANNOT_PURGE_ACTIVE_FILE`.
-- **Limitación:** no hay purga automática a los 30 días.
+- **Limitación:** hoy no hay purga automática a los 30 días. SPEC-215 la agrega, y esa fecha pasa a ser la de borrado (ADR-008 §9).
 
 #### UC-18 Consultar el historial de versiones · 🟡 P2 SPEC-206/207 · RF-008
 - **Endpoint:** `GET /files/:id/versions`. **Flujo:** el usuario abre «Versiones» de un archivo y ve cada versión con su tamaño y fecha, indicando cuál es la actual. Es de solo lectura.
@@ -280,10 +285,10 @@ El diagrama de casos de uso está en `DIAGRAMAS_UML.md` (§1).
 #### UC-20 a UC-23 · ⛔ Fuera del corte
 | Caso de uso | Resumen | Referencia |
 |---|---|---|
-| UC-20 Compartir con enlace temporal | Enlace de solo lectura a una versión fija, con vencimiento obligatorio, contraseña opcional y revocación inmediata. | RF-010, RF-011 · SPEC-209 |
-| UC-21 Administrar la plataforma | Super Admin gestiona organizaciones, planes e instalaciones, con actividad global auditada. | RF-016 · SPEC-501/502 |
-| UC-22 Espacios de equipo | Carpetas compartidas por equipo y permisos por usuario o equipo (nivel más alto prevalece). | RF-006 |
-| UC-23 Modelo de despliegue | Elegir nube, servidores propios o híbrido y solicitar una instalación. | RF-014, RF-015 |
+| UC-20 Compartir con enlace temporal | Enlace de solo lectura a una versión fija, con duración de 1, 7 o 30 días, contraseña opcional y revocación inmediata. | RF-010, RF-011 · SPEC-209, 216, 217 |
+| UC-21 Administrar la plataforma | Super Admin gestiona organizaciones, planes e instalaciones, con actividad global auditada. | RF-016 · SPEC-501, 502, 503, 504 |
+| UC-22 Espacios de equipo | Carpetas compartidas por equipo; cada miembro tiene nivel de lectura o edición. | RF-006 · SPEC-220, 222, 223, 224 |
+| UC-23 Modelo de despliegue | Elegir nube, servidores propios o híbrido por carpeta principal, y solicitar una instalación. | RF-014, RF-015 · SPEC-801 a 806 |
 
 ---
 
@@ -308,16 +313,16 @@ El diagrama de casos de uso está en `DIAGRAMAS_UML.md` (§1).
 
 ## 9. Supuestos, restricciones y riesgos
 
-**Supuestos.** Acceso desde un navegador web; facturación simulada; un único destino de almacenamiento (SeaweedFS); el equipo trabaja con ramas y revisión de pull requests.
+**Supuestos.** Acceso desde un navegador web; facturación simulada; un único destino de almacenamiento (SeaweedFS) hasta SPEC-801 a 804; el equipo trabaja con ramas y revisión de pull requests.
 
 **Restricciones.** Tiempo académico limitado; equipo de cuatro personas con ~7 horas cada una hasta el viernes 30; alcance definido por el corte.
 
 **Riesgos abiertos.**
 1. **Sin verificación de punta a punta**: el recorrido registro → verificación → login → subir → descargar no se ha ejecutado contra PostgreSQL y SeaweedFS reales.
 2. **Aislamiento entre organizaciones sin probar** con dos organizaciones reales.
-3. **Sin rotación de llaves**: cambiar `FILES_MASTER_KEY` deja ilegibles los archivos existentes (ADR-006).
-4. **Cuota y papelera**: sin purga automática, los archivos eliminados hace más de 30 días dejan de contar para la cuota pero siguen almacenados.
-5. **Sin límite de intentos ni cabeceras de seguridad** (HSTS/CSP) en la API.
+3. **Sin rotación de llaves**: cambiar `FILES_MASTER_KEY` deja ilegibles los archivos existentes (ADR-006). Lo resuelve SPEC-005.
+4. **Cuota y papelera**: sin purga automática, los archivos eliminados hace más de 30 días dejan de contar para la cuota pero siguen almacenados. Lo resuelve SPEC-215.
+5. **Sin límite de intentos ni cabeceras de seguridad** (HSTS/CSP) en la API. Los resuelven SPEC-112 y SPEC-806.
 6. **Carpetas duplicadas:** la unicidad de nombres por carpeta padre que exige ADR-003 no está implementada.
 
 ---
