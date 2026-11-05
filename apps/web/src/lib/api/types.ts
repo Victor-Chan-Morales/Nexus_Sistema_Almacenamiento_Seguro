@@ -186,6 +186,22 @@ export type RestoreFileResponse = { id: UUID; name: string; folderId: UUID };
 export type PurgeFileResponse = { id: UUID; freedBytes: number };
 export type DeleteFileResponse = { success: boolean; id: UUID };
 
+/** SPEC-206: una versión del historial de un archivo (sin campos internos de almacenamiento). */
+export type FileVersionItem = {
+  versionId: UUID;
+  versionNumber: number;
+  sizeBytes: number;
+  uploadedAt: ISODateTime;
+  isCurrent: boolean;
+};
+/** SPEC-206: respuesta de `GET /files/:id/versions`, de la más reciente a la más antigua. */
+export type FileVersionsResponse = {
+  fileId: UUID;
+  fileName: string;
+  currentVersion: number;
+  versions: FileVersionItem[];
+};
+
 export type BillingOperationType = "charge" | "renewal";
 
 export type BillingOperationItem = {

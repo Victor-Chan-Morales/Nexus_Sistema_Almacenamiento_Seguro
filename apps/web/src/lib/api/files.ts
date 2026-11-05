@@ -1,5 +1,5 @@
 import { apiRequest, apiRequestBlob, filenameFromContentDisposition } from "./client";
-import type { ApiRequestOptions, CreateFolderInput, CreateFolderResponse, DeleteFileResponse, FileMetadata, FolderItemsResponse, FolderListResponse, PurgeFileResponse, RestoreFileResponse, TrashResponse, UUID, UploadFileResponse } from "./types";
+import type { ApiRequestOptions, CreateFolderInput, CreateFolderResponse, DeleteFileResponse, FileMetadata, FileVersionsResponse, FolderItemsResponse, FolderListResponse, PurgeFileResponse, RestoreFileResponse, TrashResponse, UUID, UploadFileResponse } from "./types";
 
 export function listFolders(accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
   return apiRequest<FolderListResponse>("/folders", { method: "GET" }, { ...options, accessToken });
@@ -57,6 +57,11 @@ export function restoreFile(fileId: UUID, accessToken: string, options?: Omit<Ap
 /** SPEC-204: elimina definitivamente un archivo de la papelera. */
 export function purgeFile(fileId: UUID, accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
   return apiRequest<PurgeFileResponse>(`/files/${encodeURIComponent(fileId)}/purge`, { method: "DELETE" }, { ...options, accessToken });
+}
+
+/** SPEC-206/207: historial de versiones de un archivo propio (solo lectura). */
+export function getFileVersions(fileId: UUID, accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
+  return apiRequest<FileVersionsResponse>(`/files/${encodeURIComponent(fileId)}/versions`, { method: "GET" }, { ...options, accessToken });
 }
 
 /** SPEC-202/205: mueve un archivo activo a la papelera (borrado lógico). */
