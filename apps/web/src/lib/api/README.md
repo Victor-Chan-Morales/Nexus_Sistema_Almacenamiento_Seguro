@@ -7,7 +7,7 @@ La base HTTP compartida y los clientes tipados implementan las rutas del contrat
 - `iam.ts`: registro, verificación, login, sesión y recuperación de contraseña.
 - `billing.ts`: catálogo, activación y renovación simuladas, e historial de operaciones.
 - `dashboard.ts`: resumen del espacio de trabajo.
-- `files.ts`: carpetas, elementos, carga, descarga y papelera.
+- `files.ts`: carpetas, elementos, carga, descarga, papelera e historial de versiones.
 - `members.ts`: listado y alta de miembros de la organización.
 - `audit.ts`: bitácora de auditoría paginada por cursor (solo administradores).
 
