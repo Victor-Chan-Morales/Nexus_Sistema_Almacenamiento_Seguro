@@ -128,7 +128,9 @@ describe('SPEC-801: compensación de una carga en el destino donde se escribió'
       query: jest.fn().mockResolvedValue([]),
       getRepository: jest.fn((entity: unknown) => repos.get(entity)),
     };
-    const dataSource = { transaction: jest.fn(async (cb: any) => cb(manager)) };
+    const dataSource = {
+      transaction: jest.fn(async (cb: (m: unknown) => Promise<unknown>) => cb(manager)),
+    };
     const storage = { put: jest.fn().mockResolvedValue(undefined) };
     const cleanup = { delete: jest.fn().mockResolvedValue(undefined) };
     const storageRouter = {

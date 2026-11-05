@@ -477,7 +477,7 @@ const buildPurgeService = ({
     }),
   };
   const storageRouter = {
-    forRead: jest.fn(async (_organizationId: string, _destinationId: string) => storage),
+    forRead: jest.fn(async () => storage),
     forWrite: jest.fn(),
     defaultBucketName: 'nexus',
   };
