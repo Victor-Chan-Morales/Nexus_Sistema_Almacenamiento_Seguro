@@ -9,7 +9,7 @@
 | **Aprobador** | Víctor Chán Morales |
 | **Módulo Afectado** | `apps/api/src/modules/files/` |
 | **Requisitos Vinculados** | RF-009, RF-013; ADR-008 §9 |
-| **Dependencias** | SPEC-004, SPEC-407 |
+| **Dependencias** | SPEC-221, SPEC-407 |
 | **Prioridad** | P1 |
 | **Estimación** | 2.5 h |
 | **Estado** | Aprobada (2026-11-04, Víctor Chán Morales) |
@@ -122,3 +122,4 @@ Ninguna.
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
+| 2026-11-04 | Claude Code (revisión) | Se agrega SPEC-221 como dependencia, porque edita `files.service.ts`. Aprobado por el coordinador (2026-11-04). |

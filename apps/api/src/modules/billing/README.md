@@ -28,6 +28,8 @@ La base impone una suscripción `active` como máximo por organización mediante
 | Método y ruta | Acceso | Función |
 |---|---|---|
 | `GET /api/plans` | Público / autenticado | Devuelve los planes del catálogo, con límites expresados en bytes y precios en USD. |
-| `POST /api/subscriptions/activate` | JWT | Activa un plan para la organización del token; el coordinador valida cuotas con Files antes de persistir. |
+| `POST /api/subscriptions/activate` | JWT, `tenant_admin` | Activa un plan para la organización del token; el coordinador valida cuotas con Files antes de persistir. |
+| `POST /api/subscriptions/renew` | JWT, `tenant_admin` | Extiende la vigencia de la suscripción actual. |
+| `GET /api/billing/operations` | JWT, `tenant_admin` | Historial de operaciones simuladas. |
 
 `BillingService.getStorageLimitBytes(organizationId)` sirve a Files en proceso. Si no hay una suscripción vigente, devuelve cero bytes.

@@ -26,16 +26,15 @@ Estas reglas traducen la propuesta aprobada, los lineamientos del curso y el dic
 | Super Admin | Administración de plataforma, tenants, planes e infraestructura; actividad global autorizada y auditada. |
 | Tenant Admin | Administra usuarios, permisos, políticas y configuración de su organización. |
 | Colaborador | Opera archivos dentro de las concesiones de su organización/equipo. |
-| Auditor | Consulta trazabilidad de su alcance; no altera archivos ni permisos. Su modelado en `ROLE` debe acordarse porque el diccionario enumera inicialmente `tenant_admin` y `colaborador`. |
 
-En el primer corte se permite un rol mínimo de administrador para la cuenta que registra la organización. No implementar autorización solo ocultando botones; cada acción debe verificarse en API. La matriz completa de permisos queda para el diseño RBAC del alcance final.
+El rol Auditor no se implementa: la propuesta §7 define tres roles (ADR-008 §2). La cuenta que registra la organización nace como `tenant_admin`. No implementar autorización solo ocultando botones; cada acción debe verificarse en API. La matriz de permisos está en ADR-007 §4.
 
 ## Planes, suscripciones y pago simulado
 
 1. Cada plan debe tener nombre, descripción, precio, vigencia, límite de almacenamiento y límite de usuarios; los valores salen del catálogo persistido, no se inventan en frontend.
 2. Activar una suscripción registra organización, plan, estado `active`, fecha de inicio y de fin si aplica.
-3. Como regla inicial propuesta, una organización tiene como máximo una suscripción `active` a la vez; el historial conserva suscripciones vencidas/canceladas. El equipo debe revisar esta restricción con Billing antes de migrar.
-4. Las operaciones de pago/renovación llevan el indicador de simulación; no solicitar tarjetas, no hacer cargos reales y no guardar datos financieros.
+3. Una organización tiene como máximo una suscripción `active` a la vez (`uq_subscription_one_active_per_organization`); el historial conserva suscripciones vencidas/canceladas.
+4. Las operaciones de pago/renovación llevan el indicador de simulación y no hacen cargos reales. La activación y la renovación de planes con precio mayor que cero solicitan una **tarjeta de prueba**: solo se aceptan números ficticios fijos definidos en el código. Nunca se guarda ni se registra el número completo ni el CVV, solo los últimos cuatro dígitos de la tarjeta de prueba aprobada (ADR-008 §5, SPEC-305).
 5. Al vencer una suscripción se respetan los estados definidos en el diccionario (`active`, `expired`, `cancelled`) y se aplica una decisión de acceso/cuota documentada antes de programarla.
 6. La capacidad total se mide en bytes; convertir a GB solo para presentación. Nunca aceptar el valor de uso enviado por el cliente.
 
@@ -68,7 +67,7 @@ En el primer corte se permite un rol mínimo de administrador para la cuenta que
 - Verificar correo, recuperar contraseña, sesiones revocables y RBAC completo. MFA/TOTP queda fuera del alcance actual y se conserva como mejora futura.
 - Versionado, papelera/recuperación, enlaces temporales protegidos y revocación.
 - Auditoría centralizada e integridad de registros.
-- Cifrado de archivos con gestión Envelope DEK/KEK. La propuesta pedía libsodium en streaming; la implementación vigente usa AES-256-GCM de `node:crypto` en memoria (límite de 100 MB), según ADR-006. El streaming y la rotación de llaves quedan como mejora futura.
+- Cifrado de archivos con gestión Envelope DEK/KEK. La propuesta pedía libsodium en streaming; la implementación vigente usa AES-256-GCM de `node:crypto` en memoria (límite de 100 MB), según ADR-006. El streaming queda fuera de alcance (ADR-008 §2) y la rotación de llaves se implementa con SPEC-005.
 - Selección de destino cloud, on-premises e híbrido y despliegue on-premises reproducible.
 - Renovaciones e historial de operaciones simuladas conforme al curso.
 
@@ -86,7 +85,7 @@ Si algo se pospone del 30%, anótelo como pendiente del siguiente corte; no lo d
 - Una cuenta puede pertenecer a varias organizaciones mediante `MEMBERSHIP`; no se repite el par usuario-organización.
 - Cada versión conserva el destino donde nació. Las carpetas pueden heredar el destino predeterminado de su organización.
 - Una organización mantiene una sola suscripción activa; los cambios de plan se validan antes de aplicarse.
-- Los permisos pueden asignarse a usuarios o equipos sobre archivos o carpetas. Si existen varios permisos, se aplica el nivel más alto.
+- Los permisos se asignan por miembro de equipo; no hay permisos por archivo individual (ADR-008 §2 y §7).
 - Una carga solo crea una versión disponible después de confirmar tamaño real, integridad y cifrado. La idempotencia evita duplicados.
 - Los archivos eliminados lógicamente siguen ocupando cuota hasta su eliminación definitiva.
 - Las sesiones pueden coexistir en varios dispositivos; cambiar la contraseña revoca todas las sesiones activas.
@@ -94,6 +93,14 @@ Si algo se pospone del 30%, anótelo como pendiente del siguiente corte; no lo d
 - Los enlaces compartidos son de solo lectura, apuntan a una versión fija, vencen obligatoriamente y pueden revocarse.
 - La creación de usuario, organización, membresía, suscripción demo y cuota debe ser atómica.
 - Las reglas multi-tenant se validan en cada operación y ningún identificador enviado por el cliente sirve como prueba de autorización.
+
+## Decisiones del alcance final
+
+`docs/decisions/ADR-008-alcance-final.md` prevalece sobre las reglas anteriores donde choquen. Cada regla empieza a cumplirse en el código al fusionarse la spec indicada.
+
+- **Equipos (ADR-008 §7; SPEC-220, 222 y 224):** cada miembro tiene nivel `read` (ver y descargar) o `write` (además subir, crear carpetas y enviar a la papelera). Un `tenant_admin` administra los equipos y tiene acceso `write` a todos los Drives de equipo de su organización. Solo él puede eliminar definitivamente en un Drive de equipo; en el Drive personal también puede hacerlo su dueño.
+- **Papelera (ADR-008 §9; SPEC-215):** todo lo que está en la papelera cuenta en la cuota hasta su eliminación física. Una tarea periódica purga lo que supera 30 días.
+- **Cierre de empresa (ADR-008 §6; SPEC-114):** cerrar una organización la deja en estado `cancelled`, cancela su suscripción, revoca sus sesiones y conserva sus archivos, sin borrado físico. Solo un Super Admin puede reactivarla.
 
 ## Detalles operativos aprobados
 

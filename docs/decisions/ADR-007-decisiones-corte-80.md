@@ -3,6 +3,7 @@
 - **Estado:** Aprobada por el coordinador (Víctor Chán Morales) el 2026-10-27, tras la revisión de las specs 101–601.
 - **Alcance:** fija las decisiones que las specs del corte del 80% asumen. Complementa ADR-002 y ADR-003; donde choca con ADR-003, la enmienda está anotada allí.
 - **Contratos:** las rutas, campos y códigos de error de estas decisiones están en `CONTRACTS.md` v0.5.
+- **Enmienda:** §7 está enmendado por ADR-008 §9: lo que está en la papelera cuenta en la cuota hasta su eliminación física, y una tarea periódica purga lo que supera 30 días (SPEC-215).
 
 ## 1. Alcance y calendario
 

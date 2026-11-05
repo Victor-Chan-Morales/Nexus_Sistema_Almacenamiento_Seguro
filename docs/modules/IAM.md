@@ -34,7 +34,7 @@ Dependencias: controlador → servicios → puertos ← infraestructura. IAM no 
 **Regla de tenant:** `organizationId` y `role` salen de JWT + membresía activa en organización activa, revalidadas en BD en cada
 request. Ninguna ruta lee `organizationId` del body, query o headers; `ValidationPipe` con `forbidNonWhitelisted` rechaza campos no declarados.
 
-**Roles** (catálogo `iam.role`): `tenant_admin` (quien registra la organización) y `colaborador`. En este corte solo se asigna `tenant_admin`. El diagrama los llama TENANT_ADMIN y COLABORADOR; el API usa los nombres de la BD.
+**Roles** (catálogo `iam.role`): `tenant_admin` (quien registra la organización) y `colaborador`. `tenant_admin` se asigna al registrar la organización, y ambos al dar de alta miembros (SPEC-102). El diagrama los llama TENANT_ADMIN y COLABORADOR; el API usa los nombres de la BD.
 
 ## Error común (CONTRACTS.md)
 `{ "code": "ERROR_CODE", "message": "Mensaje seguro", "requestId": "uuid" }`, producido por `ApiExceptionFilter` (`src/common/filters`).
@@ -99,16 +99,15 @@ Más cookie `nexus_refresh` (HttpOnly, `Path=/api/auth`, 7 días, `Secure` segú
 - **Recuperación** (`PasswordResetService`): `POST /auth/forgot-password` responde antes de tocar la base, así que tarda lo mismo exista o no el correo; la transacción y el envío van en segundo plano, y un fallo se registra sin el correo ni el token. Es una desviación de SPEC-103 §8, que pedía la transacción dentro de la petición. `POST /auth/reset-password` valida el token (hash, propósito, vencimiento, uso) y la política de contraseña, calcula el hash de Argon2id fuera de la transacción, y en una segunda transacción revalida el token con bloqueo, cambia la contraseña, marca `email_verified = true`, consume el token y revoca todas las sesiones.
 - **Limitaciones conocidas**:
   - Una recuperación nueva invalida también una invitación pendiente (ambas usan `password_reset`). La salida es "Olvidé mi contraseña".
-  - Una invitación pendiente ocupa cupo: la membresía nace `active` y cuenta contra el límite. No hay baja, reenvío ni revocación en este corte (SPEC-102 §3); si cinco personas no aceptan, la organización queda en `USER_LIMIT_EXCEEDED` hasta que se implemente. Pendiente para una spec de seguimiento.
+  - Una invitación pendiente ocupa cupo: la membresía nace `active` y cuenta contra el límite. No hay reenvío ni revocación de la invitación (SPEC-102 §3). Hasta SPEC-108 tampoco hay baja: si cinco personas no aceptan, la organización queda en `USER_LIMIT_EXCEEDED`.
   - Si la base falla dentro del procesamiento de `forgot-password`, el usuario recibe el `200` genérico y no llega correo: debe volver a pedirlo.
   - Tras restablecer, las sesiones (refresh) quedan revocadas, pero un access token ya emitido sigue válido hasta vencer (15 min): `JwtStrategy` valida membresía y organización en cada request, no la sesión.
   - La recuperación no tiene límite de intentos (`429`) en este corte.
-  - Las auditorías `MEMBER_ADDED` y `AUTH_PASSWORD_RESET` llegan con SPEC-405.
 
 ## Integración con frontend (Víctor)
 - `accessToken` solo en memoria; nunca en localStorage. `fetch(..., { credentials: 'include' })` en login, refresh y logout.
 - Ante 401 en ruta protegida: un intento de `/auth/refresh` y reintento; si falla, ir a login.
-- `403 EMAIL_NOT_VERIFIED`: mostrar la pantalla de verificación. Enlace del correo: `${WEB_URL}/verificar-correo?token=...` (ruta registrada en `SESSION_LOG.md`; configurable con `IAM_VERIFY_EMAIL_PATH`) → la pantalla debe llamar a `POST /auth/verify-email`. Falta confirmar con Víctor que la página lee `token`. No marcar nada como verificado en la UI sin respuesta 200.
+- `403 EMAIL_NOT_VERIFIED`: mostrar la pantalla de verificación. Enlace del correo: `${WEB_URL}/verificar-correo?token=...` (ruta registrada en `SESSION_LOG.md`; configurable con `IAM_VERIFY_EMAIL_PATH`) → la pantalla debe llamar a `POST /auth/verify-email`. No marcar nada como verificado en la UI sin respuesta 200.
 - El `role` es `tenant_admin` / `colaborador` (los nombres de `iam.role`): ajustar maquetas y tipos.
 
 ## Configuración y base de datos
@@ -127,6 +126,6 @@ Sin paquetes fuera de los que IAM ya usa (`@nestjs/jwt`, `@nestjs/passport`, `pa
 (solo si no existe ya un transporte SMTP para `EmailService`). Dev: `supertest` / `@types/supertest` si faltan. No se agregó `cookie-parser`.
 
 ## Pendiente explícito (NO terminado)
-- RBAC completo: solo se asigna `tenant_admin`; `colaborador`, invitaciones y permisos por recurso quedan para después.
-- Bloqueo por intentos fallidos (`failed_login_attempts` / `last_login_at` sin usar), reenvío manual de verificación (el reintento ya renueva el token solo; un endpoint de reenvío sigue fuera del corte), `verifyTotp` (MFA fuera de alcance), selector de organización activa.
+- Cambiar rol, suspender y eliminar miembros: SPEC-108. Los permisos por archivo no se implementan (ADR-008 §2).
+- Bloqueo por intentos fallidos, SPEC-112 (`failed_login_attempts` / `last_login_at` sin usar), reenvío manual de verificación (el reintento ya renueva el token solo; un endpoint de reenvío sigue fuera del corte), `verifyTotp` (MFA fuera de alcance), selector de organización activa.
 - Rate limiting (`429`) en register/login/refresh; limpieza periódica de sesiones y tokens vencidos.

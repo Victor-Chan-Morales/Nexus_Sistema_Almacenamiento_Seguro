@@ -2,7 +2,7 @@
 
 ## Contexto
 
-Usted trabaja en **Nexus**, un producto PaaS/STaaS de almacenamiento seguro para organizaciones. El producto aprobado debe permitir gestionar identidad, permisos, archivos, planes simulados, auditoría y el destino físico del almacenamiento (cloud, on-premises o híbrido). El avance inmediato es un recorrido acotado: registro e inicio de sesión, plan de demostración, dashboard, carpeta, carga y descarga de un archivo.
+Usted trabaja en **Nexus**, un producto PaaS/STaaS de almacenamiento seguro para organizaciones. El producto aprobado debe permitir gestionar identidad, permisos, archivos, planes simulados, auditoría y el destino físico del almacenamiento (cloud, on-premises o híbrido). El trabajo pendiente está en `specs/README.md` y las decisiones vigentes en `docs/decisions/ADR-008-alcance-final.md`.
 
 El stack base documentado es Next.js/TypeScript, NestJS/TypeScript, PostgreSQL 16, SeaweedFS (S3) y Docker Compose. No agregue tecnologías ni cambie versiones principales sin registrar y aprobar una decisión.
 

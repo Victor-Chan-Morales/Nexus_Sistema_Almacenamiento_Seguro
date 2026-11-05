@@ -47,7 +47,7 @@ Escenario 4: Nada se mueve
 
 Escenario 5: Nube o Local por modelo
   Dado un modelo cloud u on_premises
-  Entonces toda carpeta nueva usa el predeterminado
+  Entonces toda carpeta principal nueva usa el predeterminado
   Y enviar destinationId responde 422 DESTINATION_SELECTION_NOT_ALLOWED
 
 Escenario 6: Carpeta principal en híbrido
@@ -97,8 +97,8 @@ Sin migración. Usa `admin.organization.deployment_model`, `folder.destination_i
 ## 8. Diseño Técnico
 
 - `StoragePolicyService` en `modules/integration/`, porque coordina IAM (`organization`) y Files (`destination`).
-- **Cambio de predeterminado:** en una transacción, primero quitar `is_default` y después marcar el nuevo, por el índice único.
-- **Destino en `createFolder`:** parent es raíz y el modelo es `hybrid` → admite `destinationId`; en otro caso hereda del padre. La raíz del Drive tiene el destino predeterminado al crearse.
+- **Cambio de predeterminado:** en una transacción, primero quitar `is_default` y después marcar el nuevo, por el índice único. En la misma transacción, apuntar las carpetas raíz de los Drives de la organización al nuevo destino, para que lo subido directo a la raíz no siga yendo al anterior. Las versiones existentes no cambian.
+- **Destino en `createFolder`:** parent es raíz y el modelo es `hybrid` → admite `destinationId` o usa el predeterminado; parent es raíz en otro modelo → usa el predeterminado; subcarpeta → hereda del padre. La raíz del Drive tiene el destino predeterminado al crearse.
 - **Cambiar de híbrido a un solo modelo:** las carpetas conservan su `destination_id`, así que sus versiones nuevas seguirán allí. Se documenta y se muestra en la pantalla.
 - **Límite de la solicitud:** registrar una solicitud no es requisito para elegir el modelo (ver §12).
 - **Auditoría:** `DEPLOYMENT_MODEL_CHANGED`, `INSTALLATION_REQUESTED`.
@@ -133,3 +133,4 @@ Ninguna. Decisión del coordinador (2026-11-04): elegir Local o Híbrido solo re
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada, con decisión de §12. |
+| 2026-11-04 | Claude Code (revisión) | Corrige el destino de las carpetas principales y las raíces al cambiar de modelo. Aprobado por el coordinador (2026-11-04). |

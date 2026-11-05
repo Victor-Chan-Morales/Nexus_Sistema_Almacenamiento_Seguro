@@ -25,7 +25,7 @@ El diccionario completo sigue siendo la referencia para la meta final. No creen 
 ## Decisiones operativas aprobadas
 
 - El registro crea el Drive personal `Mi espacio` y la carpeta raíz `Archivos`.
-- `Auditor` es un rol formal de solo lectura sobre la auditoría de su organización.
+- El rol Auditor no se implementa (ADR-008 §2).
 - Una organización tiene como máximo una suscripción activa, mediante índice parcial o restricción equivalente.
-- Los nombres de carpeta son únicos dentro del mismo padre sin distinguir mayúsculas/minúsculas; la papelera usa borrado lógico y conserva cuota durante 30 días.
+- Los nombres de carpeta son únicos dentro del mismo padre sin distinguir mayúsculas/minúsculas; la papelera usa borrado lógico y cuenta en la cuota hasta su eliminación física (ADR-008 §9).
 - Los valores iniciales de cuota y archivo están en `docs/decisions/ADR-003-detalles-operativos-aprobados.md`.

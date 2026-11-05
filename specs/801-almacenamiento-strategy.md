@@ -9,7 +9,7 @@
 | **Aprobador** | Víctor Chán Morales |
 | **Módulo Afectado** | `apps/api/src/modules/storage/`, `apps/api/src/modules/files/` |
 | **Requisitos Vinculados** | §12.1.1 (Strategy), RF-014 |
-| **Dependencias** | SPEC-006, SPEC-221. **Oleada 0: nadie más toca Storage hasta fusionarla.** |
+| **Dependencias** | SPEC-006, SPEC-221. **Etapa 1: nadie más toca Storage hasta fusionarla.** |
 | **Prioridad** | P1 |
 | **Estimación** | 3 h |
 | **Estado** | Aprobada (2026-11-04, Víctor Chán Morales) |
@@ -114,3 +114,4 @@ Ninguna.
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
+| 2026-11-04 | Claude Code (revisión) | "Oleada 0" pasa a "Etapa 1", como en el catálogo. Aprobado por el coordinador (2026-11-04). |

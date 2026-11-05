@@ -46,8 +46,9 @@ Escenario 4: Solo lectura
   Y una etiqueta indica "Solo lectura"
 
 Escenario 5: Edición
-  Dado un Drive con myLevel = write
+  Dado un Drive con myLevel = write y un usuario que no es tenant_admin
   Entonces se ocultan solo las acciones de borrado definitivo
+  Y un tenant_admin las conserva, aunque su nivel también sea write (ADR-008 §7)
 
 Escenario 6: Rechazo de la API
   Dado 403 DRIVE_PERMISSION_DENIED porque el nivel cambió
@@ -113,3 +114,4 @@ Ninguna.
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
+| 2026-11-04 | Claude Code (revisión) | El tenant_admin conserva el borrado definitivo, como exigen SPEC-224 y ADR-008 §7. Aprobado por el coordinador (2026-11-04). |

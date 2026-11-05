@@ -6,10 +6,13 @@ La API de Nexus está desarrollada en **NestJS + TypeScript** bajo el patrón de
 
 | Módulo | Responsable | Descripción | Exportaciones principales |
 |---|---|---|---|
-| `iam/` | Sebastián | Autenticación, registro, login con Argon2id + JWT, entidades de usuario, organización y membresía. | `IamService`, `JwtModule`, `PassportModule` |
+| `iam/` | Sebastián | Autenticación, registro, login con Argon2id + JWT, entidades de usuario, organización y membresía. | `AuthService`, `JwtModule`, `PassportModule`, `RegistrationHooks`, `MemberAdmission` |
 | `billing/` | Anthony | Catálogo de planes, suscripciones (simuladas) y cálculo de límites de almacenamiento por organización. | `BillingService` |
 | `files/` | Miguel | Gestión de carpetas jerárquicas, metadatos de archivos, control de versiones y verificación de cuota. | `FilesService` |
-| `storage/` | Miguel | Proveedor de almacenamiento compatible con SeaweedFS (S3) (patrón Strategy). | `StorageService` |
+| `storage/` | Miguel | Cliente de almacenamiento compatible con SeaweedFS (S3). SPEC-801 agrega el patrón Strategy. | `StorageService` |
+| `audit/` | Anthony | Eventos con cadena de hashes, su outbox y `GET /audit/events`. | `AuditService` |
+| `integration/` | Anthony | Activación y renovación de suscripciones, que coordinan Billing y Files. | — |
+| `dashboard/` | Víctor | Resumen de organización, plan y uso. | — |
 | `health/` | Víctor | Endpoint de liveness y verificación de PostgreSQL con `@nestjs/terminus`. | `HealthModule` |
 
 ## Comunicación interna entre módulos

@@ -12,7 +12,7 @@
 | **Dependencias** | Ninguna |
 | **Hito Objetivo** | Corte 80% (30-Oct-2026) — **prioridad P2** (ver `specs/README.md`) |
 | **Estimación** | 1.0 h |
-| **Estado** | En revisión (reescrita 2026-10-27 según ADR-007) |
+| **Estado** | Hecho (reescrita 2026-10-27 según ADR-007) |
 
 ---
 

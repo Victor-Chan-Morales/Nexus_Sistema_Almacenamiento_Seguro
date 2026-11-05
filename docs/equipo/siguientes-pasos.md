@@ -1,5 +1,7 @@
 # SIGUIENTES PASOS — GUÍA RÁPIDA (CORTE DEL 80%, VIERNES 30)
 
+> **Documento histórico del corte del 80 %.** No describe el trabajo vigente: el backlog y su orden están en `specs/README.md`, y las decisiones en `docs/decisions/ADR-008-alcance-final.md`.
+
 > **Para compartir por WhatsApp.** Actualizado el 2026-10-27 con **7 h por persona**.
 > **Antes de empezar:** lean `docs/decisions/ADR-007-decisiones-corte-80.md` y la parte de su spec en `CONTRACTS.md` v0.5. Las specs están **En revisión**: no codifiquen una hasta que Víctor la apruebe (hoy, miércoles por la mañana).
 > **Corte de recorte: jueves 12:00.** Lo que no esté iniciado a esa hora pasa al 100%.

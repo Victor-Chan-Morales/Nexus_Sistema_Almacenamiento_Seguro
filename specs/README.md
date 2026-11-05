@@ -13,10 +13,10 @@
 
 | Prioridad | Significado | Specs | Horas estimadas |
 |---|---|:---:|:---:|
-| **P1** | Esencial: completa la propuesta y las decisiones del coordinador | 32 | ~74 |
+| **P1** | Esencial: completa la propuesta y las decisiones del coordinador | 33 | ~75.5 |
 | **P2** | Solo si sobra tiempo | 13 | ~21.5 |
 | **P3** | Opcional | 2 | ~4 |
-| **Total** | | **47** | **~99.5** |
+| **Total** | | **48** | **~101** |
 
 Las horas son estimaciones aproximadas de implementación, sin contar revisión.
 
@@ -29,6 +29,7 @@ Una flecha indica que la spec siguiente espera a que se fusione la anterior. Den
 1. **Etapa 1, secuencial:** 004 → 006 → 221 → 801. **Nadie más toca los módulos `files` ni `storage` del backend hasta que se fusionen 221 y 801.**
 2. **Etapa 2, en paralelo:**
    - Versiones: 206 → 207 → 210.
+   - Carpetas: 218.
    - Enlaces: 209 (tras 206).
    - Equipos: 220.
    - Destinos: 802 → 803 → 804.
@@ -48,13 +49,14 @@ Una flecha indica que la spec siguiente espera a que se fusione la anterior. Den
 
 Todas siguen el flujo normal de aprobación y fusión.
 
-**No ejecutar al mismo tiempo, porque editan las mismas partes de `files.service.ts`:** 215, 222, 224, 803 y 005.
+**No ejecutar al mismo tiempo, porque editan las mismas partes de `files.service.ts`:** 215, 218, 222, 224, 803 y 005.
 
 **Puntos de coordinación:**
 - 005 y 802 comparten el formato de `connection_details_encrypted`.
 - 503 y 803 comparten la entidad de `admin.installation_request`.
 - 108, 112, 114 y 503 editan los repositorios de IAM: fusionar una y actualizar las demás.
 - 214, 207, 217, 212, 213, 223 y 804 editan `file-browser-live.tsx`.
+- 216 y 224 editan `share-links.service.ts`: fusionar una y actualizar la otra.
 
 ---
 
@@ -66,7 +68,7 @@ Todas siguen el flujo normal de aprobación y fusión.
 | `SPEC-002` | ADR-006: cifrado `node:crypto` AES-256-GCM | N1 | RF-004, RF-005, RNF-003 | — | — | ✅ Hecho |
 | `SPEC-003` | Integración continua (GitHub Actions) | N1 | Calidad | — | — | ✅ Hecho |
 | `SPEC-004` | [Alinear los documentos con el alcance final](004-alinear-alcance-final.md) | N1 | Gobernanza | P1 | — | Aprobada |
-| `SPEC-005` | [Rotación de llaves](005-rotacion-llaves.md) | N2 | RF-005 | P1 | 006 | Aprobada |
+| `SPEC-005` | [Rotación de llaves](005-rotacion-llaves.md) | N2 | RF-005 | P1 | 006, 802 | Aprobada |
 | `SPEC-006` | [Pruebas del cifrado](006-pruebas-cifrado.md) | N1 | RF-004, RF-005, RNF-003 | P1 | 004 | Aprobada |
 
 ## 1xx: IAM, Roles y Miembros
@@ -101,13 +103,14 @@ Todas siguen el flujo normal de aprobación y fusión.
 | `SPEC-208` | [Descargar carpeta en ZIP](208-descargar-carpeta-zip.md) | N2 | Usabilidad | P3 | 221 | Aprobada |
 | `SPEC-209` | [Crear, listar y revocar enlaces](209-enlaces-compartidos.md) | N2 | RF-010, RF-011 | P1 | 206 | Aprobada |
 | `SPEC-210` | [Descargar y restaurar una versión](210-descargar-restaurar-version.md) | N2 | RF-008 | P1 | 206, 207 | Aprobada |
-| `SPEC-211` | [Renombrar y mover: backend](211-renombrar-mover.md) | N2 | RF-007 | P2 | 221 | Aprobada |
+| `SPEC-211` | [Renombrar y mover: backend](211-renombrar-mover.md) | N2 | RF-007 | P2 | 221, 224 | Aprobada |
 | `SPEC-212` | [Renombrar y mover: pantalla](212-frontend-renombrar-mover.md) | N1 | RF-007 | P2 | 211 | Aprobada |
 | `SPEC-213` | [Búsqueda global por nombre](213-busqueda-global.md) | N1 | RF-007 | P2 | 221 | Aprobada |
 | `SPEC-214` | [Arrastrar y soltar e íconos por tipo](214-arrastrar-iconos.md) | N1 | UI/UX §8 | P1 | — | Aprobada |
-| `SPEC-215` | [Purga automática a los 30 días](215-purga-automatica.md) | N2 | RF-009, RF-013 | P1 | 004, 407 | Aprobada |
+| `SPEC-215` | [Purga automática a los 30 días](215-purga-automatica.md) | N2 | RF-009, RF-013 | P1 | 221, 407 | Aprobada |
 | `SPEC-216` | [Acceso público al enlace](216-acceso-publico-enlace.md) | N2 | RF-010, RF-011, RF-012 | P1 | 209, 210, 407 | Aprobada |
 | `SPEC-217` | [Pantallas de compartir](217-frontend-compartir.md) | N1 | RF-010, RF-011 | P1 | 209, 216 | Aprobada |
+| `SPEC-218` | [Nombres de carpeta únicos](218-nombres-carpeta-unicos.md) | N2 | RF-007 | P1 | 221 | Aprobada |
 | `SPEC-220` | [Equipos y sus miembros](220-equipos-miembros.md) | N2 | RF-006, RF-003 | P1 | 221 | Aprobada |
 | `SPEC-221` | [Centralizar el acceso a Drives](221-acceso-drive.md) | N2 | RF-006, RF-007, RF-003 | P1 | 006 | Aprobada |
 | `SPEC-222` | [Drive de equipo: lectura](222-drive-equipo-lectura.md) | N2 | RF-006 | P1 | 220, 209, 210 | Aprobada |
@@ -190,3 +193,4 @@ Todas siguen el flujo normal de aprobación y fusión.
 - Un requisito citado en una spec debe existir con ese número en la propuesta (§9). Si no, se cita el curso.
 - Ninguna spec decora endpoints de otro módulo sin indicarlo en sus archivos permitidos.
 - Cada spec define sus eventos de auditoría (ADR-007 §8).
+- El estado de implementación lo indica este catálogo. La cabecera de una spec conserva la fecha de su aprobación.

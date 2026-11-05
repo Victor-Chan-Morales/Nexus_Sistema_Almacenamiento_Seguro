@@ -54,6 +54,7 @@ Sin migración.
 
 - `AccountService` en IAM. Reutilizar `PasswordHasher`, `password-policy.ts` y `SessionRepository.revokeAllActiveOf`, en una transacción.
 - Sumar el intento fallido de SPEC-112 si ya está fusionada.
+- **Error en pantalla:** aquí `401 INVALID_CREDENTIALS` significa contraseña incorrecta, no sesión vencida. La pantalla revisa `code` antes de llamar a `failSession`, que cierra la sesión ante cualquier `401`.
 
 ## 9. Plan de Tareas
 
@@ -84,3 +85,4 @@ Ninguna.
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
+| 2026-11-04 | Claude Code (revisión) | Se aclara cómo distingue la pantalla una contraseña incorrecta de una sesión vencida. Aprobado por el coordinador (2026-11-04). |

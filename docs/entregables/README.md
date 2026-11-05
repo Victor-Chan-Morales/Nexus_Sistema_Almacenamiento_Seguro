@@ -8,13 +8,13 @@
 
 ## 1. Mapeo de Entregables del Curso
 
-| Entregable Académico | Archivo Fuente en Repo | Responsable | Formato Intermedio | Hito Objetivo |
+| Entregable Académico | Archivo Fuente en Repo | Responsable | Formato Intermedio | Estado |
 |---|---|---|:---:|:---:|
-| **1. Requisitos de Software y Casos de Uso** | `docs/entregables/REQUISITOS_CASOS_USO.md` | Víctor Chán | Markdown (Gherkin/Tablas) | 🔴 **80% (30-Oct)** |
-| **2. Paquete de Diagramas UML del Sistema** | `docs/entregables/DIAGRAMAS_UML.md` | Equipo (Miguel/Sebastián) | Mermaid / PlantUML | 🔴 **80% (30-Oct)** |
-| **3. Matriz de Trazabilidad y Pruebas** | `docs/entregables/TRAZABILIDAD_PRUEBAS.md` | Anthony / Equipo | Markdown | 🔵 100% (Nov) |
-| **4. Manual Técnico y de Arquitectura** | `docs/entregables/MANUAL_TECNICO.md` | Víctor Chán | Markdown → PDF | 🔵 100% (Nov) |
-| **5. Manual de Usuario con Capturas** | `docs/entregables/MANUAL_USUARIO.md` | Víctor Chán | Markdown → PDF | 🔵 100% (Nov) |
+| **1. Requisitos de Software y Casos de Uso** | `docs/entregables/REQUISITOS_CASOS_USO.md` | Víctor Chán | Markdown (Gherkin/Tablas) | Borrador |
+| **2. Paquete de Diagramas UML del Sistema** | `docs/entregables/DIAGRAMAS_UML.md` | Equipo (Miguel/Sebastián) | Mermaid / PlantUML | Borrador |
+| **3. Matriz de Trazabilidad y Pruebas** | `docs/entregables/TRAZABILIDAD_PRUEBAS.md` | Anthony / Equipo | Markdown | Pendiente |
+| **4. Manual Técnico y de Arquitectura** | `docs/entregables/MANUAL_TECNICO.md` | Víctor Chán | Markdown → PDF | Pendiente |
+| **5. Manual de Usuario con Capturas** | `docs/entregables/MANUAL_USUARIO.md` | Víctor Chán | Markdown → PDF | Pendiente |
 
 ---
 
@@ -22,7 +22,7 @@
 
 ### 1. Requisitos de Software y Casos de Uso (`REQUISITOS_CASOS_USO.md`)
 - Matriz completa de Requisitos Funcionales (RF-001 a RF-016) traducidos a casos de uso formales.
-- Actores del sistema: Super Admin, Tenant Admin, Colaborador, Auditor. **Super Admin y Auditor se documentan como actores "no implementados en el corte del 80%"** (ADR-007 §3); los casos de uso de Tenant Admin y Colaborador son los que tienen implementación.
+- Actores del sistema: Super Admin, Tenant Admin y Colaborador. El rol Auditor no se implementa (ADR-008 §2), y Super Admin llega con SPEC-501 a 504.
 - Flujos principales y alternativos en formato estándar (Actores, Precondiciones, Flujo Principal, Postcondiciones, Criterios de Aceptación Gherkin).
 - Requisitos No Funcionales (Seguridad, Cifrado, Rendimiento, Disponibilidad, Multitenancy).
 
@@ -40,7 +40,7 @@
 ### 4. Manual Técnico y de Instalación (`MANUAL_TECNICO.md`)
 - Requisitos de entorno (Node.js 22 LTS, Docker, Docker Compose, Git).
 - Guía de configuración paso a paso de variables de entorno (`.env` y `apps/web/.env.local`).
-- Comandos de inicialización de infraestructura, aplicación de migraciones TypeORM y levantamiento de servidores.
+- Comandos de inicialización de infraestructura, aplicación de migraciones con dbmate y levantamiento de servidores.
 - Procedimientos de resolución de problemas comunes (puertos ocupados, variables faltantes, permisos de Docker).
 
 ### 5. Manual de Usuario (`MANUAL_USUARIO.md`)
@@ -57,4 +57,4 @@
 
 ## 3. Entregables de la propuesta §14 aún sin asignar
 
-La propuesta (§14) lista además de lo anterior: **Seguridad** (descripción criptográfica, políticas y resultados de pruebas), **Pruebas** (unitarias, integración, seguridad, rendimiento y aceptación), **Presentación ejecutiva** y **Capacitación**; y el curso §7 pide **diseño de base de datos / modelo entidad-relación** (hoy solo implícito en el diagrama de clases). Ninguno tiene archivo ni responsable en la tabla de arriba. Pendiente de asignar para el 100% (el ADR-006 es la base del documento de Seguridad).
+La propuesta (§14) lista además de lo anterior: **Seguridad** (descripción criptográfica, políticas y resultados de pruebas), **Pruebas** (unitarias, integración, seguridad, rendimiento y aceptación), **Presentación ejecutiva** y **Capacitación**; y el curso §7 pide **diseño de base de datos / modelo entidad-relación** (hoy solo implícito en el diagrama de clases). Ninguno tiene archivo ni responsable en la tabla de arriba. Pendiente de asignar (el ADR-006 es la base del documento de Seguridad).

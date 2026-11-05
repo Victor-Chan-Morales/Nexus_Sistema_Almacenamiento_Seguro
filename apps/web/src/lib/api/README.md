@@ -4,10 +4,10 @@ La base HTTP compartida y los clientes tipados implementan las rutas del contrat
 
 - `client.ts`: transporte JSON/blob, inclusión de cookies, bearer token explícito y normalización de errores.
 - `types.ts`: DTO compartidos para solicitudes y respuestas de los cuatro dominios.
-- `iam.ts`: registro, login y usuario actual.
-- `billing.ts`: catálogo y activación simulada de suscripción.
+- `iam.ts`: registro, verificación, login, sesión y recuperación de contraseña.
+- `billing.ts`: catálogo, activación y renovación simuladas, e historial de operaciones.
 - `dashboard.ts`: resumen del espacio de trabajo.
-- `files.ts`: listado/creación de carpetas, elementos, carga y descarga.
+- `files.ts`: carpetas, elementos, carga, descarga y papelera.
 - `members.ts`: listado y alta de miembros de la organización.
 - `audit.ts`: bitácora de auditoría paginada por cursor (solo administradores).
 
@@ -24,6 +24,6 @@ const session = await login({ email, password });
 const currentUser = await getCurrentUser(session.accessToken);
 ```
 
-El contrato v0.3 de `CONTRACTS.md` incluye verificación de correo, refresh/logout, el esquema de Dashboard y el detalle de archivos. Recuperación de contraseña queda fuera de este corte; no agregues rutas para ella hasta que se aprueben en una versión posterior.
+Las rutas y reglas vigentes están en `CONTRACTS.md`, en la versión que indica su encabezado. No agregues rutas que no estén ahí.
 
 Los datos de maqueta siguen en `demo.ts` y `billing-demo.ts` para prototipos que aún no se migran. Las rutas `/dashboard` y `/archivos` usan los clientes API; sus respuestas no deben mezclarse con los datos locales de maqueta.
