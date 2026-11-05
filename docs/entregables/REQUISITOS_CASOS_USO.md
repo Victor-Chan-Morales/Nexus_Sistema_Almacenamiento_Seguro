@@ -299,7 +299,7 @@ El diagrama de casos de uso está en `DIAGRAMAS_UML.md` (§1).
 | RF-001 | UC-01, 02, 03 | — (implementado) | `POST /auth/register`, `/login`, `/verify-email` | `iam.registration.spec`, `iam.services.spec`, `iam.security.spec` |
 | RF-002 | UC-03, 04 | — | `/auth/refresh`, `/logout`, `/me` | `iam.session.spec`, `iam.security.spec` |
 | RF-003 | UC-06 | 101, 102, 104, 106 | `/organizations/members` · `/configuracion` | `roles.guard.spec`, `members.service.spec`, `members.controller.spec` |
-| RF-004/005 | UC-14, 15 | ADR-006 | `/files/upload`, `/files/:id/download` | **sin prueba dedicada del cifrado** (SPEC-006) |
+| RF-004/005 | UC-14, 15 | ADR-006 | `/files/upload`, `/files/:id/download` | `files-crypto.service.spec` |
 | RF-007 | UC-12, 13 | 001, 201 | `/folders`, `/archivos` | `files.service.spec` |
 | RF-008 | UC-14, 18 | 206, 207, 210 | `/files/:id/versions` | pendiente |
 | RF-009 | UC-16, 17 | 202–205, 215 | `/files/trash`, `/restore`, `/purge` · `/papelera` | `files.trash.spec`, `files.folder-trash.spec` |
@@ -307,7 +307,7 @@ El diagrama de casos de uso está en `DIAGRAMAS_UML.md` (§1).
 | RF-013 | UC-07–11 | 301, 302, 303 | `/plans`, `/subscriptions/*`, `/billing/operations`, `/dashboard` | `billing.service.spec`, `billing.controller.spec`, `subscription.coordinator.spec`, `dashboard.service.spec` |
 | Curso §4.1 recuperación | UC-05 | 103, 105 | `/auth/forgot-password`, `/reset-password` | `iam.password-reset.spec` |
 
-> **Honestidad sobre las pruebas:** el 2026-11-04 había 338 pruebas unitarias en 27 suites, todas en verde. La papelera, la auditoría y el aislamiento entre organizaciones **no tienen aún pruebas de integración**, y el cifrado no tiene prueba dedicada hasta SPEC-006. El documento de trazabilidad completo es SPEC-705.
+> **Honestidad sobre las pruebas:** el 2026-11-04 había 372 pruebas unitarias en 28 suites, todas en verde. El cifrado, la papelera, la auditoría y el aislamiento entre organizaciones **no tienen aún pruebas de integración**. El documento de trazabilidad completo es SPEC-705.
 
 ---
 
