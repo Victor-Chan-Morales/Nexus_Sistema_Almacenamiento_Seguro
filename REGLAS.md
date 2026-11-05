@@ -111,7 +111,7 @@ flowchart LR
 | Si vas a trabajar en... | Debes leer obligatoriamente: |
 |---|---|
 | **Cualquier tarea** | `REGLAS.md`, `docs/sdd/constitucion.md`, `docs/equipo/asignaciones.md`, `specs/README.md` y tu spec |
-| **Decisiones y contratos del corte vigente** | `docs/decisions/ADR-007-decisiones-corte-80.md`, `CONTRACTS.md` (versión indicada en su encabezado) |
+| **Decisiones y contratos del corte vigente** | `docs/decisions/ADR-008-alcance-final.md` (prevalece donde choque), `docs/decisions/ADR-007-decisiones-corte-80.md`, `CONTRACTS.md` (versión indicada en su encabezado) |
 | **Autenticación, Permisos, Usuarios** | `modules/iam/`, `BUSINESS_RULES.md` (§Identidad y organizaciones, §Roles y permisos), `CONTRACTS.md` (§IAM y sesión) |
 | **Archivos, Carpetas, Cifrado, Papelera** | `modules/files/`, `modules/storage/`, `docs/decisions/ADR-006-cifrado-node-crypto-aes-256-gcm.md`, `CONTRACTS.md` (§Files, almacenamiento y errores) |
 | **Planes, Cuotas, Suscripciones** | `modules/billing/`, `modules/integration/`, `BUSINESS_RULES.md` (§Planes, suscripciones y pago simulado) |
