@@ -12,7 +12,7 @@
 | **Dependencias** | SPEC-221 |
 | **Prioridad** | P1 |
 | **Estimación** | 1.0 h |
-| **Estado** | Aprobada (2026-10-31, Víctor Chán Morales) |
+| **Estado** | Implementada (2026-11-05). Aprobada el 2026-10-31 por Víctor Chán Morales |
 
 ---
 
@@ -76,9 +76,9 @@ Modal en SPEC-207.
 
 ## 9. Plan de Tareas
 
-- [ ] **T1 (30 min)**: `listVersions` y DTO.
-- [ ] **T2 (10 min)**: ruta `GET /files/:id/versions`.
-- [ ] **T3 (20 min)**: pruebas (escenarios 1–3).
+- [x] **T1 (30 min)**: `listVersions` y DTO.
+- [x] **T2 (10 min)**: ruta `GET /files/:id/versions`.
+- [x] **T3 (20 min)**: pruebas (escenarios 1–3).
 
 ---
 
@@ -86,7 +86,9 @@ Modal en SPEC-207.
 
 | Criterio | Tipo | Archivo |
 |---|---|---|
-| Escenarios 1–3 | Unitaria | `modules/files/files.service.spec.ts` |
+| Escenarios 1–3 | Unitaria | `modules/files/files.versions.spec.ts` |
+
+Las pruebas van en un spec dedicado, `files.versions.spec.ts`, siguiendo el patrón de `files.trash.spec.ts`.
 
 ---
 
@@ -109,3 +111,4 @@ Ninguna.
 | 2026-10-27 | Víctor Chán | Versión inicial. |
 | 2026-10-27 | Revisión | Campos del contrato (`versionId`, `uploadedAt`); acotado al Drive propio; sin checksum; aclarado que no incluye restauración de versión (el backlog lo prometía). |
 | 2026-11-04 | Víctor Chán Morales | Se actualizan dependencia y prioridad al alcance final (ADR-008); aprobación vigente desde 2026-10-31. |
+| 2026-11-05 | Claude Code | Implementada. Pruebas en files.versions.spec.ts (sección 10). |

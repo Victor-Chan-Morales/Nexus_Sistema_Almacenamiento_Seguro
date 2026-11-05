@@ -46,7 +46,7 @@ Los tipos del frontend viven en `apps/web/src/lib/api/types.ts`. Son tipos de co
 | Files **[v0.5]** | `GET /files/trash` | Bearer token | `{ items: [...], totalItems }` | Miguel |
 | Files **[v0.5]** | `POST /files/:id/restore` | Bearer token | `{ id, name, folderId }` | Miguel |
 | Files **[v0.5]** | `DELETE /files/:id/purge` | Bearer token | `{ id, freedBytes }` | Miguel |
-| Files **[v0.5]** | `GET /files/:id/versions` | Bearer token | `{ fileId, fileName, currentVersion, versions: [...] }`. **Pendiente: la implementa SPEC-206** | Miguel |
+| Files **[v0.5]** | `GET /files/:id/versions` | Bearer token | `{ fileId, fileName, currentVersion, versions: [...] }` | Miguel |
 | Billing **[v0.5]** | `GET /billing/operations` | Bearer token, `tenant_admin` | `{ items: [...] }` | Anthony |
 | Integración **[v0.5]** | `POST /subscriptions/renew` | Bearer token, `tenant_admin`, sin cuerpo | Misma respuesta que `activate` | Anthony |
 | Audit **[v0.5]** | `GET /audit/events` | Bearer token, `tenant_admin`; `?limit&before` | `{ events: [...], nextBefore }` | Anthony |
@@ -199,7 +199,7 @@ Todas estas rutas se acotan al **Drive personal del solicitante** y tratan un re
 - `DELETE /folders/:id` mueve la carpeta y todo su árbol de descendientes a la papelera como una unidad con una fecha de eliminación común. La raíz del Drive no se puede eliminar.
 - `POST /folders/:id/restore` restaura el árbol y los archivos que se eliminaron junto con él; los archivos y subcarpetas que ya estaban eliminados individualmente conservan su fecha y permanecen en la papelera. `409 FOLDER_NAME_CONFLICT` si el nombre raíz está ocupado; `409 PARENT_FOLDER_UNAVAILABLE` si su carpeta contenedora no está activa. Si falla, el árbol sigue en la papelera. **[v0.6, SPEC-215]** Restaurar no vuelve a verificar la cuota.
 - `DELETE /folders/:id/purge` elimina definitivamente la carpeta y todo su contenido, libera la suma de todas las versiones y borra objetos de SeaweedFS después del commit con mejor esfuerzo. La interfaz requiere confirmación explícita.
-- `GET /files/:id/versions` → `{ "fileId", "fileName", "currentVersion", "versions": [{ "versionId", "versionNumber", "sizeBytes", "uploadedAt", "isCurrent" }] }`, de la más reciente a la más antigua. Solo archivos activos. **Pendiente: la implementa SPEC-206.**
+- `GET /files/:id/versions` → `{ "fileId", "fileName", "currentVersion", "versions": [{ "versionId", "versionNumber", "sizeBytes", "uploadedAt", "isCurrent" }] }`, de la más reciente a la más antigua. Solo archivos activos.
 - Cuota **[v0.6, SPEC-215]** (enmienda v0.4 y v0.5 según ADR-008 §9): todo lo que está en la papelera cuenta en la cuota **hasta su eliminación física**. Una tarea periódica purga lo que supera 30 días.
 
 ## Facturación: historial y renovación [v0.5]
