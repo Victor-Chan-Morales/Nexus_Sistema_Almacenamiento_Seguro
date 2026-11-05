@@ -1,19 +1,23 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Destination } from '../files/entities/destination.entity';
 import { StorageService } from './storage.service';
+import { StorageRouter } from './storage-router.service';
 
 /**
  * Módulo STORAGE
  * Responsable: Miguel
  *
- * Encapsula el contrato de almacenamiento de objetos mediante S3.
- * FilesModule lo importa e inyecta StorageService directamente
- * en lugar de hacer llamadas HTTP a un servicio externo.
+ * Encapsula el almacenamiento de objetos mediante S3. FilesModule solo conoce StorageRouter,
+ * que devuelve el almacén (ObjectStorage) del destino de cada operación (SPEC-801).
+ * StorageService no se exporta: es el destino de entorno y lo usa únicamente el router.
  */
 @Module({
-  imports: [ConfigModule],
+  imports: [ConfigModule, TypeOrmModule.forFeature([Destination])],
   providers: [
     StorageService,
+    StorageRouter,
     // Cliente compatible con S3 configurado desde variables de entorno
     {
       provide: 'S3_CLIENT',
@@ -52,6 +56,6 @@ import { StorageService } from './storage.service';
       inject: [ConfigService],
     },
   ],
-  exports: [StorageService],
+  exports: [StorageRouter],
 })
 export class StorageModule {}

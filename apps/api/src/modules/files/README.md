@@ -18,7 +18,7 @@ Cada versión usa una DEK aleatoria y AES-256-GCM. La DEK se protege con una KEK
 
 Configura `FILES_MASTER_KEY` como una llave aleatoria de 32 bytes en base64, entregada por el gestor de secretos del entorno. No la guardes en PostgreSQL ni la reutilices como `JWT_SECRET`. La rotación de la llave maestra debe conservar acceso a las versiones anteriores antes de reemplazar el secreto.
 
-El navegador se comunica únicamente con la API Nexus. `StorageService` encapsula SeaweedFS/S3; los nombres originales nunca forman parte de `object_key` y las credenciales del proveedor no se devuelven a la API.
+El navegador se comunica únicamente con la API Nexus. `StorageRouter` (SPEC-801) entrega el almacén S3 de cada destino (SeaweedFS hoy); los nombres originales nunca forman parte de `object_key` y las credenciales del proveedor no se devuelven a la API.
 
 ## Control de acceso a Drives (SPEC-221)
 

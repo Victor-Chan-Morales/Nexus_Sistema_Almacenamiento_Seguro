@@ -16,7 +16,7 @@ import { randomUUID } from 'crypto';
 import { Readable } from 'stream';
 import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
 import { BillingService } from '../billing/billing.service';
-import { StorageService } from '../storage/storage.service';
+import { StorageRouter } from '../storage/storage-router.service';
 import { Destination } from './entities/destination.entity';
 import { Drive } from './entities/drive.entity';
 import { FileRecord } from './entities/file-record.entity';
@@ -64,6 +64,18 @@ interface StorageUsage {
   totalBytes: bigint;
 }
 
+/** Objeto guardado en un destino concreto (SPEC-801): la clave sola no basta para localizarlo. */
+interface StoredObjectRef {
+  destinationId: string;
+  objectKey: string;
+}
+
+function uniqueStoredObjects(refs: StoredObjectRef[]): StoredObjectRef[] {
+  const seen = new Map<string, StoredObjectRef>();
+  for (const ref of refs) seen.set(ref.destinationId + '\u0000' + ref.objectKey, ref);
+  return [...seen.values()];
+}
+
 interface UploadReservation {
   uploadId: string;
   reservationId: string;
@@ -92,7 +104,7 @@ export class FilesService {
     @InjectRepository(FileVersion)
     private readonly versionRepository: Repository<FileVersion>,
     private readonly dataSource: DataSource,
-    private readonly storageService: StorageService,
+    private readonly storageRouter: StorageRouter,
     private readonly billingService: BillingService,
     private readonly crypto: FilesCryptoService,
     private readonly driveAccess: DriveAccessService,
@@ -297,7 +309,7 @@ export class FilesService {
         connectionStatus: 'Sin comprobar',
         isEnabled: true,
         isDefault: true,
-        bucketOrPrefix: this.storageService.bucketName + '/' + organizationId,
+        bucketOrPrefix: this.storageRouter.defaultBucketName + '/' + organizationId,
         connectionDetailsEncrypted: this.crypto.encryptConnectionDetails(
           organizationId,
           JSON.stringify({
@@ -665,7 +677,7 @@ export class FilesService {
       });
       if (reservation.existingResponse) return reservation.existingResponse;
 
-      let objectKey: string | undefined;
+      let stored: StoredObjectRef | undefined;
       try {
         const uploaded = await this.dataSource.transaction(async (manager) => {
           await this.lockTenantQuota(manager, organizationId);
@@ -707,10 +719,13 @@ export class FilesService {
             bytes,
           );
           const generatedObjectKey = organizationId + '/' + fileRecord.id + '/v' + versionNumber + '/' + randomUUID();
-          objectKey = generatedObjectKey;
 
           const { destination, key } = await this.ensureTenantResources(manager, organizationId);
-          await this.storageService.put(
+          const destinationId = folder.destinationId ?? destination.id;
+          // Se registra antes de escribir: si la escritura falla a medio camino, la compensación lo borra en este destino.
+          stored = { destinationId, objectKey: generatedObjectKey };
+          const storage = await this.storageRouter.forWrite(organizationId, destinationId);
+          await storage.put(
             generatedObjectKey,
             encrypted.bytes,
             encrypted.bytes.length,
@@ -720,7 +735,7 @@ export class FilesService {
           const savedVersion = await versionRepo.save(versionRepo.create({
             fileId: fileRecord.id,
             versionNumber,
-            destinationId: folder.destinationId ?? destination.id,
+            destinationId,
             objectKey: generatedObjectKey,
             sizeBytes: String(fileSize),
             checksum: encrypted.checksum,
@@ -750,7 +765,7 @@ export class FilesService {
           if (!uploadRow) throw new InternalServerErrorException('No se encontró el registro de carga');
           uploadRow.status = 'Disponible';
           uploadRow.receivedSizeBytes = String(fileSize);
-          uploadRow.destinationId = folder.destinationId ?? destination.id;
+          uploadRow.destinationId = destinationId;
           uploadRow.objectKey = generatedObjectKey;
           await uploadRepo.save(uploadRow);
 
@@ -777,13 +792,14 @@ export class FilesService {
 
         return uploaded;
       } catch (error) {
-        const objectDeleted = objectKey
-          ? await this.storageService.delete(objectKey).then(() => true).catch((deleteError) => {
-              this.logger.error('No se pudo limpiar objeto ' + objectKey + ': ' + String(deleteError));
+        const written = stored;
+        const objectDeleted = written
+          ? await this.deleteStoredObject(organizationId, written).then(() => true).catch((deleteError) => {
+              this.logger.error('No se pudo limpiar objeto ' + written.objectKey + ': ' + String(deleteError));
               return false;
             })
           : true;
-        await this.finishFailedUpload(organizationId, reservation, objectKey, objectDeleted);
+        await this.finishFailedUpload(organizationId, reservation, written, objectDeleted);
         if (error instanceof HttpException) throw error;
         this.logger.error('Falló la carga de archivos: ' + String(error));
         throw new InternalServerErrorException('No se pudo completar la carga del archivo');
@@ -893,7 +909,7 @@ export class FilesService {
   private async finishFailedUpload(
     organizationId: string,
     reservationInfo: UploadReservation,
-    objectKey: string | undefined,
+    stored: StoredObjectRef | undefined,
     objectDeleted: boolean,
   ): Promise<void> {
     try {
@@ -914,7 +930,8 @@ export class FilesService {
         const upload = await uploadRepo.findOneBy({ id: reservationInfo.uploadId, organizationId });
         if (upload) {
           upload.status = objectDeleted ? 'Fallida' : 'Limpieza pendiente';
-          upload.objectKey = objectKey ?? null;
+          upload.objectKey = stored?.objectKey ?? null;
+          if (stored) upload.destinationId = stored.destinationId;
           await uploadRepo.save(upload);
         }
 
@@ -1043,7 +1060,8 @@ export class FilesService {
     if (!version) throw new NotFoundException('Versión no encontrada para el archivo ' + fileId);
 
     try {
-      const objectStream = await this.storageService.get(version.objectKey);
+      const storage = await this.storageRouter.forRead(organizationId, version.destinationId);
+      const objectStream = await storage.get(version.objectKey);
       const objectBytes = await this.readStream(objectStream);
       const plaintext = this.crypto.decryptFile(
         organizationId,
@@ -1265,11 +1283,13 @@ export class FilesService {
 
       const usage = await this.readStorageUsage(manager, organizationId);
       await this.writeQuotaCounters(manager, organizationId, usage);
-      const objectKeys = [
-        ...versions.map((version) => version.objectKey),
-        ...uploads.flatMap((upload) => (upload.objectKey ? [upload.objectKey] : [])),
-      ];
-      return { freedBytes, objectKeys: [...new Set(objectKeys)] };
+      const objects = uniqueStoredObjects([
+        ...versions.map((version) => ({ destinationId: version.destinationId, objectKey: version.objectKey })),
+        ...uploads.flatMap((upload) => (
+          upload.objectKey ? [{ destinationId: upload.destinationId, objectKey: upload.objectKey }] : []
+        )),
+      ]);
+      return { freedBytes, objects };
     });
 
     void this.auditService?.logEvent({
@@ -1280,7 +1300,7 @@ export class FilesService {
       resourceId: folderId,
     }).catch(() => {});
 
-    void this.deleteOrphanObjects(purged.objectKeys);
+    void this.deleteOrphanObjects(organizationId, purged.objects);
     return { id: folderId, freedBytes: Number(purged.freedBytes) };
   }
 
@@ -1414,7 +1434,7 @@ export class FilesService {
     }).catch(() => {});
 
     // No se espera al borrado de objetos: la purga ya está confirmada y SeaweedFS no debe bloquear la respuesta
-    void this.deleteOrphanObjects(purged.objectKeys);
+    void this.deleteOrphanObjects(organizationId, purged.objects);
     return { id: fileId, freedBytes: Number(purged.freedBytes) };
   }
 
@@ -1422,7 +1442,7 @@ export class FilesService {
     actor: DriveActor,
     manager: EntityManager,
     fileId: string,
-  ): Promise<{ freedBytes: bigint; objectKeys: string[] }> {
+  ): Promise<{ freedBytes: bigint; objects: StoredObjectRef[] }> {
     const { organizationId } = actor;
     await this.lockTenantQuota(manager, organizationId);
     const located = await this.driveAccess.locateFile(actor, fileId, { manager, lock: true });
@@ -1441,7 +1461,10 @@ export class FilesService {
     await this.removeFileRows(manager, fileId);
     const usage = await this.readStorageUsage(manager, organizationId);
     await this.writeQuotaCounters(manager, organizationId, usage);
-    return { freedBytes, objectKeys: versions.map((version) => version.objectKey) };
+    return {
+      freedBytes,
+      objects: versions.map((version) => ({ destinationId: version.destinationId, objectKey: version.objectKey })),
+    };
   }
 
   /**
@@ -1455,12 +1478,20 @@ export class FilesService {
     await fileRepo.delete({ id: fileId });
   }
 
+  /** Borra un objeto en el destino donde se guardó (lectura y borrado admiten destinos deshabilitados). */
+  private async deleteStoredObject(organizationId: string, object: StoredObjectRef): Promise<void> {
+    const storage = await this.storageRouter.forRead(organizationId, object.destinationId);
+    await storage.delete(object.objectKey);
+  }
+
   /** Borrado de objetos con mejor esfuerzo. Un fallo se registra con su clave; nunca revierte la purga. */
-  private async deleteOrphanObjects(objectKeys: string[]): Promise<void> {
-    const results = await Promise.allSettled(objectKeys.map((key) => this.storageService.delete(key)));
+  private async deleteOrphanObjects(organizationId: string, objects: StoredObjectRef[]): Promise<void> {
+    const results = await Promise.allSettled(
+      objects.map((object) => this.deleteStoredObject(organizationId, object)),
+    );
     results.forEach((result, index) => {
       if (result.status === 'rejected') {
-        this.logger.error('Objeto huérfano tras purga: ' + objectKeys[index]);
+        this.logger.error('Objeto huérfano tras purga: ' + objects[index].objectKey);
       }
     });
   }

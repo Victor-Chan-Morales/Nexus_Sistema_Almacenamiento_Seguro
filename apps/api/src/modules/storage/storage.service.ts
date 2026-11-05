@@ -1,26 +1,25 @@
-import { Injectable, Inject, InternalServerErrorException, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Inject, InternalServerErrorException, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Readable } from 'stream';
 import {
   CreateBucketCommand,
-  DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
-  PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { ObjectStorage, S3ObjectStorage } from './object-storage';
 
 /**
- * StorageService — contrato de almacenamiento de objetos.
+ * StorageService — destino de entorno (SPEC-801).
  *
- * Implementa put / get / delete sobre un proveedor compatible con S3 (SeaweedFS).
- * El patrón Strategy permite intercambiar el proveedor de almacenamiento
- * sin modificar FilesModule (Principio Open/Closed — SOLID).
+ * Usa la configuración S3_* (SeaweedFS hoy) y es el almacén que StorageRouter devuelve
+ * para todo destino cuyas credenciales son referencias `environment:*`.
+ * SPEC-802 añadirá los destinos con credenciales propias, sin cambiar esta clase.
  */
 @Injectable()
-export class StorageService implements OnModuleInit {
+export class StorageService implements ObjectStorage, OnModuleInit {
   private readonly bucket: string;
-  private readonly logger = new Logger(StorageService.name);
+  private readonly objects: S3ObjectStorage;
 
   constructor(
     @Inject('S3_CLIENT') private readonly s3Client: any,
@@ -28,78 +27,31 @@ export class StorageService implements OnModuleInit {
     private readonly config: ConfigService,
   ) {
     this.bucket = this.config.get<string>('S3_BUCKET', 'nexus-dev');
+    this.objects = new S3ObjectStorage(this.s3Client, this.bucket);
   }
 
   get bucketName(): string {
     return this.bucket;
   }
 
-  /**
-   * Guarda un objeto en el almacenamiento S3 / SeaweedFS.
-   * @param objectKey   Clave única del objeto (incluye prefijo de org)
-   * @param stream      Stream o buffer con los bytes del archivo
-   * @param size        Tamaño en bytes (-1 si desconocido)
-   * @param contentType MIME type del archivo
-   */
-  async put(
-    objectKey: string,
-    stream: any,
-    size: number,
-    contentType: string,
-  ): Promise<void> {
-    try {
-      await this.s3Client.send(
-        new PutObjectCommand({
-          Bucket: this.bucket,
-          Key: objectKey,
-          Body: stream,
-          ...(size >= 0 ? { ContentLength: size } : {}),
-          ContentType: contentType,
-        }),
-      );
-    } catch (err: any) {
-      this.logger.error(`No se pudo guardar el objeto en Storage: ${err?.message || err}`);
-      throw new InternalServerErrorException('Error al guardar el objeto en Storage');
-    }
+  /** Guarda un objeto en el bucket de entorno. */
+  put(objectKey: string, body: Buffer, size: number, contentType: string): Promise<void> {
+    return this.objects.put(objectKey, body, size, contentType);
   }
 
-  /**
-   * Devuelve un stream de lectura del objeto almacenado.
-   */
-  async get(objectKey: string): Promise<Readable> {
-    try {
-      const result = await this.s3Client.send(
-        new GetObjectCommand({
-          Bucket: this.bucket,
-          Key: objectKey,
-        }),
-      );
-      return result.Body as Readable;
-    } catch (err: any) {
-      this.logger.error(`No se pudo recuperar el objeto de Storage: ${err?.message || err}`);
-      throw new InternalServerErrorException('Error al recuperar el objeto de Storage');
-    }
+  /** Devuelve un stream de lectura del objeto del bucket de entorno. */
+  get(objectKey: string): Promise<Readable> {
+    return this.objects.get(objectKey);
   }
 
-  /**
-   * Elimina un objeto del almacenamiento.
-   */
-  async delete(objectKey: string): Promise<void> {
-    try {
-      await this.s3Client.send(
-        new DeleteObjectCommand({
-          Bucket: this.bucket,
-          Key: objectKey,
-        }),
-      );
-    } catch (err: any) {
-      this.logger.error(`No se pudo eliminar el objeto de Storage: ${err?.message || err}`);
-      throw new InternalServerErrorException('Error al eliminar el objeto de Storage');
-    }
+  /** Elimina un objeto del bucket de entorno. */
+  delete(objectKey: string): Promise<void> {
+    return this.objects.delete(objectKey);
   }
 
   /**
    * Genera una URL prefirmada temporal para descarga directa.
+   * Se conserva sin uso en la interfaz (SPEC-801, fuera de alcance).
    * @param objectKey Clave del objeto
    * @param expirySeconds Tiempo de validez en segundos (por defecto 1 hora)
    */

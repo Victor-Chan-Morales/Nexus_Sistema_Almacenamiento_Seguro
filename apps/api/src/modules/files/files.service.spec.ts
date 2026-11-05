@@ -1,7 +1,15 @@
 import { HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
+import { Readable } from 'stream';
 import { FilesService } from './files.service';
 import { Drive } from './entities/drive.entity';
 import { Folder } from './entities/folder.entity';
+import { Destination } from './entities/destination.entity';
+import { FileRecord } from './entities/file-record.entity';
+import { FileVersion } from './entities/file-version.entity';
+import { Reservation } from './entities/reservation.entity';
+import { TenantEncryptionKey } from './entities/tenant-encryption-key.entity';
+import { TenantQuota } from './entities/tenant-quota.entity';
+import { Upload } from './entities/upload.entity';
 import { DriveAccessService } from './drive-access.service';
 
 const GB = 1_000_000_000;
@@ -55,13 +63,13 @@ describe('FilesService — cuota y reservas de carga', () => {
       save: jest.fn(),
     });
     const dataSource = { transaction: jest.fn(async (cb: any) => cb(manager)) };
-    const storageService = { put: jest.fn(), bucketName: 'nexus' };
+    const storageRouter = { forWrite: jest.fn(), forRead: jest.fn(), defaultBucketName: 'nexus' };
     const billingService = { getStorageLimitBytes: jest.fn().mockResolvedValue(BigInt(100)) };
 
     const driveAccess = new DriveAccessService({} as never);
     const service = new FilesService(
       {} as never, {} as never, {} as never,
-      dataSource as never, storageService as never, billingService as never, {} as never, driveAccess,
+      dataSource as never, storageRouter as never, billingService as never, {} as never, driveAccess,
     );
     jest.spyOn(service, 'getOrCreateUserDrive').mockResolvedValue({
       id: 'drive-1',
@@ -86,8 +94,152 @@ describe('FilesService — cuota y reservas de carga', () => {
     expect((error as HttpException).getResponse()).toMatchObject({
       code: 'STORAGE_QUOTA_EXCEEDED',
     });
-    expect(storageService.put).not.toHaveBeenCalled();
+    expect(storageRouter.forWrite).not.toHaveBeenCalled();
   });
+});
+
+describe('SPEC-801: compensación de una carga en el destino donde se escribió', () => {
+  const DEFAULT_DESTINATION = 'dest-a';
+  const FOLDER_DESTINATION = 'dest-b';
+
+  const buildUploadService = () => {
+    const rows = (value: unknown) => ({
+      findOne: jest.fn().mockResolvedValue(value),
+      findOneBy: jest.fn().mockResolvedValue(value),
+      find: jest.fn().mockResolvedValue([]),
+      create: jest.fn((data: object) => ({ ...data })),
+      save: jest.fn(async (data: object) => ({ id: 'saved-id', ...data })),
+      update: jest.fn(),
+      delete: jest.fn(),
+    });
+    const repos = new Map<unknown, ReturnType<typeof rows>>([
+      [Destination, rows({ id: DEFAULT_DESTINATION, organizationId: 'org-1', isEnabled: true, isDefault: true })],
+      [TenantEncryptionKey, rows({ id: 'key-1' })],
+      [TenantQuota, rows({ organizationId: 'org-1' })],
+      [Reservation, rows({ id: 'res-1', status: 'active' })],
+      [Upload, rows(null)],
+      [FileRecord, rows(null)],
+      [FileVersion, rows(null)],
+    ]);
+    repos.get(Upload)!.findOneBy.mockResolvedValue({ id: 'saved-id', organizationId: 'org-1', status: 'Pendiente' });
+    // Fallo de base de datos después de que el objeto ya está en el almacén.
+    repos.get(FileVersion)!.save.mockRejectedValue(new Error('conexión perdida'));
+    const manager = {
+      query: jest.fn().mockResolvedValue([]),
+      getRepository: jest.fn((entity: unknown) => repos.get(entity)),
+    };
+    const dataSource = {
+      transaction: jest.fn(async (cb: (m: unknown) => Promise<unknown>) => cb(manager)),
+    };
+    const storage = { put: jest.fn().mockResolvedValue(undefined) };
+    const cleanup = { delete: jest.fn().mockResolvedValue(undefined) };
+    const storageRouter = {
+      forWrite: jest.fn().mockResolvedValue(storage),
+      forRead: jest.fn().mockResolvedValue(cleanup),
+      defaultBucketName: 'nexus',
+    };
+    const crypto = {
+      encryptFile: jest.fn().mockReturnValue({
+        bytes: Buffer.from('cifrado'),
+        checksum: 'sum',
+        encryptedDek: 'dek',
+        formatVersion: 1,
+      }),
+    };
+    const billingService = { getStorageLimitBytes: jest.fn().mockResolvedValue(BigInt(1_000_000)) };
+    const driveAccess = new DriveAccessService({} as never);
+    const service = new FilesService(
+      {} as never, {} as never, {} as never,
+      dataSource as never, storageRouter as never, billingService as never, crypto as never, driveAccess,
+    );
+    jest.spyOn(service, 'getOrCreateUserDrive').mockResolvedValue({
+      id: 'drive-1',
+      name: 'Mi unidad',
+      rootFolderId: 'folder-root',
+    });
+    jest.spyOn(driveAccess, 'requireFolder').mockResolvedValue({
+      folder: { id: 'folder-1', destinationId: FOLDER_DESTINATION } as never,
+      access: { drive: { id: 'drive-1' } as never, level: 'owner' },
+    });
+    return { service, storageRouter, storage, cleanup, repos };
+  };
+
+  it('si la versión no se puede guardar tras escribir el objeto, lo borra en el destino de la carpeta', async () => {
+    const { service, storageRouter, storage, cleanup, repos } = buildUploadService();
+
+    await expect(service.uploadMultipartFile({
+      organizationId: 'org-1',
+      ownerId: 'user-1',
+      folderId: 'folder-1',
+      file: { originalname: 'informe.pdf', mimetype: 'application/pdf', buffer: Buffer.from('%PDF-1.4') },
+    })).rejects.toThrow('No se pudo completar la carga del archivo');
+
+    const writtenKey = storage.put.mock.calls[0][0];
+    expect(storageRouter.forWrite).toHaveBeenCalledWith('org-1', FOLDER_DESTINATION);
+    expect(storageRouter.forRead).toHaveBeenCalledWith('org-1', FOLDER_DESTINATION);
+    expect(storageRouter.forRead).not.toHaveBeenCalledWith('org-1', DEFAULT_DESTINATION);
+    expect(cleanup.delete).toHaveBeenCalledWith(writtenKey);
+
+    const uploadSaves = repos.get(Upload)!.save.mock.calls.map(([data]) => data as Record<string, unknown>);
+    expect(uploadSaves.at(-1)).toMatchObject({
+      status: 'Fallida',
+      destinationId: FOLDER_DESTINATION,
+      objectKey: writtenKey,
+    });
+  });
+});
+
+describe('SPEC-801: almacén por destino de la versión', () => {
+  const buildDownloadService = (destinationId: string) => {
+    const qb: Record<string, unknown> = {};
+    for (const method of ['innerJoin', 'where', 'andWhere']) qb[method] = jest.fn(() => qb);
+    qb.getOne = jest.fn().mockResolvedValue({
+      id: 'file-1',
+      name: 'informe.pdf',
+      mimeType: 'application/pdf',
+      currentVersionId: 'v-1',
+    });
+    const fileRepository = { createQueryBuilder: jest.fn(() => qb) };
+    const versionRepository = {
+      findOne: jest.fn().mockResolvedValue({
+        id: 'v-1',
+        fileId: 'file-1',
+        versionNumber: 1,
+        destinationId,
+        objectKey: 'org-1/file-1/v1/uuid',
+        encryptedDek: 'dek',
+        checksum: 'sum',
+      }),
+    };
+    const storage = {
+      get: jest.fn().mockResolvedValue(Readable.from([Buffer.from('cifrado')])),
+    };
+    const storageRouter = { forRead: jest.fn().mockResolvedValue(storage), forWrite: jest.fn() };
+    const crypto = { decryptFile: jest.fn().mockReturnValue(Buffer.from('texto plano')) };
+    const driveAccess = new DriveAccessService({} as never);
+    jest.spyOn(driveAccess, 'findDrive').mockResolvedValue({
+      drive: { id: 'drive-1' } as never,
+      level: 'owner',
+    });
+    const service = new FilesService(
+      fileRepository as never, {} as never, versionRepository as never,
+      {} as never, storageRouter as never, {} as never, crypto as never, driveAccess,
+    );
+    return { service, storageRouter, storage };
+  };
+
+  it.each(['dest-a', 'dest-b'])(
+    'escenario 2: la versión se lee con el proveedor de su destination_id (%s)',
+    async (destinationId) => {
+      const { service, storageRouter, storage } = buildDownloadService(destinationId);
+
+      const download = await service.downloadFileStream('file-1', 'org-1', 'user-1');
+
+      expect(storageRouter.forRead).toHaveBeenCalledWith('org-1', destinationId);
+      expect(storage.get).toHaveBeenCalledWith('org-1/file-1/v1/uuid');
+      expect(download.name).toBe('informe.pdf');
+    },
+  );
 });
 
 /**
