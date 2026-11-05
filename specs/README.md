@@ -112,7 +112,7 @@ Todas siguen el flujo normal de aprobación y fusión.
 | `SPEC-217` | [Pantallas de compartir](217-frontend-compartir.md) | N1 | RF-010, RF-011 | P1 | 209, 216 | Aprobada |
 | `SPEC-218` | [Nombres de carpeta únicos](218-nombres-carpeta-unicos.md) | N2 | RF-007 | P1 | 221 | Aprobada |
 | `SPEC-220` | [Equipos y sus miembros](220-equipos-miembros.md) | N2 | RF-006, RF-003 | P1 | 221 | Aprobada |
-| `SPEC-221` | [Centralizar el acceso a Drives](221-acceso-drive.md) | N2 | RF-006, RF-007, RF-003 | P1 | 006 | Aprobada |
+| `SPEC-221` | [Centralizar el acceso a Drives](221-acceso-drive.md) | N2 | RF-006, RF-007, RF-003 | P1 | 006 | ✅ Hecho |
 | `SPEC-222` | [Drive de equipo: lectura](222-drive-equipo-lectura.md) | N2 | RF-006 | P1 | 220, 209, 210 | Aprobada |
 | `SPEC-223` | [Pantallas de equipos](223-frontend-equipos.md) | N1 | RF-006 | P1 | 224 | Aprobada |
 | `SPEC-224` | [Drive de equipo: edición](224-drive-equipo-edicion.md) | N2 | RF-006, RF-009 | P1 | 222 | Aprobada |

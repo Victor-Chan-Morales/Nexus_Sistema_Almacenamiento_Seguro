@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { FilesService } from './files.service';
+import { DriveAccessService } from './drive-access.service';
 import { Destination } from './entities/destination.entity';
 import { Drive } from './entities/drive.entity';
 import { FileRecord } from './entities/file-record.entity';
@@ -119,6 +120,7 @@ function buildService({
     storage as never,
     billing as never,
     {} as never,
+    new DriveAccessService(dataSource as never),
     audit as never,
   );
   return { service, folderRepo, fileRepo, versionRepo, uploadRepo, manager, dataSource, storage, billing, audit };

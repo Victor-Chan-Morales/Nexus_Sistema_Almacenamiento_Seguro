@@ -1,5 +1,8 @@
-import { HttpException, HttpStatus } from '@nestjs/common';
+import { HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
 import { FilesService } from './files.service';
+import { Drive } from './entities/drive.entity';
+import { Folder } from './entities/folder.entity';
+import { DriveAccessService } from './drive-access.service';
 
 const GB = 1_000_000_000;
 
@@ -31,7 +34,7 @@ describe('FilesService — cuota y reservas de carga', () => {
     const manager = buildManager({ usedBytes: 2 * GB, reservedBytes: 1 * GB });
     const service = new FilesService(
       {} as never, {} as never, {} as never,
-      {} as never, {} as never, {} as never, {} as never,
+      {} as never, {} as never, {} as never, {} as never, {} as never,
     );
 
     const usage = await service.getTotalStorageUsage('org-1', manager as never);
@@ -55,17 +58,18 @@ describe('FilesService — cuota y reservas de carga', () => {
     const storageService = { put: jest.fn(), bucketName: 'nexus' };
     const billingService = { getStorageLimitBytes: jest.fn().mockResolvedValue(BigInt(100)) };
 
+    const driveAccess = new DriveAccessService({} as never);
     const service = new FilesService(
       {} as never, {} as never, {} as never,
-      dataSource as never, storageService as never, billingService as never, {} as never,
+      dataSource as never, storageService as never, billingService as never, {} as never, driveAccess,
     );
     jest.spyOn(service, 'getOrCreateUserDrive').mockResolvedValue({
       id: 'drive-1',
       name: 'Mi unidad',
       rootFolderId: 'folder-root',
     });
-    jest.spyOn(service as never as { requirePersonalFolder: () => unknown }, 'requirePersonalFolder')
-      .mockResolvedValue({ id: 'folder-1' } as never);
+    jest.spyOn(driveAccess, 'requireFolder')
+      .mockResolvedValue({ folder: { id: 'folder-1' } as never, access: { drive: { id: 'drive-1' } as never, level: 'owner' } });
 
     const buffer = Buffer.from('%PDF-1.4 contenido de prueba'); // 28 bytes: 90 + 28 > 100
     const error = await service
@@ -107,15 +111,16 @@ describe('FilesService — tamaño de carpetas', () => {
       find: jest.fn().mockResolvedValue([folderEntity('hija-a', 'raiz'), folderEntity('hija-b', 'raiz')]),
     };
     const fileRepository = { find: jest.fn().mockResolvedValue([]) };
+    const driveAccess = new DriveAccessService({} as never);
     const service = new FilesService(
       fileRepository as never, folderRepository as never, {} as never,
-      dataSource as never, {} as never, {} as never, {} as never,
+      dataSource as never, {} as never, {} as never, {} as never, driveAccess,
     );
     jest.spyOn(service, 'getOrCreateUserDrive').mockResolvedValue({
       id: 'drive-1', name: 'Mi unidad', rootFolderId: 'raiz',
     });
-    jest.spyOn(service as never as { requirePersonalFolder: () => unknown }, 'requirePersonalFolder')
-      .mockResolvedValue(folderEntity('raiz', null) as never);
+    jest.spyOn(driveAccess, 'requireFolder')
+      .mockResolvedValue({ folder: folderEntity('raiz', null) as never, access: { drive: { id: 'drive-1' } as never, level: 'owner' } });
     return { service, dataSource };
   };
 
@@ -162,5 +167,147 @@ describe('FilesService — tamaño de carpetas', () => {
     expect(sql).toContain('current_version_id');
     // UNION (sin ALL) descarta pares repetidos y evita la recursión infinita ante un ciclo.
     expect(sql).not.toContain('UNION ALL');
+  });
+});
+
+/**
+ * SPEC-221, sección 10 (escenario 3 por operación): un Drive ajeno responde 404 en cada operación y
+ * no se escribe nada. Los repositorios filtran por los campos del `where`, como la consulta real: si
+ * el servicio olvida el `driveId` del solicitante, la carpeta ajena se encuentra y la prueba falla.
+ */
+const SPEC221_ORG = 'org-1';
+const SPEC221_USER = 'user-1';
+
+const fakeRepo = <T extends Record<string, unknown>>(rows: T[]) => ({
+  findOne: jest.fn(async ({ where }: { where: Record<string, unknown> }) =>
+    rows.find((row) => Object.entries(where).every(([key, value]) =>
+      (value !== null && typeof value === 'object') || row[key] === value)) ?? null),
+  find: jest.fn(async () => []),
+  exists: jest.fn(),
+  save: jest.fn(),
+  create: jest.fn(),
+  delete: jest.fn(),
+  update: jest.fn(),
+});
+
+const buildForeignDriveService = () => {
+  const ownDrive = {
+    id: 'drive-1', organizationId: SPEC221_ORG, ownerUserId: SPEC221_USER, teamId: null,
+    type: 'personal', name: 'Mi espacio', createdAt: new Date(0),
+  };
+  const foreignFolder = {
+    id: 'folder-ajena', organizationId: SPEC221_ORG, driveId: 'drive-2', parentId: 'root-2',
+    name: 'Ajena', isDeleted: false, destinationId: 'dest-1', createdAt: new Date(0),
+  };
+  const foreignFile = {
+    id: 'file-ajeno', organizationId: SPEC221_ORG, folderId: 'folder-ajena', name: 'secreto.pdf',
+    mimeType: 'application/pdf', isDeleted: false, currentVersionId: 'v-1',
+  };
+  const driveRepo = fakeRepo([ownDrive]);
+  const folderRepo = fakeRepo([foreignFolder]);
+  const fileRepo = { ...fakeRepo([foreignFile]), createQueryBuilder: jest.fn() };
+  const qb: Record<string, jest.Mock> = {};
+  for (const method of ['innerJoin', 'where', 'andWhere']) qb[method] = jest.fn().mockReturnValue(qb);
+  qb.getOne = jest.fn().mockResolvedValue(null);
+  fileRepo.createQueryBuilder.mockReturnValue(qb);
+
+  const repoFor = (entity: unknown) =>
+    entity === Drive ? driveRepo : entity === Folder ? folderRepo : fileRepo;
+  const manager = { query: jest.fn().mockResolvedValue([]), getRepository: jest.fn(repoFor) };
+  const dataSource = {
+    getRepository: jest.fn(repoFor),
+    transaction: jest.fn(async (callback: (m: unknown) => Promise<unknown>) => callback(manager)),
+  };
+  const storage = { put: jest.fn(), get: jest.fn(), delete: jest.fn() };
+  const service = new FilesService(
+    fileRepo as never,
+    folderRepo as never,
+    {} as never,
+    dataSource as never,
+    storage as never,
+    {} as never,
+    {} as never,
+    new DriveAccessService(dataSource as never),
+  );
+  jest.spyOn(service, 'getOrCreateUserDrive').mockResolvedValue({
+    id: 'drive-1', name: 'Mi espacio', rootFolderId: 'root-1',
+  });
+  return { service, folderRepo, fileRepo, qb, dataSource, storage, manager };
+};
+
+describe('SPEC-221: un Drive ajeno responde 404 en cada operación', () => {
+  it('listFolders no lista la carpeta de otro Drive', async () => {
+    const { service, folderRepo } = buildForeignDriveService();
+
+    await expect(service.listFolders(SPEC221_ORG, SPEC221_USER, 'folder-ajena')).rejects.toBeInstanceOf(NotFoundException);
+    expect(folderRepo.find).not.toHaveBeenCalled();
+  });
+
+  it('getFolderItems no expone el contenido de la carpeta de otro Drive', async () => {
+    const { service, folderRepo, fileRepo } = buildForeignDriveService();
+
+    await expect(service.getFolderItems(SPEC221_ORG, SPEC221_USER, 'folder-ajena')).rejects.toBeInstanceOf(NotFoundException);
+    expect(folderRepo.find).not.toHaveBeenCalled();
+    expect(fileRepo.find).not.toHaveBeenCalled();
+  });
+
+  it('listFiles no lista los archivos de la carpeta de otro Drive', async () => {
+    const { service, fileRepo } = buildForeignDriveService();
+
+    await expect(service.listFiles(SPEC221_ORG, SPEC221_USER, 'folder-ajena')).rejects.toBeInstanceOf(NotFoundException);
+    expect(fileRepo.find).not.toHaveBeenCalled();
+  });
+
+  it('createFolder no crea una subcarpeta dentro de la carpeta de otro Drive', async () => {
+    const { service, folderRepo } = buildForeignDriveService();
+    jest.spyOn(service as never as { ensureUserDrive: () => unknown }, 'ensureUserDrive').mockResolvedValue({
+      id: 'drive-1', name: 'Mi espacio', rootFolderId: 'root-1',
+    } as never);
+
+    await expect(service.createFolder(SPEC221_ORG, SPEC221_USER, 'Nueva', 'folder-ajena')).rejects.toBeInstanceOf(NotFoundException);
+    expect(folderRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('uploadMultipartFile no sube archivos a la carpeta de otro Drive ni reserva cuota', async () => {
+    const { service, dataSource, storage } = buildForeignDriveService();
+
+    const error = await service.uploadMultipartFile({
+      organizationId: SPEC221_ORG,
+      ownerId: SPEC221_USER,
+      folderId: 'folder-ajena',
+      file: { originalname: 'informe.pdf', mimetype: 'application/pdf', buffer: Buffer.from('%PDF-1.4 contenido') },
+    }).catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(NotFoundException);
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+    expect(storage.put).not.toHaveBeenCalled();
+  });
+
+  it('downloadFileStream filtra por el Drive del solicitante y responde 404 al archivo ajeno', async () => {
+    const { service, qb, storage } = buildForeignDriveService();
+
+    await expect(service.downloadFileStream('file-ajeno', SPEC221_ORG, SPEC221_USER)).rejects.toBeInstanceOf(NotFoundException);
+    expect(qb.andWhere).toHaveBeenCalledWith('folder.driveId = :driveId', { driveId: 'drive-1' });
+    expect(storage.get).not.toHaveBeenCalled();
+  });
+
+  it('softDelete filtra por el Drive del solicitante y no marca el archivo ajeno', async () => {
+    const { service, qb, fileRepo } = buildForeignDriveService();
+
+    await expect(service.softDelete('file-ajeno', SPEC221_ORG, SPEC221_USER)).rejects.toBeInstanceOf(NotFoundException);
+    expect(qb.andWhere).toHaveBeenCalledWith('folder.driveId = :driveId', { driveId: 'drive-1' });
+    expect(fileRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('softDeleteFolder no mueve a la papelera la carpeta de otro Drive', async () => {
+    const { service, folderRepo, manager } = buildForeignDriveService();
+
+    await expect(service.softDeleteFolder('folder-ajena', SPEC221_ORG, SPEC221_USER)).rejects.toBeInstanceOf(NotFoundException);
+    expect(folderRepo.findOne).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: 'folder-ajena', driveId: 'drive-1' }),
+    }));
+    // El bloqueo de cuota sí se ejecuta dentro de la transacción; lo que no debe ocurrir es escribir en carpetas o archivos.
+    const writes = manager.query.mock.calls.filter(([sql]) => /UPDATE files\.(folder|file)\b/.test(String(sql)));
+    expect(writes).toHaveLength(0);
   });
 });

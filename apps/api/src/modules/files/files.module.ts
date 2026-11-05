@@ -16,6 +16,7 @@ import { Reservation } from './entities/reservation.entity';
 import { TenantQuota } from './entities/tenant-quota.entity';
 import { Upload } from './entities/upload.entity';
 import { FilesCryptoService } from './files-crypto.service';
+import { DriveAccessService } from './drive-access.service';
 
 /**
  * Módulo FILES
@@ -43,7 +44,7 @@ import { FilesCryptoService } from './files-crypto.service';
     BillingModule, // Para verificar cuota de almacenamiento
   ],
   controllers: [FoldersController, FilesController],
-  providers: [FilesService, FilesCryptoService, PersonalDriveHook],
+  providers: [FilesService, FilesCryptoService, DriveAccessService, PersonalDriveHook],
   exports: [FilesService],
 })
 export class FilesModule {}

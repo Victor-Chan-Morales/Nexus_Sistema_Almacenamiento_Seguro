@@ -1,5 +1,7 @@
 import { HttpException, Logger, NotFoundException } from '@nestjs/common';
 import { FilesService } from './files.service';
+import { DriveAccessService } from './drive-access.service';
+import { Drive } from './entities/drive.entity';
 import { FileVersion } from './entities/file-version.entity';
 import { FileRecord } from './entities/file-record.entity';
 import { Folder } from './entities/folder.entity';
@@ -52,6 +54,7 @@ const buildService = ({
     {} as never,
     {} as never,
     {} as never,
+    new DriveAccessService(dataSource as never),
   );
   return { service, qb, driveRepository, dataSource, fileRepository };
 };
@@ -227,6 +230,7 @@ const buildRestoreService = ({
       return [];
     }),
     getRepository: jest.fn((entity: unknown) => {
+      if (entity === Drive) return driveRepo;
       if (entity === FileRecord) return fileRepo;
       if (entity === FileVersion) return versionRepo;
       return folderRepo;
@@ -245,6 +249,7 @@ const buildRestoreService = ({
     {} as never,
     billing as never,
     {} as never,
+    new DriveAccessService(dataSource as never),
     audit as unknown as AuditService,
   );
   return { service, fileRepo, folderRepo, manager, audit, billing };
@@ -445,6 +450,7 @@ const buildPurgeService = ({
   const manager = {
     query: jest.fn().mockResolvedValue([]),
     getRepository: jest.fn((entity: unknown) => {
+      if (entity === Drive) return driveRepo;
       if (entity === FileRecord) return fileRepo;
       if (entity === FileVersion) return versionRepo;
       return folderRepo;
@@ -474,6 +480,7 @@ const buildPurgeService = ({
     storage as never,
     {} as never,
     {} as never,
+    new DriveAccessService(dataSource as never),
     audit as unknown as AuditService,
   );
   return { service, fileRepo, versionRepo, manager, storage, audit, dataSource };

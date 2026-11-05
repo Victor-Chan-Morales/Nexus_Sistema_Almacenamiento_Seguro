@@ -4,6 +4,7 @@ import { NotFoundException } from '@nestjs/common';
 import { Response } from 'express';
 import { PassThrough, Readable } from 'stream';
 import { FilesService } from './files.service';
+import { DriveAccessService } from './drive-access.service';
 import { FilesController } from './files.controller';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction, AuditResource } from '../audit/audit.types';
@@ -11,6 +12,7 @@ import { FileRecord } from './entities/file-record.entity';
 
 describe('SPEC-405: Files Audit Hooks', () => {
   let filesService: FilesService;
+  let driveAccess: DriveAccessService;
   let filesController: FilesController;
   let mockAuditService: { logEvent: jest.Mock };
   let mockFileRepo: { createQueryBuilder: jest.Mock; save: jest.Mock };
@@ -32,6 +34,12 @@ describe('SPEC-405: Files Audit Hooks', () => {
       transaction: jest.fn(),
     };
 
+    // Drive personal del solicitante para SPEC-221; la lectura del Drive devuelve un Drive propio.
+    driveAccess = new DriveAccessService({
+      getRepository: () => ({
+        findOne: jest.fn().mockResolvedValue({ id: 'drive-1', name: 'Drive', rootFolderId: 'root-1' }),
+      }),
+    } as never);
     filesService = new FilesService(
       mockFileRepo as never,
       {} as never,
@@ -40,6 +48,7 @@ describe('SPEC-405: Files Audit Hooks', () => {
       { delete: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never,
       {} as never,
+      driveAccess,
       mockAuditService as unknown as AuditService,
     );
 
@@ -61,7 +70,10 @@ describe('SPEC-405: Files Audit Hooks', () => {
         name: 'Drive',
         rootFolderId: 'root-1',
       });
-      jest.spyOn(filesService as any, 'requirePersonalFolder').mockResolvedValue({ id: folderId });
+      jest.spyOn(driveAccess, 'requireFolder').mockResolvedValue({
+        folder: { id: folderId } as never,
+        access: { drive: { id: 'drive-1' } as never, level: 'owner' },
+      });
       jest.spyOn(filesService as any, 'reserveUpload').mockResolvedValue({
         reservationId: 'res-1',
         uploadId: 'up-1',
@@ -105,7 +117,10 @@ describe('SPEC-405: Files Audit Hooks', () => {
         name: 'Drive',
         rootFolderId: 'root-1',
       });
-      jest.spyOn(filesService as any, 'requirePersonalFolder').mockResolvedValue({ id: 'folder-1' });
+      jest.spyOn(driveAccess, 'requireFolder').mockResolvedValue({
+        folder: { id: 'folder-1' } as never,
+        access: { drive: { id: 'drive-1' } as never, level: 'owner' },
+      });
       jest.spyOn(filesService as any, 'reserveUpload').mockResolvedValue({
         reservationId: 'res-1',
         uploadId: 'up-1',
@@ -137,7 +152,10 @@ describe('SPEC-405: Files Audit Hooks', () => {
         name: 'Drive',
         rootFolderId: 'root-1',
       });
-      jest.spyOn(filesService as any, 'requirePersonalFolder').mockResolvedValue({ id: 'folder-1' });
+      jest.spyOn(driveAccess, 'requireFolder').mockResolvedValue({
+        folder: { id: 'folder-1' } as never,
+        access: { drive: { id: 'drive-1' } as never, level: 'owner' },
+      });
       jest.spyOn(filesService as any, 'reserveUpload').mockResolvedValue({
         reservationId: 'res-1',
         uploadId: 'up-1',
