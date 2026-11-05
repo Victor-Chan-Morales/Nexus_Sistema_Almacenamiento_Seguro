@@ -30,6 +30,10 @@ El navegador se comunica únicamente con la API Nexus. `StorageRouter` (SPEC-801
 
 Todas las búsquedas filtran por organización y propietario. Los Drives de equipo y sus niveles `read`/`write` llegarán con SPEC-220 a 224.
 
+## Historial de versiones (SPEC-206)
+
+`GET /files/:id/versions` lista las versiones de un archivo del Drive personal del solicitante, de la más reciente a la más antigua. Solo considera archivos activos; los ajenos, de otra organización, inexistentes o en papelera responden 404. La respuesta no incluye `object_key`, `encrypted_dek`, `kek_id` ni `checksum`. Es solo lectura: la descarga y la restauración de versiones están en SPEC-210.
+
 ## Alcance actual
 
 - Solo se expone el Drive personal del usuario autenticado; cada búsqueda valida organización y `drive_id` derivado del JWT.

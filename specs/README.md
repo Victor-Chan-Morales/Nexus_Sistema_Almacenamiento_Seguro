@@ -98,7 +98,7 @@ Todas siguen el flujo normal de aprobación y fusión.
 | `SPEC-203` | Restaurar de la papelera | N2 | RF-009 | — | — | ✅ Hecho |
 | `SPEC-204` | Purga definitiva | N2 | RF-009, RF-013 | — | — | ✅ Hecho |
 | `SPEC-205` | Frontend: papelera | N1 | RF-009 | — | — | ✅ Hecho |
-| `SPEC-206` | [Listar versiones](206-historial-versiones.md) | N1 | RF-008 | P1 | 221 | Aprobada |
+| `SPEC-206` | [Listar versiones](206-historial-versiones.md) | N1 | RF-008 | P1 | 221 | ✅ Hecho |
 | `SPEC-207` | [Modal de versiones](207-frontend-historial-versiones.md) | N1 | RF-008 | P1 | 206 | Aprobada |
 | `SPEC-208` | [Descargar carpeta en ZIP](208-descargar-carpeta-zip.md) | N2 | Usabilidad | P3 | 221 | Aprobada |
 | `SPEC-209` | [Crear, listar y revocar enlaces](209-enlaces-compartidos.md) | N2 | RF-010, RF-011 | P1 | 206 | Aprobada |
