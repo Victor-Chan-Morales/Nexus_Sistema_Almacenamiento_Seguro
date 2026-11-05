@@ -1,136 +1,192 @@
 # BACKLOG GENERAL DE ESPECIFICACIONES — NEXUS
 
 > **Sistema de Almacenamiento Seguro Híbrido (PaaS/STaaS)**
-> Catálogo de todo el trabajo pendiente. **Corte del 80%: viernes 30 de octubre de 2026** (decisión del coordinador, 2026-10-27). El alcance "100%" queda para la primera semana de noviembre.
 >
-> - **Decisiones vigentes:** `docs/decisions/ADR-007-decisiones-corte-80.md`.
-> - **Contratos:** `CONTRACTS.md` **v0.5 (aprobada el 2026-10-28)**. Las PR ya pueden implementar sus rutas, una vez que Víctor apruebe la spec correspondiente.
+> - **Decisiones vigentes:** `docs/decisions/ADR-008-alcance-final.md`, junto con ADR-002, ADR-003, ADR-006 y ADR-007.
+> - **Contratos:** `CONTRACTS.md`. Cada spec nueva agrega sus rutas a la sección **v0.6** antes de programar.
 > - **Numeración de requisitos:** la de la propuesta (RF-001…RF-016, RNF-001…RNF-011). Lo que exige el curso y la propuesta no numera se cita como "Curso §4.1/§4.2".
-> - **Estado:** todas las specs reescritas el 2026-10-27 quedan **En revisión** hasta que Víctor las marque Aprobada.
+> - **Estado:** el coordinador aprobó las specs pendientes el 2026-11-04. Aún no tienen responsable asignado, salvo las que ya lo indicaban.
 
 ---
 
-## Prioridades del corte del 80%
+## Prioridades del alcance final
 
-**Capacidad real confirmada (2026-10-27): ~7 h por persona hasta el viernes = 28 h.** Esa cifra define el corte.
+| Prioridad | Significado | Specs | Horas estimadas |
+|---|---|:---:|:---:|
+| **P1** | Esencial: completa la propuesta y las decisiones del coordinador | 32 | ~74 |
+| **P2** | Solo si sobra tiempo | 13 | ~21.5 |
+| **P3** | Opcional | 2 | ~4 |
+| **Total** | | **47** | **~99.5** |
 
-| Prioridad | Significado | Specs |
-|---|---|:---:|
-| **P1** | Imprescindible: requisitos obligatorios del curso (roles, recuperación de contraseña, historial y renovación) más la auditoría (RF-012) | 15 |
-| **P2** | Solo si sobra tiempo; si no, pasa al 100% y se declara en la exposición. **Incluye la papelera completa** (202–205) y versiones (206, 207) y perfil (601) | 7 |
+Las horas son estimaciones aproximadas de implementación, sin contar revisión.
 
-**Cuentas:** las tareas P1 de las specs suman ~23 h de implementación (101 2.0 · 102 2.5 · 103 3.0 · 104 1.0 · 105 1.5 · 106 1.5 · 301 2.0 · 302 1.5 · 303 1.5 · 401 2.5 · 402 1.5 · 403 1.5 · 405 1.3). Las ~5 h restantes de los 28 h son de Víctor: aprobar contrato y specs, revisar ~15 PR y el recorrido de punta a punta. Las specs 701/702 (documentos) **no tienen horas asignadas** (ver `docs/equipo/asignaciones.md`). P2 suma ~10 h y solo entra con holgura.
+**Orden de recorte si hiciera falta:** P3 → P2 → SPEC-005 y SPEC-404.
+
+## Orden de ejecución
+
+Una flecha indica que la spec siguiente espera a que se fusione la anterior. Dentro de una misma etapa, cada línea puede avanzar en paralelo.
+
+1. **Etapa 1, secuencial:** 004 → 006 → 221 → 801. **Nadie más toca los módulos `files` ni `storage` del backend hasta que se fusionen 221 y 801.**
+2. **Etapa 2, en paralelo:**
+   - Versiones: 206 → 207 → 210.
+   - Enlaces: 209 (tras 206).
+   - Equipos: 220.
+   - Destinos: 802 → 803 → 804.
+   - Instalación: 805 → 806.
+3. **Etapa 3:**
+   - Enlaces: 216 (tras 209, 210 y 407) → 217.
+   - Papelera: 215 (tras 407).
+   - Equipos: 222 (tras 220, 209 y 210) → 224 → 223.
+   - Rotación de llaves: 005 (tras 802).
+4. **Etapa 4:** Super Admin: 503 (tras 501 y 803) → 502.
+5. **Etapa 5, P2:** 113 (tras 601) · 115 (tras 108 y 114) · 211 → 212 (tras 224) · 213 · 306 · 406 · 504 · 606.
+6. **Etapa 6, P3:** 208 (requiere aprobar antes un ADR para su librería) · 603 (al final).
+
+**Autónomas (no esperan a otra área):**
+- **Desde el inicio:** 214, 307, 601, 602 y 605.
+- **Tras 004:** 112, 305, 501, 407 y 108. Después: 108 → 109 y 114; 407 → 404.
+
+Todas siguen el flujo normal de aprobación y fusión.
+
+**No ejecutar al mismo tiempo, porque editan las mismas partes de `files.service.ts`:** 215, 222, 224, 803 y 005.
+
+**Puntos de coordinación:**
+- 005 y 802 comparten el formato de `connection_details_encrypted`.
+- 503 y 803 comparten la entidad de `admin.installation_request`.
+- 108, 112, 114 y 503 editan los repositorios de IAM: fusionar una y actualizar las demás.
+- 214, 207, 217, 212, 213, 223 y 804 editan `file-browser-live.tsx`.
 
 ---
 
 ## 0xx: Fundación, Infraestructura y Criptografía
 
-| ID | Especificación | Nivel | Responsable | Requisitos | Prioridad | Estado |
-|---|---|:---:|---|---|:---:|:---:|
-| `SPEC-001` | Corrección del cálculo recursivo de carpetas y bytes | N0 | Víctor | RF-007, RF-013 | — | ✅ Hecho (sin commit; contrato documentado en v0.5) |
-| `SPEC-002` | ADR-006: cifrado `node:crypto` AES-256-GCM | N1 | Víctor | RF-004, RF-005, RNF-003 | — | ✅ Hecho (ADR-006 corregido el 2026-10-27) |
-| `SPEC-003` | Integración continua (GitHub Actions) | N1 | Víctor | Calidad | 100% | Pendiente |
-
-> **Nota SPEC-002:** ADR-006 corregido (jerarquía de llaves real, formato del objeto, sin columnas `iv`/`auth_tag`) y `ARCHITECTURE.md`/`BUSINESS_RULES.md` alineados. Quedan como limitaciones declaradas: sin streaming, **sin rotación de llaves** (el descifrado ignora `kek_id`) y sin pruebas dedicadas de `FilesCryptoService`.
+| ID | Especificación | Nivel | Requisitos | Prioridad | Dependencias | Estado |
+|---|---|:---:|---|:---:|---|:---:|
+| `SPEC-001` | Corrección del cálculo recursivo de carpetas y bytes | N0 | RF-007, RF-013 | — | — | ✅ Hecho |
+| `SPEC-002` | ADR-006: cifrado `node:crypto` AES-256-GCM | N1 | RF-004, RF-005, RNF-003 | — | — | ✅ Hecho |
+| `SPEC-003` | Integración continua (GitHub Actions) | N1 | Calidad | — | — | ✅ Hecho |
+| `SPEC-004` | [Alinear los documentos con el alcance final](004-alinear-alcance-final.md) | N1 | Gobernanza | P1 | — | Aprobada |
+| `SPEC-005` | [Rotación de llaves](005-rotacion-llaves.md) | N2 | RF-005 | P1 | 006 | Aprobada |
+| `SPEC-006` | [Pruebas del cifrado](006-pruebas-cifrado.md) | N1 | RF-004, RF-005, RNF-003 | P1 | 004 | Aprobada |
 
 ## 1xx: IAM, Roles y Miembros
 
-| ID | Especificación | Nivel | Responsable | Requisitos | Prioridad | Estado |
-|---|---|:---:|---|---|:---:|:---:|
-| `SPEC-101` | `@Roles` y `RolesGuard` | N2 | Sebastián | RF-003 | P1 | Aprobada |
-| `SPEC-102` | Alta de miembros `POST /organizations/members` | N2 | Sebastián (+Anthony T6) | RF-003, Curso §4.1 | P1 | Aprobada |
-| `SPEC-103` | Recuperación de contraseña + outbox generalizado + revocación de sesiones | N2 | Sebastián (T2: Víctor) | Curso §4.1, RNF-004 | P1 | Aprobada |
-| `SPEC-104` | Listado de miembros `GET /organizations/members` | N2 | Sebastián | RF-003 | P1 | Aprobada |
-| `SPEC-105` | Frontend: recuperar contraseña | N1 | Miguel (delegado) | Curso §4.1 | P1 | Aprobada |
-| `SPEC-106` | Frontend: miembros en `/configuracion` | N1 | Miguel (delegado) | RF-003 | P1 | Aprobada |
+| ID | Especificación | Nivel | Requisitos | Prioridad | Dependencias | Estado |
+|---|---|:---:|---|:---:|---|:---:|
+| `SPEC-101` | `@Roles` y `RolesGuard` | N2 | RF-003 | — | — | ✅ Hecho |
+| `SPEC-102` | Alta de miembros | N2 | RF-003, Curso §4.1 | — | — | ✅ Hecho |
+| `SPEC-103` | Recuperación de contraseña | N2 | Curso §4.1, RNF-004 | — | — | ✅ Hecho |
+| `SPEC-104` | Listado de miembros | N2 | RF-003 | — | — | ✅ Hecho |
+| `SPEC-105` | Frontend: recuperar contraseña | N1 | Curso §4.1 | — | — | ✅ Hecho |
+| `SPEC-106` | Frontend: miembros en `/configuracion` | N1 | RF-003 | — | — | ✅ Hecho |
 | `SPEC-107` | Revocar sesiones al cambiar contraseña | — | — | — | — | ⤵ Absorbida por SPEC-103 |
+| `SPEC-108` | [Administrar miembros: backend](108-administrar-miembros.md) | N2 | RF-003 | P1 | 004 | Aprobada |
+| `SPEC-109` | [Administrar miembros: pantalla](109-frontend-administrar-miembros.md) | N1 | RF-003 | P1 | 108 | Aprobada |
+| `SPEC-112` | [Bloqueo progresivo por intentos fallidos](112-bloqueo-intentos-fallidos.md) | N2 | Riesgos §16 | P1 | 004 | Aprobada |
+| `SPEC-113` | [Editar perfil y cambiar contraseña](113-perfil-cambiar-contrasena.md) | N2 | RF-001, Curso §4.1 | P2 | 601 | Aprobada |
+| `SPEC-114` | [Eliminar empresa (bloquear y conservar)](114-eliminar-empresa.md) | N2 | Administración §8 | P1 | 108 | Aprobada |
+| `SPEC-115` | [Correos informativos en Mailpit](115-correos-mailpit.md) | N2 | Curso §4.1 | P2 | 108, 114 | Aprobada |
 
-## 2xx: Archivos, Papelera y Versiones
+## 2xx: Archivos, Versiones, Enlaces y Equipos
 
-| ID | Especificación | Nivel | Responsable | Requisitos | Prioridad | Estado |
-|---|---|:---:|---|---|:---:|:---:|
-| `SPEC-201` | Tamaño y fecha de carpetas en el explorador | N0 | Víctor | RF-007 | — | ✅ Hecho (sin commit) |
-| `SPEC-202` | `GET /files/trash` (solo archivos, Drive propio) | N1 | Miguel | RF-009 | **P2** | En revisión |
-| `SPEC-203` | `POST /files/:id/restore` | N2 | Miguel | RF-009 | **P2** | Aprobada |
-| `SPEC-204` | `DELETE /files/:id/purge` | N2 | Miguel | RF-009, RF-013 | **P2** | Aprobada |
-| `SPEC-205` | Frontend: papelera y "Mover a papelera" | N1 | Miguel | RF-009 | **P2** | Aprobada |
-| `SPEC-206` | `GET /files/:id/versions` (solo lectura) | N1 | Miguel | RF-008 (parcial) | **P2** | Aprobada |
-| `SPEC-207` | Frontend: modal de versiones | N1 | Miguel | RF-008 (parcial) | **P2** | Aprobada |
-| `SPEC-208` | Descarga de carpeta en ZIP | N2 | Miguel | Usabilidad | 100% | Pendiente |
-| `SPEC-209` | Enlaces compartidos temporales | N2 | Miguel | RF-010, RF-011 | 100% | Pendiente |
+| ID | Especificación | Nivel | Requisitos | Prioridad | Dependencias | Estado |
+|---|---|:---:|---|:---:|---|:---:|
+| `SPEC-201` | Tamaño y fecha de carpetas en el explorador | N0 | RF-007 | — | — | ✅ Hecho |
+| `SPEC-202` | Listar papelera | N1 | RF-009 | — | — | ✅ Hecho |
+| `SPEC-203` | Restaurar de la papelera | N2 | RF-009 | — | — | ✅ Hecho |
+| `SPEC-204` | Purga definitiva | N2 | RF-009, RF-013 | — | — | ✅ Hecho |
+| `SPEC-205` | Frontend: papelera | N1 | RF-009 | — | — | ✅ Hecho |
+| `SPEC-206` | [Listar versiones](206-historial-versiones.md) | N1 | RF-008 | P1 | 221 | Aprobada |
+| `SPEC-207` | [Modal de versiones](207-frontend-historial-versiones.md) | N1 | RF-008 | P1 | 206 | Aprobada |
+| `SPEC-208` | [Descargar carpeta en ZIP](208-descargar-carpeta-zip.md) | N2 | Usabilidad | P3 | 221 | Aprobada |
+| `SPEC-209` | [Crear, listar y revocar enlaces](209-enlaces-compartidos.md) | N2 | RF-010, RF-011 | P1 | 206 | Aprobada |
+| `SPEC-210` | [Descargar y restaurar una versión](210-descargar-restaurar-version.md) | N2 | RF-008 | P1 | 206, 207 | Aprobada |
+| `SPEC-211` | [Renombrar y mover: backend](211-renombrar-mover.md) | N2 | RF-007 | P2 | 221 | Aprobada |
+| `SPEC-212` | [Renombrar y mover: pantalla](212-frontend-renombrar-mover.md) | N1 | RF-007 | P2 | 211 | Aprobada |
+| `SPEC-213` | [Búsqueda global por nombre](213-busqueda-global.md) | N1 | RF-007 | P2 | 221 | Aprobada |
+| `SPEC-214` | [Arrastrar y soltar e íconos por tipo](214-arrastrar-iconos.md) | N1 | UI/UX §8 | P1 | — | Aprobada |
+| `SPEC-215` | [Purga automática a los 30 días](215-purga-automatica.md) | N2 | RF-009, RF-013 | P1 | 004, 407 | Aprobada |
+| `SPEC-216` | [Acceso público al enlace](216-acceso-publico-enlace.md) | N2 | RF-010, RF-011, RF-012 | P1 | 209, 210, 407 | Aprobada |
+| `SPEC-217` | [Pantallas de compartir](217-frontend-compartir.md) | N1 | RF-010, RF-011 | P1 | 209, 216 | Aprobada |
+| `SPEC-220` | [Equipos y sus miembros](220-equipos-miembros.md) | N2 | RF-006, RF-003 | P1 | 221 | Aprobada |
+| `SPEC-221` | [Centralizar el acceso a Drives](221-acceso-drive.md) | N2 | RF-006, RF-007, RF-003 | P1 | 006 | Aprobada |
+| `SPEC-222` | [Drive de equipo: lectura](222-drive-equipo-lectura.md) | N2 | RF-006 | P1 | 220, 209, 210 | Aprobada |
+| `SPEC-223` | [Pantallas de equipos](223-frontend-equipos.md) | N1 | RF-006 | P1 | 224 | Aprobada |
+| `SPEC-224` | [Drive de equipo: edición](224-drive-equipo-edicion.md) | N2 | RF-006, RF-009 | P1 | 222 | Aprobada |
 
 ## 3xx: Facturación
 
-| ID | Especificación | Nivel | Responsable | Requisitos | Prioridad | Estado |
-|---|---|:---:|---|---|:---:|:---:|
-| `SPEC-301` | Registro y consulta de operaciones de facturación | N2 | Anthony | RF-013, Curso §4.2 | P1 | Aprobada |
-| `SPEC-302` | Renovación `POST /subscriptions/renew` (antes "cambio de plan") | N2 | Anthony | RF-013, Curso §4.2 | P1 | Aprobada |
-| `SPEC-303` | Frontend: historial y "Renovar" en `/suscripcion` | N1 | Miguel (delegado) | RF-013, Curso §4.2 | P1 | Aprobada |
-| `SPEC-304` | Bloqueo de reducción de plan por espacio ocupado | — | — | RF-013 | — | ✅ Cubierta por `SubscriptionCoordinator` (`STORAGE_QUOTA_EXCEEDED`) |
+| ID | Especificación | Nivel | Requisitos | Prioridad | Dependencias | Estado |
+|---|---|:---:|---|:---:|---|:---:|
+| `SPEC-301` | Registro y consulta de operaciones | N2 | RF-013, Curso §4.2 | — | — | ✅ Hecho |
+| `SPEC-302` | Renovación | N2 | RF-013, Curso §4.2 | — | — | ✅ Hecho |
+| `SPEC-303` | Frontend: historial y "Renovar" | N1 | RF-013, Curso §4.2 | — | — | ✅ Hecho |
+| `SPEC-304` | Bloqueo de reducción de plan por espacio ocupado | — | RF-013 | — | — | ✅ Cubierta |
+| `SPEC-305` | [Pago simulado con tarjetas de prueba](305-pago-simulado-tarjetas.md) | N2 | RF-013, Curso §4.2 | P1 | 004 | Aprobada |
+| `SPEC-306` | [Comprobantes descargables](306-comprobantes.md) | N1 | RF-013, Curso §4.2 | P2 | 305 | Aprobada |
+| `SPEC-307` | [Comparativa de planes](307-comparativa-planes.md) | N1 | RF-013, Curso §4.2 | P2 | — | Aprobada |
 
 ## 4xx: Auditoría
 
-| ID | Especificación | Nivel | Responsable | Requisitos | Prioridad | Estado |
-|---|---|:---:|---|---|:---:|:---:|
-| `SPEC-401` | Servicio base de auditoría (`AuditModule` global, hash desde la v1) | N2 | Anthony | RF-012, RNF-007 | P1 | Aprobada |
-| `SPEC-402` | `GET /audit/events` (solo `tenant_admin`) | N1 | Miguel (delegado) | RF-012 | P1 | Aprobada |
-| `SPEC-403` | Frontend: pantalla de auditoría | N1 | Víctor | RF-012 | P1 | En PR |
-| `SPEC-404` | Verificación de la cadena de hashes y checkpoints | N2 | Anthony | RNF-007 | 100% | Pendiente |
-| `SPEC-405` | Enganches de auditoría por dueño de módulo (**nueva**) | N1 | Víctor (IAM) / Miguel (Files) / Anthony (Billing) | RF-012, RNF-007 | P1 | Aprobada |
+| ID | Especificación | Nivel | Requisitos | Prioridad | Dependencias | Estado |
+|---|---|:---:|---|:---:|---|:---:|
+| `SPEC-401` | Servicio base de auditoría | N2 | RF-012, RNF-007 | — | — | ✅ Hecho |
+| `SPEC-402` | `GET /audit/events` | N1 | RF-012 | — | — | ✅ Hecho |
+| `SPEC-403` | Frontend: pantalla de auditoría | N1 | RF-012 | — | — | ✅ Hecho |
+| `SPEC-404` | [Verificar la cadena de auditoría](404-verificar-cadena-auditoria.md) | N2 | RNF-007, RF-012 | P1 | 407 | Aprobada |
+| `SPEC-405` | Enganches de auditoría | N1 | RF-012, RNF-007 | — | — | ✅ Hecho |
+| `SPEC-406` | [Filtros y exportación](406-filtros-exportacion-auditoria.md) | N2 | RF-012 | P2 | 407 | Aprobada |
+| `SPEC-407` | [Actores y resultados de auditoría](407-actores-auditoria.md) | N2 | RF-012, RNF-007 | P1 | 004 | Aprobada |
 
 ## 5xx: Super Admin
 
-| ID | Especificación | Nivel | Responsable | Requisitos | Prioridad | Estado |
-|---|---|:---:|---|---|:---:|:---:|
-| `SPEC-501` | Endpoints administrativos de plataforma | N2 | Sebastián | RF-016 | 100% | Pendiente |
-| `SPEC-502` | Pantalla Super Admin con datos reales | N1 | Víctor | RF-016 | 100% | Pendiente |
+| ID | Especificación | Nivel | Requisitos | Prioridad | Dependencias | Estado |
+|---|---|:---:|---|:---:|---|:---:|
+| `SPEC-501` | [Identidad y consultas](501-super-admin-identidad.md) | N2 | RF-016 | P1 | 004 | Aprobada |
+| `SPEC-502` | [Panel con datos reales](502-frontend-super-admin.md) | N1 | RF-016 | P1 | 501, 503 | Aprobada |
+| `SPEC-503` | [Acciones de plataforma e instalaciones](503-acciones-plataforma.md) | N2 | RF-016, RF-015 | P1 | 501, 803 | Aprobada |
+| `SPEC-504` | [Editar catálogo de planes](504-editar-planes.md) | N2 | RF-016 | P2 | 501, 502 | Aprobada |
 
-> Hasta SPEC-502, `/dashboard/super-admin` es una maqueta con cifras inventadas: **ocultarla del menú** o marcarla visiblemente.
+> Hasta SPEC-502, `/dashboard/super-admin` es una maqueta con cifras inventadas que cualquier sesión puede abrir.
 
 ## 6xx: Frontend común
 
-| ID | Especificación | Nivel | Responsable | Requisitos | Prioridad | Estado |
-|---|---|:---:|---|---|:---:|:---:|
-| `SPEC-601` | Perfil con datos reales de la sesión (sin edición) | N1 | Víctor | RF-001 | **P2** | En revisión |
-| `SPEC-602` | Notificaciones tipo toast y estados de carga | N0 | Víctor | RNF-009 | 100% | Pendiente |
-| `SPEC-603` | Contraste y accesibilidad WCAG AA | N1 | Víctor | RNF-008, RNF-009 | 100% | Pendiente |
+| ID | Especificación | Nivel | Requisitos | Prioridad | Dependencias | Estado |
+|---|---|:---:|---|:---:|---|:---:|
+| `SPEC-601` | [Perfil con datos reales](601-frontend-perfil-usuario.md) | N1 | RF-001 | P2 | — | Aprobada |
+| `SPEC-602` | [Avisos y estados de carga](602-avisos-estados-carga.md) | N0 | RNF-009 | P2 | — | Aprobada |
+| `SPEC-603` | [Accesibilidad](603-accesibilidad.md) | N1 | RNF-008, RNF-009 | P3 | — | Aprobada |
+| `SPEC-605` | [Pulido de login y landing](605-pulido-login-landing.md) | N0 | RNF-009 | P2 | — | Aprobada |
+| `SPEC-606` | [Retirar restos de demostración](606-retirar-demostracion.md) | N1 | Regla 11 | P2 | 502, 601, 307 | Aprobada |
 
-## 7xx: Entregables académicos
+## 8xx: Destinos y despliegue
 
-| ID | Entregable | Formato | Responsable | Prioridad | Estado |
-|---|---|---|---|:---:|:---:|
-| `SPEC-701` | Documento de requisitos con casos de uso (`docs/entregables/REQUISITOS_CASOS_USO.md`) | Markdown / PDF | Víctor | P1 | **Borrador asistido listo**; falta revisión de Víctor |
-| `SPEC-702` | Paquete de diagramas UML (`docs/entregables/DIAGRAMAS_UML.md`, 13 diagramas validados con el parser de Mermaid) | Mermaid | Víctor (con apoyo de Miguel y Sebastián) | P1 | **Borrador asistido listo**; falta revisión de Víctor |
-| `SPEC-703` | Manual técnico | Markdown / PDF | Víctor | 100% | Pendiente |
-| `SPEC-704` | Manual de usuario | Markdown / PDF | Víctor | 100% | Pendiente |
-| `SPEC-705` | Matriz de trazabilidad y pruebas | Markdown | Equipo | 100% | Pendiente |
-
----
-
-## Resumen
-
-| Concepto | Cantidad |
-|---|:---:|
-| P1 (80%, imprescindible) | 15 |
-| P2 (80%, si hay tiempo) | 7 |
-| 100% (primera semana de noviembre) | 11 |
-| Hechas / cubiertas / absorbidas | 5 (001, 002, 201, 304, 107) |
-| **Total** | **37 + 405 = 38** |
-
-> P2: 202, 203, 204, 205, 206, 207, 601. Las 11 del 100%: 003, 208, 209, 404, 501, 502, 602, 603, 703, 704, 705.
-
----|:---:|
-| P1 (80%, imprescindible) | 19 |
-| P2 (80%, si hay tiempo) | 4 |
-| 100% (primera semana de noviembre) | 11 |
-| Hechas / cubiertas / absorbidas | 4 (001, 201, 304, 107) |
-| **Total** | **37 + 405 = 38** |
-
-> P1 incluye SPEC-002 (corrección pendiente del ADR-006). Las 11 del 100% son 003, 208, 209, 404, 501, 502, 602, 603, 703, 704 y 705.
+| ID | Especificación | Nivel | Requisitos | Prioridad | Dependencias | Estado |
+|---|---|:---:|---|:---:|---|:---:|
+| `SPEC-801` | [Almacenamiento intercambiable (Strategy)](801-almacenamiento-strategy.md) | N2 | §12.1.1, RF-014 | P1 | 006, 221 | Aprobada |
+| `SPEC-802` | [Administrar destinos](802-administrar-destinos.md) | N2 | RF-014, RF-015 | P1 | 801 | Aprobada |
+| `SPEC-803` | [Elegir Nube, Local o Híbrido](803-elegir-modelo-despliegue.md) | N2 | RF-014, RF-015 | P1 | 802 | Aprobada |
+| `SPEC-804` | [Pantalla de almacenamiento](804-frontend-almacenamiento.md) | N2 | RF-014 | P1 | 803 | Aprobada |
+| `SPEC-805` | [Instalación on-premises en un comando](805-instalacion-on-premises.md) | N2 | RF-015, RNF-010 | P1 | 801 | Aprobada |
+| `SPEC-806` | [HTTPS y cabeceras de seguridad](806-https-cabeceras.md) | N2 | RNF-002, RNF-011 | P1 | 805 | Aprobada |
 
 ---
+
+## Fuera de este backlog
+
+- **Excluido por decisión (ADR-008):** MFA/TOTP, modo oscuro, cifrado en streaming, Redis Streams, permisos por archivo individual, rol Auditor, instalación automática en el servidor del cliente y borrado físico al cerrar una empresa.
+- **Trabajo no funcional, por planificar aparte:**
+
+| ID | Entregable | Estado |
+|---|---|:---:|
+| `SPEC-701` | Documento de requisitos con casos de uso | Borrador |
+| `SPEC-702` | Paquete de diagramas UML | Borrador |
+| `SPEC-703` | Manual técnico | Pendiente |
+| `SPEC-704` | Manual de usuario | Pendiente |
+| `SPEC-705` | Matriz de trazabilidad y pruebas | Pendiente |
 
 ## Reglas de lectura
 
 - Un requisito citado en una spec debe existir con ese número en la propuesta (§9). Si no, se cita el curso.
-- Ninguna spec decora endpoints de otro módulo: cada dueño aplica `@Roles` y los eventos de auditoría en su propia spec (matriz: ADR-007 §4; eventos: SPEC-405).
+- Ninguna spec decora endpoints de otro módulo sin indicarlo en sus archivos permitidos.
+- Cada spec define sus eventos de auditoría (ADR-007 §8).

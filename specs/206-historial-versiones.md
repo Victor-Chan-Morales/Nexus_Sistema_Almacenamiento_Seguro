@@ -9,8 +9,8 @@
 | **Aprobador** | Víctor Chán Morales |
 | **Módulo Afectado** | `apps/api/src/modules/files/` |
 | **Requisitos Vinculados** | RF-008 (parcial: solo lectura) |
-| **Dependencias** | Ninguna |
-| **Hito Objetivo** | Corte 80% (30-Oct-2026) — **prioridad P2** |
+| **Dependencias** | SPEC-221 |
+| **Prioridad** | P1 |
 | **Estimación** | 1.0 h |
 | **Estado** | Aprobada (2026-10-31, Víctor Chán Morales) |
 
@@ -24,7 +24,7 @@
 
 ## 3. Fuera de Alcance (YAGNI)
 
-- Descargar o **restaurar** una versión anterior: el historial es de solo lectura en este corte. RF-008 queda parcial y se declara así.
+- Descargar o **restaurar** una versión anterior: el historial es de solo lectura en esta spec. SPEC-210 completa RF-008.
 - Mostrar quién subió cada versión (en un Drive personal siempre es el dueño).
 - Exponer el checksum.
 
@@ -69,7 +69,7 @@ Modal en SPEC-207.
 
 ## 8. Diseño Técnico
 
-- `FilesService.listVersions(fileId, organizationId, userId)`: mismo patrón de acotado que `downloadFileStream` (Drive propio, archivo activo).
+- `FilesService.listVersions(fileId, organizationId, userId)`: mismo patrón de acotado que `downloadFileStream` (Drive propio, archivo activo), resuelto con `DriveAccessService` (SPEC-221).
 - DTO propio; `sizeBytes` como número. Sin auditoría (lectura).
 
 ---
@@ -108,3 +108,4 @@ Ninguna.
 |---|---|---|
 | 2026-10-27 | Víctor Chán | Versión inicial. |
 | 2026-10-27 | Revisión | Campos del contrato (`versionId`, `uploadedAt`); acotado al Drive propio; sin checksum; aclarado que no incluye restauración de versión (el backlog lo prometía). |
+| 2026-11-04 | Víctor Chán Morales | Se actualizan dependencia y prioridad al alcance final (ADR-008); aprobación vigente desde 2026-10-31. |

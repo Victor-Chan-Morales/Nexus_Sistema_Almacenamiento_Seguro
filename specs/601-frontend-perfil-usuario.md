@@ -10,9 +10,9 @@
 | **Módulo Afectado** | `apps/web/src/components/profile-page.tsx` |
 | **Requisitos Vinculados** | RF-001 |
 | **Dependencias** | Ninguna |
-| **Hito Objetivo** | Corte 80% (30-Oct-2026) — **prioridad P2** |
+| **Prioridad** | P2 |
 | **Estimación** | 1.0 h |
-| **Estado** | En revisión (reescrita 2026-10-27 según ADR-007) |
+| **Estado** | Aprobada (2026-11-04, Víctor Chán Morales) |
 
 ---
 
@@ -104,3 +104,4 @@ Ninguna.
 |---|---|---|
 | 2026-10-27 | Víctor Chán | Versión inicial. |
 | 2026-10-27 | Revisión | Retirada la edición de nombre (sin endpoint ni tarea); solo lectura con datos de sesión; prioridad P2. |
+| 2026-11-04 | Víctor Chán Morales | Aprobada. Se actualiza la prioridad al alcance final (ADR-008). |
