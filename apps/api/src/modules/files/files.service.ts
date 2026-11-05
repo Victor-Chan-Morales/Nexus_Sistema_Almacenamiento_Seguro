@@ -29,7 +29,6 @@ import { Upload } from './entities/upload.entity';
 import { EncryptedFile, FilesCryptoService } from './files-crypto.service';
 import { DriveAccessService, DriveActor } from './drive-access.service';
 import { PurgeFileResponseDto, RestoreFileResponseDto, RestoreFolderResponseDto, TrashItemDto, TrashResponseDto } from './dto/trash.dto';
-import { FileVersionsResponseDto } from './dto/versions.dto';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction, AuditResource } from '../audit/audit.types';
 
@@ -636,6 +635,8 @@ export class FilesService {
     folderId: string;
     file: any;
     idempotencyKey?: string;
+    /** Permite a la operación llamante (p. ej. restaurar versión) correlacionar sus propios eventos de auditoría. */
+    correlationId?: string;
   }): Promise<UploadedFileDto> {
     const { organizationId, ownerId, folderId, file } = params;
     if (!folderId) throw new BadRequestException('El parámetro folderId es obligatorio');
@@ -789,6 +790,7 @@ export class FilesService {
           action: AuditAction.FILE_UPLOAD,
           resourceType: AuditResource.FILE,
           resourceId: uploaded.id,
+          correlationId: params.correlationId,
         }).catch(() => {});
 
         return uploaded;
@@ -1033,44 +1035,6 @@ export class FilesService {
     const current = this.activeUploadsByUser.get(userId) ?? 1;
     if (current <= 1) this.activeUploadsByUser.delete(userId);
     else this.activeUploadsByUser.set(userId, current - 1);
-  }
-
-  /**
-   * SPEC-206: historial de versiones de un archivo propio y activo, de la más reciente a la más antigua.
-   * Solo lectura: sin auditoría ni transacción. El select excluye object_key, DEK, KEK y checksum.
-   */
-  async listVersions(
-    fileId: string,
-    organizationId: string,
-    userId: string,
-  ): Promise<FileVersionsResponseDto> {
-    const located = await this.driveAccess.locateFile({ organizationId, userId }, fileId);
-    if (!located || located.file.isDeleted || located.folder.isDeleted) {
-      throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
-    }
-    const file = located.file;
-    if (!file.currentVersionId) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
-
-    const versions = await this.versionRepository.find({
-      where: { fileId: file.id },
-      order: { versionNumber: 'DESC' },
-      select: { id: true, versionNumber: true, sizeBytes: true, uploadedAt: true },
-    });
-    const current = versions.find((version) => version.id === file.currentVersionId);
-    if (!current) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
-
-    return {
-      fileId: file.id,
-      fileName: file.name,
-      currentVersion: current.versionNumber,
-      versions: versions.map((version) => ({
-        versionId: version.id,
-        versionNumber: version.versionNumber,
-        sizeBytes: Number(version.sizeBytes),
-        uploadedAt: version.uploadedAt.toISOString(),
-        isCurrent: version.id === file.currentVersionId,
-      })),
-    };
   }
 
   async downloadFileStream(

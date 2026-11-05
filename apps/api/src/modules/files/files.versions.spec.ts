@@ -1,5 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
-import { FilesService } from './files.service';
+import { FileVersionsService } from './file-versions.service';
 import { DriveAccessService } from './drive-access.service';
 import { Drive } from './entities/drive.entity';
 import { FileRecord } from './entities/file-record.entity';
@@ -55,11 +55,8 @@ const buildService = ({
   ]);
   const dataSource = { getRepository: jest.fn((entity: unknown) => repositories.get(entity)) };
   const versionRepository = { find: jest.fn().mockResolvedValue(versions) };
-  const service = new FilesService(
-    fileRepository as never,
-    {} as never,
+  const service = new FileVersionsService(
     versionRepository as never,
-    dataSource as never,
     {} as never,
     {} as never,
     {} as never,
@@ -68,7 +65,7 @@ const buildService = ({
   return { service, versionRepository };
 };
 
-describe('FilesService.listVersions', () => {
+describe('FileVersionsService.listVersions', () => {
   describe('Escenario 1: archivo con varias versiones', () => {
     it('devuelve las versiones de la más reciente a la más antigua con los campos del contrato', async () => {
       const { service, versionRepository } = buildService({});

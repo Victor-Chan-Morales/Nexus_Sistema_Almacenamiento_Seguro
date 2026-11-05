@@ -34,6 +34,12 @@ Todas las búsquedas filtran por organización y propietario. Los Drives de equi
 
 `GET /files/:id/versions` lista las versiones de un archivo del Drive personal del solicitante, de la más reciente a la más antigua. Solo considera archivos activos; los ajenos, de otra organización, inexistentes o en papelera responden 404. La respuesta no incluye `object_key`, `encrypted_dek`, `kek_id` ni `checksum`. Es solo lectura: la descarga y la restauración de versiones están en SPEC-210.
 
+## Descarga y restauración de versiones (SPEC-210)
+
+`GET /files/:id/versions/:versionId/download` entrega los bytes exactos de cualquier versión del archivo, aunque no sea la vigente, con el nombre seguro del archivo. `POST /files/:id/versions/:versionId/restore` crea una versión nueva con ese contenido, que pasa a ser la vigente; las anteriores se conservan. `FileVersionsService` concentra ambas operaciones y el historial de SPEC-206. Restaurar reutiliza `FilesService.uploadMultipartFile`, así que aplica la misma cuota, cifrado, compensación y límite de cargas simultáneas. Errores: 404 para archivo ajeno, de otra organización, inexistente, en papelera o versión de otro archivo; 422 `VERSION_ALREADY_CURRENT`; 422 `STORAGE_QUOTA_EXCEEDED`; 400 si `versionId` no es un UUID. Auditoría: `FILE_DOWNLOAD` al bajar; `FILE_UPLOAD` y `FILE_VERSION_RESTORED` al restaurar, con el mismo `correlationId`.
+
+`readVersionBytes` lee y descifra una versión; SPEC-216 la reutiliza para enlaces públicos.
+
 ## Alcance actual
 
 - Solo se expone el Drive personal del usuario autenticado; cada búsqueda valida organización y `drive_id` derivado del JWT.

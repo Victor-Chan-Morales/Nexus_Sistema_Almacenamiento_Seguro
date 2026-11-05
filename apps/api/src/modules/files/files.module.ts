@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { FilesController, FoldersController } from './files.controller';
 import { FilesService } from './files.service';
+import { FileVersionsService } from './file-versions.service';
 import { FileRecord } from './entities/file-record.entity';
 import { Folder } from './entities/folder.entity';
 import { FileVersion } from './entities/file-version.entity';
@@ -44,7 +45,7 @@ import { DriveAccessService } from './drive-access.service';
     BillingModule, // Para verificar cuota de almacenamiento
   ],
   controllers: [FoldersController, FilesController],
-  providers: [FilesService, FilesCryptoService, DriveAccessService, PersonalDriveHook],
+  providers: [FilesService, FileVersionsService, FilesCryptoService, DriveAccessService, PersonalDriveHook],
   exports: [FilesService],
 })
 export class FilesModule {}
