@@ -33,7 +33,7 @@ La figura expresa límites lógicos. No afirma que todos los módulos ya existan
 - **IAM**: usuario, organización, membresía, rol y sesión. Determina el contexto organizacional autorizado.
 - **Billing**: plan, suscripción y operaciones marcadas como simuladas. No procesa dinero real.
 - **Files**: carpetas, archivos, versiones, límites y autorización de recursos.
-- **Storage**: `StorageService` ofrece `put`, `get` y `delete` sobre SeaweedFS. Files no usa el SDK directamente. SPEC-801 agrega una interfaz y un selector por destino.
+- **Storage**: `StorageRouter` entrega, para cada destino, un `ObjectStorage` con `put`, `get` y `delete` (SPEC-801). Hoy todo destino usa `StorageService`, que habla S3 con SeaweedFS. Files no usa el SDK directamente ni inyecta `StorageService`.
 - **PostgreSQL**: fuente de verdad de identidad, permisos, plan, relaciones y metadatos.
 - **SeaweedFS (S3)**: bytes de objetos. PostgreSQL registra la clave de objeto y datos de la versión, no el contenido.
 
@@ -105,7 +105,7 @@ y consume el API en `http://localhost:3001`.
 ## SOLID aplicado
 
 - **S:** controladores atienden HTTP; servicios ejecutan casos de uso; proveedores guardan bytes.
-- **O:** cambiar de SeaweedFS a MinIO o a AWS S3 es configuración (`S3_*`) y no toca las reglas de archivos; un destino que no hable S3 exigiría extraer una interfaz de proveedor, que hoy no existe y agrega SPEC-801.
+- **O:** cambiar de SeaweedFS a MinIO o a AWS S3 es configuración (`S3_*`) y no toca las reglas de archivos; un proveedor que no hable S3 es una implementación nueva de `ObjectStorage` que devuelve `StorageRouter`, sin tocar `FilesService` (SPEC-801).
 - **L:** toda implementación del proveedor respeta el resultado/error definido para guardar, recuperar y eliminar.
 - **I:** separar interfaz de operaciones de objetos de las operaciones administrativas del bucket.
-- **D:** `FilesService` recibe `StorageService` por inyección de Nest y no instancia el cliente S3 directamente; depender de una interfaz propia es la evolución prevista.
+- **D:** `FilesService` recibe `StorageRouter` por inyección de Nest y trabaja contra la interfaz `ObjectStorage`; no instancia el cliente S3 ni conoce el proveedor de cada destino.

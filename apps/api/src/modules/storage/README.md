@@ -3,9 +3,14 @@
 **Dueño:** Miguel.
 
 ## Responsabilidades
-- Cliente de almacenamiento de objetos con SeaweedFS (S3). SPEC-801 agrega la interfaz y el selector por destino.
-- Métodos de transporte de binarios: `put`, `get`, `delete`, `getPresignedUrl`.
-- Aislamiento multi-tenant a nivel de object-key (`<organizationId>/<fileId>/v<version>`).
+- Almacenamiento de objetos con SeaweedFS (S3), detrás de una interfaz por destino (SPEC-801).
+- `ObjectStorage` (`object-storage.ts`): `put`, `get` y `delete`. `S3ObjectStorage` la implementa sobre un bucket S3.
+- `StorageRouter` (`storage-router.service.ts`): entrega el `ObjectStorage` del `destination_id` de cada operación.
+  - Lectura y borrado (`forRead`) admiten destinos deshabilitados.
+  - Escritura (`forWrite`) exige un destino habilitado; si no, responde 409.
+  - Un destino de otra organización o inexistente responde 404 sin tocar el almacén.
+- `StorageService`: destino de entorno (`S3_*`). Hoy es el único almacén que devuelve el router. SPEC-802 añadirá los destinos con credenciales propias.
+- Aislamiento multi-tenant a nivel de object-key (`<organizationId>/<fileId>/v<version>/<uuid>`).
 
 ## Comunicación en el Monolito Modular
-Exporta `StorageService`. Es inyectado directamente en `FilesService`, garantizando que la lógica de negocio de archivos no dependa de APIs de red intermedias para guardar objetos.
+Exporta `StorageRouter`. `FilesService` lo inyecta y pide el almacén con el `destination_id` de cada versión o carpeta. Ningún módulo fuera de Storage importa `StorageService` ni `@aws-sdk`.

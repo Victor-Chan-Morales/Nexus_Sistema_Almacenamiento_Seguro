@@ -20,10 +20,10 @@ Todo módulo de NestJS y componente de Next.js debe reflejar fielmente los princ
 ### S — Responsabilidad Única (Single Responsibility Principle)
 - **Controlador (`FilesController`)**: Solo maneja HTTP, deserializa requests, valida DTOs de entrada y retorna respuestas con códigos HTTP canónicos. No toca la base de datos ni ejecuta lógica de cuotas.
 - **Servicio (`FilesService`)**: Orquesta casos de uso de negocio (validar cuota disponible, generar versión, coordinar cifrado y persistencia).
-- **Servicio de almacenamiento (`StorageService`, módulo Storage)**: Solo sabe hablar el protocolo S3 (SeaweedFS) para guardar, leer, borrar y firmar URLs de objetos, y garantizar que exista el bucket. Desconoce conceptos como organizaciones, planes o usuarios.
+- **Almacenamiento (módulo Storage)**: `ObjectStorage` define guardar, leer y borrar un objeto; `S3ObjectStorage` lo implementa sobre el protocolo S3 (SeaweedFS). `StorageService` es el destino de entorno y `StorageRouter` elige el almacén de cada destino (SPEC-801). Ninguno conoce organizaciones, planes ni usuarios: el router solo valida que el destino pertenezca a la organización pedida.
 
 ### O — Abierto para Extensión, Cerrado para Modificación (Open/Closed Principle)
-- `StorageService` habla S3 estándar con el endpoint y las credenciales por variables de entorno (`S3_*`): pasar de SeaweedFS a MinIO o a AWS S3 es configuración y no obliga a tocar `FilesService`. Un proveedor que **no** hable S3 sí exigiría extraer una interfaz propia (`StorageProvider`), que **hoy no existe** y agrega SPEC-801.
+- `FilesService` depende de `StorageRouter` y trabaja contra la interfaz `ObjectStorage`. Añadir un proveedor es una implementación nueva que el router devuelve para sus destinos, sin tocar `FilesService`. Hoy todo destino usa `StorageService`, que habla S3 con el endpoint y las credenciales de `S3_*`: pasar de SeaweedFS a MinIO o a AWS S3 es configuración.
 
 ### L — Sustitución de Liskov (Liskov Substitution Principle)
 - Cuando se extraiga una interfaz de proveedor (ver O), cualquier implementación deberá respetar escrupulosamente los contratos de streams, excepciones y metadatos que esa interfaz defina, garantizando intercambiabilidad sin efectos colaterales.
@@ -32,7 +32,7 @@ Todo módulo de NestJS y componente de Next.js debe reflejar fielmente los princ
 - Separar interfaces operativas de archivos de interfaces de gestión administrativa. Los clientes que solo leen metadatos no dependen de interfaces que coordinan llaves criptográficas KEK o borrado físico en disco.
 
 ### D — Inversión de Dependencias (Dependency Inversion Principle)
-- Estado actual: `FilesService` recibe la clase `StorageService` por inyección de Nest y **nunca instancia el cliente S3**; ese cliente entra a `StorageService` mediante los tokens `S3_CLIENT` y `S3_PUBLIC_CLIENT`. Depender de una abstracción propia (interfaz + token de inyección) es la evolución prevista, no el estado de hoy.
+- Estado actual (SPEC-801): `FilesService` recibe `StorageRouter` por inyección de Nest, nunca `StorageService` ni el SDK de S3, y **nunca instancia el cliente S3**; ese cliente entra a `StorageService` mediante los tokens `S3_CLIENT` y `S3_PUBLIC_CLIENT`.
 
 ---
 

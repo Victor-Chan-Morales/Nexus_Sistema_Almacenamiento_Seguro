@@ -111,13 +111,18 @@ function buildService({
     query: jest.fn().mockResolvedValue([]),
   };
   const storage = { delete: jest.fn().mockResolvedValue(undefined) };
+  const storageRouter = {
+    forRead: jest.fn().mockResolvedValue(storage),
+    forWrite: jest.fn(),
+    defaultBucketName: 'nexus',
+  };
   const billing = { getStorageLimitBytes: jest.fn().mockResolvedValue(storageLimit) };
   const service = new FilesService(
     {} as never,
     {} as never,
     {} as never,
     dataSource as never,
-    storage as never,
+    storageRouter as never,
     billing as never,
     {} as never,
     new DriveAccessService(dataSource as never),

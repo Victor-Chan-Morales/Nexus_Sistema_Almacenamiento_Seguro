@@ -23,7 +23,7 @@ import { DriveAccessService } from './drive-access.service';
  * Responsable: Miguel
  *
  * Gestiona los metadatos canónicos de files.*, el Drive personal, versiones cifradas y reservas.
- * Consume StorageService y BillingService en proceso, y registra el hook personal-drive para
+ * Consume StorageRouter (SPEC-801) y BillingService en proceso, y registra el hook personal-drive para
  * que IAM confirme Drive, cuota, destino y referencia criptográfica en su transacción.
  */
 @Module({
@@ -40,7 +40,7 @@ import { DriveAccessService } from './drive-access.service';
       Upload,
     ]),
     IamModule,     // Guard JWT y RegistrationHooks
-    StorageModule, // Para guardar/recuperar bytes en SeaweedFS
+    StorageModule, // StorageRouter: guardar/recuperar bytes en el destino de cada versión
     BillingModule, // Para verificar cuota de almacenamiento
   ],
   controllers: [FoldersController, FilesController],

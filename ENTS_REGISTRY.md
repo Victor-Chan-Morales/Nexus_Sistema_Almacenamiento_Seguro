@@ -74,7 +74,7 @@ Las relaciones Usuario–Membresía–Sesión, tenant–recursos, recurso–dest
 | IAM | Web y módulos de API | Usuario autenticado + organización/membresía autorizada; errores de sesión y permisos |
 | Billing | Web y Dashboard | Planes visibles, suscripción vigente y límites de plan |
 | Files | Web y Dashboard | Carpetas/archivos autorizados; uso de espacio derivado de versiones |
-| StorageService | Files | Guardar, recuperar o eliminar objeto; errores previsibles, sin filtrar secreto |
+| StorageRouter (ObjectStorage) | Files | Guardar, recuperar o eliminar objeto en el destino de la versión; errores previsibles, sin filtrar secreto |
 | Web | IAM/Billing/Files | Solicitudes HTTP según `CONTRACTS.md`; no se comunica directamente con DB ni object storage |
 
 ## Ciclo de cambio
