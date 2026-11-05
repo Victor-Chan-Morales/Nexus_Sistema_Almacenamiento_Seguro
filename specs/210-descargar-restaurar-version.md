@@ -12,7 +12,7 @@
 | **Dependencias** | SPEC-206, SPEC-207 |
 | **Prioridad** | P1 |
 | **Estimación** | 2.5 h |
-| **Estado** | Aprobada (2026-11-04, Víctor Chán Morales) |
+| **Estado** | Implementada (2026-11-05). Aprobada el 2026-11-04 por Víctor Chán Morales |
 
 ## 2. Objetivo
 
@@ -92,10 +92,10 @@ restoreVersion(fileId, versionId, actor): Promise<RestoredVersionDto>;
 
 ## 9. Plan de Tareas
 
-- [ ] **T1 (50 min)**: `FileVersionsService` y rutas.
-- [ ] **T2 (30 min)**: Restaurar y auditoría.
-- [ ] **T3 (30 min)**: Modal.
-- [ ] **T4 (40 min)**: Pruebas.
+- [x] **T1 (50 min)**: `FileVersionsService` y rutas.
+- [x] **T2 (30 min)**: Restaurar y auditoría.
+- [x] **T3 (30 min)**: Modal.
+- [x] **T4 (40 min)**: Pruebas.
 
 **Archivos permitidos:** `files/file-versions.service.ts` y su spec (nuevos), `files/files.controller.ts`, `files/files.module.ts`, `audit/audit.types.ts`, el componente del modal de SPEC-207, `lib/api/files.ts`, `lib/api/types.ts`.
 
@@ -109,7 +109,7 @@ restoreVersion(fileId, versionId, actor): Promise<RestoredVersionDto>;
 
 ## 11. Impacto en Documentación
 
-- [ ] `CONTRACTS.md` v0.6.
+- [x] `CONTRACTS.md` v0.6.
 
 ## 12. Preguntas Abiertas
 
@@ -121,3 +121,4 @@ Ninguna.
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
+| 2026-11-05 | Claude Code | Implementada. Pruebas unitarias en `file-versions.service.spec.ts` (escenarios 1–6). Restaurar con bytes reales verificado contra SeaweedFS local (21 comprobaciones). `versionId` no UUID responde 400 (`ParseUUIDPipe`). Escenario 7 comprobado en Chromium headless (Playwright, 10 comprobaciones, incluido móvil 390 px sin scroll horizontal). Pendiente: capturas en la PR. |
