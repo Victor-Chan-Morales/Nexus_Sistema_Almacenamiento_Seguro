@@ -1,0 +1,113 @@
+# SPEC-804: PANTALLA DE ALMACENAMIENTO
+
+## 1. Metadatos
+
+| Campo | Valor |
+|---|---|
+| **Nivel de Rigor** | N2 (toca `docker-compose.yml`, zona protegida por la regla 4) |
+| **Responsable Principal** | Por asignar |
+| **Aprobador** | Víctor Chán Morales |
+| **Módulo Afectado** | `apps/web/src/app/almacenamiento/`, `apps/web/src/components/`, `docker-compose.yml` |
+| **Requisitos Vinculados** | RF-014 |
+| **Dependencias** | SPEC-803 |
+| **Prioridad** | P1 |
+| **Estimación** | 2 h |
+| **Estado** | Aprobada (2026-11-04, Víctor Chán Morales) |
+
+## 2. Objetivo
+
+Elegir Nube, Local o Híbrido, administrar destinos y solicitar instalación; y un segundo contenedor S3 para comprobar el modelo híbrido en desarrollo.
+
+## 3. Fuera de Alcance
+
+- Mover archivos entre destinos.
+- Cambios en la API.
+
+## 4. Criterios de Aceptación
+
+```gherkin
+Escenario 1: Modelos
+  Dado un tenant_admin en /almacenamiento
+  Entonces ve Nube, Local e Híbrido explicados en lenguaje sencillo, con el actual marcado
+
+Escenario 2: Destinos
+  Entonces puede registrar un destino, ver su estado y pulsar "Probar conexión"
+  Y los campos de clave secreta nunca muestran el valor guardado
+
+Escenario 3: Cambio de modelo
+  Cuando elige otro modelo
+  Entonces un diálogo avisa que los archivos existentes no se mueven
+  Y si faltan requisitos, se explica qué destino hace falta
+
+Escenario 4: Crear carpeta principal en híbrido
+  Dado un modelo hybrid
+  Cuando crea una carpeta en la raíz
+  Entonces debe elegir Nube o Local
+  Y en subcarpetas no aparece el selector
+
+Escenario 5: Ver ubicación
+  Entonces el explorador muestra una etiqueta Nube o Local en cada carpeta
+
+Escenario 6: Colaborador
+  Dado un colaborador
+  Entonces ve el modelo actual en modo lectura, sin credenciales ni acciones
+
+Escenario 7: Solicitar instalación
+  Cuando solicita instalación
+  Entonces ve el estado de su solicitud
+
+Escenario 8: Segundo almacén
+  Cuando ejecuta docker compose --profile s3-local up -d
+  Entonces existe un segundo S3 que se puede registrar como destino on_premises
+```
+
+## 5. Contrato de API
+
+Consume SPEC-802 y SPEC-803.
+
+## 6. Datos y Esquema
+
+No modifica la base de datos.
+
+## 7. Interfaz de Usuario
+
+- **Ruta nueva:** `/almacenamiento`, con un elemento en `app-shell.tsx`.
+- **Estados:** cargando, vacío, error, datos, y "Comprobando…" al probar.
+- Terminología: "Nube" y "Servidor local", nunca `on_premises`.
+
+## 8. Diseño Técnico
+
+- `lib/api/storage.ts` (nuevo).
+- `docker-compose.yml`: servicio `seaweedfs-local` con perfil `s3-local`, otro volumen y puerto 8334. No altera los perfiles existentes.
+- Dentro de Docker se alcanza por nombre de servicio; desde la API en el equipo, por `localhost:8334`, con `DESTINATION_ALLOW_PRIVATE=true`.
+- Dividir en `components/storage-settings.tsx` y `components/destination-form.tsx`.
+
+## 9. Plan de Tareas
+
+- [ ] **T1 (15 min)**: Cliente y tipos.
+- [ ] **T2 (50 min)**: Pantalla y formulario.
+- [ ] **T3 (25 min)**: Selector y etiqueta en el explorador.
+- [ ] **T4 (30 min)**: Servicio en Compose y prueba manual completa.
+
+**Archivos permitidos:** `app/almacenamiento/page.tsx`, `components/storage-settings.tsx`, `components/destination-form.tsx`, `lib/api/storage.ts` (nuevos), `components/file-browser-live.tsx`, `components/app-shell.tsx`, `lib/api/types.ts`, `app/globals.css`, `docker-compose.yml`, `.env.example`, `docs/GUIA_INSTALACION_Y_EJECUCION.md`.
+
+## 10. Estrategia de Pruebas
+
+| Criterio | Tipo | Evidencia |
+|---|---|---|
+| Escenarios 1–8 | Manual con dos contenedores; `npm run lint:web` | Capturas en el PR |
+
+## 11. Impacto en Documentación
+
+- [ ] `docs/GUIA_INSTALACION_Y_EJECUCION.md`, `docs/FIGMA_MAP.md`.
+
+## 12. Preguntas Abiertas
+
+Ninguna.
+
+## 13. Registro de Cambios
+
+| Fecha | Autor | Descripción |
+|---|---|---|
+| 2026-11-04 | Claude Code (borrador) | Versión inicial. |
+| 2026-11-04 | Víctor Chán Morales | Aprobada. |

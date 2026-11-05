@@ -10,7 +10,7 @@
 | **Módulo Afectado** | `apps/web/src/components/file-browser-live.tsx`, `apps/web/src/components/file-versions-modal.tsx` (nuevo), `apps/web/src/lib/api/files.ts` |
 | **Requisitos Vinculados** | RF-008 (parcial) |
 | **Dependencias** | SPEC-206 (API). Puede avanzar con un mock. |
-| **Hito Objetivo** | Corte 80% (30-Oct-2026) — **prioridad P2** |
+| **Prioridad** | P1 |
 | **Estimación** | 1.5 h |
 | **Estado** | Aprobada (2026-10-31, Víctor Chán Morales) |
 
@@ -106,3 +106,4 @@ Ninguna.
 |---|---|---|
 | 2026-10-27 | Víctor Chán | Versión inicial. |
 | 2026-10-27 | Revisión | Sin menú "..." (no existe): botón en fila y panel; solo lectura; prioridad P2. |
+| 2026-11-04 | Víctor Chán Morales | Se actualiza la prioridad al alcance final (ADR-008); aprobación vigente desde 2026-10-31. |
