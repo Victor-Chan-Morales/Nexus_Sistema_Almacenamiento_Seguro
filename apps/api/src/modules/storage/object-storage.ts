@@ -14,7 +14,16 @@ export interface ObjectStorage {
 
 /** Subconjunto del cliente S3 que usa la implementación. Permite simularlo en pruebas. */
 export interface S3Sender {
-  send(command: unknown): Promise<any>;
+  send(command: unknown): Promise<unknown>;
+}
+
+/** Respuesta de GetObject: solo se lee el cuerpo. */
+interface GetObjectOutput {
+  Body?: Readable;
+}
+
+function describeError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 /**
@@ -43,20 +52,20 @@ export class S3ObjectStorage implements ObjectStorage {
           ContentType: contentType,
         }),
       );
-    } catch (err: any) {
-      this.logger.error(`No se pudo guardar el objeto en Storage: ${err?.message || err}`);
+    } catch (err: unknown) {
+      this.logger.error(`No se pudo guardar el objeto en Storage: ${describeError(err)}`);
       throw new InternalServerErrorException('Error al guardar el objeto en Storage');
     }
   }
 
   async get(objectKey: string): Promise<Readable> {
     try {
-      const result = await this.s3Client.send(
+      const result = (await this.s3Client.send(
         new GetObjectCommand({ Bucket: this.bucket, Key: objectKey }),
-      );
+      )) as GetObjectOutput;
       return result.Body as Readable;
-    } catch (err: any) {
-      this.logger.error(`No se pudo recuperar el objeto de Storage: ${err?.message || err}`);
+    } catch (err: unknown) {
+      this.logger.error(`No se pudo recuperar el objeto de Storage: ${describeError(err)}`);
       throw new InternalServerErrorException('Error al recuperar el objeto de Storage');
     }
   }
@@ -66,8 +75,8 @@ export class S3ObjectStorage implements ObjectStorage {
       await this.s3Client.send(
         new DeleteObjectCommand({ Bucket: this.bucket, Key: objectKey }),
       );
-    } catch (err: any) {
-      this.logger.error(`No se pudo eliminar el objeto de Storage: ${err?.message || err}`);
+    } catch (err: unknown) {
+      this.logger.error(`No se pudo eliminar el objeto de Storage: ${describeError(err)}`);
       throw new InternalServerErrorException('Error al eliminar el objeto de Storage');
     }
   }
