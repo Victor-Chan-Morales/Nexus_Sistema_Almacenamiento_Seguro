@@ -27,6 +27,7 @@ import { TenantEncryptionKey } from './entities/tenant-encryption-key.entity';
 import { TenantQuota } from './entities/tenant-quota.entity';
 import { Upload } from './entities/upload.entity';
 import { EncryptedFile, FilesCryptoService } from './files-crypto.service';
+import { DriveAccessService, DriveActor } from './drive-access.service';
 import { PurgeFileResponseDto, RestoreFileResponseDto, RestoreFolderResponseDto, TrashItemDto, TrashResponseDto } from './dto/trash.dto';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction, AuditResource } from '../audit/audit.types';
@@ -94,6 +95,7 @@ export class FilesService {
     private readonly storageService: StorageService,
     private readonly billingService: BillingService,
     private readonly crypto: FilesCryptoService,
+    private readonly driveAccess: DriveAccessService,
     @Optional() private readonly auditService?: AuditService,
   ) {}
 
@@ -118,11 +120,12 @@ export class FilesService {
    * SPEC-202: lista archivos y carpetas eliminados del Drive del solicitante.
    */
   async listTrash(organizationId: string, userId: string): Promise<TrashResponseDto> {
-    const drive = await this.findPersonalDrive(organizationId, userId);
+    const access = await this.driveAccess.findDrive({ organizationId, userId });
 
-    if (!drive) {
+    if (!access) {
       return { items: [], totalItems: 0 };
     }
+    const drive = access.drive;
 
     // 2. Archivos borrados lógicamente del Drive del solicitante, con su versión vigente en la misma consulta
     const [files, fileCount] = (await this.fileRepository
@@ -220,45 +223,6 @@ export class FilesService {
       items,
       totalItems: fileCount + folderItems.length,
     };
-  }
-
-  /**
-   * Drive personal del solicitante. No lo crea: las lecturas y acciones sobre la papelera no escriben.
-   */
-  private async findPersonalDrive(
-    organizationId: string,
-    userId: string,
-    manager?: EntityManager,
-  ): Promise<Drive | null> {
-    const driveRepo = (manager ?? this.dataSource).getRepository(Drive);
-    return driveRepo.findOne({
-      where: { organizationId, ownerUserId: userId, teamId: IsNull(), type: 'personal' },
-      order: { createdAt: 'ASC' },
-    });
-  }
-
-  /**
-   * Localiza un archivo de la organización y comprueba que su carpeta pertenece al Drive indicado.
-   * No filtra por estado de papelera: cada operación decide qué hacer con él.
-   */
-  private async locateOwnFile(
-    manager: EntityManager,
-    fileId: string,
-    organizationId: string,
-    driveId: string,
-    lock = false,
-  ): Promise<{ file: FileRecord; folder: Folder } | null> {
-    const file = await manager.getRepository(FileRecord).findOne({
-      where: { id: fileId, organizationId },
-      lock: lock ? { mode: 'pessimistic_write' } : undefined,
-    });
-    if (!file) return null;
-
-    const folder = await manager.getRepository(Folder).findOne({
-      where: { id: file.folderId, organizationId },
-    });
-    if (!folder || folder.driveId !== driveId) return null;
-    return { file, folder };
   }
 
   /** Error de regla de negocio con la misma forma que STORAGE_QUOTA_EXCEEDED. */
@@ -412,7 +376,7 @@ export class FilesService {
   }> {
     const drive = await this.getOrCreateUserDrive(organizationId, userId);
     const effectiveParentId = parentId || drive.rootFolderId;
-    await this.requirePersonalFolder(organizationId, drive.id, effectiveParentId);
+    await this.driveAccess.requireFolder({ organizationId, userId }, effectiveParentId);
 
     const folders = await this.folderRepository.find({
       where: {
@@ -460,11 +424,10 @@ export class FilesService {
     const created = await this.dataSource.transaction(async (manager) => {
       await this.lockTenantQuota(manager, organizationId);
       const drive = await this.ensureUserDrive(manager, organizationId, userId);
-      const parentFolder = await this.requirePersonalFolder(
-        organizationId,
-        drive.id,
+      const { folder: parentFolder } = await this.driveAccess.requireFolder(
+        { organizationId, userId },
         parentId || drive.rootFolderId,
-        manager,
+        { manager },
       );
       const folderRepo = manager.getRepository(Folder);
       const saved = await folderRepo.save(folderRepo.create({
@@ -507,7 +470,7 @@ export class FilesService {
     files: UploadedFileDto[];
   }> {
     const drive = await this.getOrCreateUserDrive(organizationId, userId);
-    const folder = await this.requirePersonalFolder(organizationId, drive.id, folderId);
+    const { folder } = await this.driveAccess.requireFolder({ organizationId, userId }, folderId);
     const [folders, files] = await Promise.all([
       this.folderRepository.find({
         where: { organizationId, driveId: drive.id, parentId: folder.id, isDeleted: false },
@@ -551,7 +514,7 @@ export class FilesService {
   ): Promise<UploadedFileDto[]> {
     const drive = await this.getOrCreateUserDrive(organizationId, userId);
     const effectiveFolderId = folderId || drive.rootFolderId;
-    await this.requirePersonalFolder(organizationId, drive.id, effectiveFolderId);
+    await this.driveAccess.requireFolder({ organizationId, userId }, effectiveFolderId);
     const files = await this.fileRepository.find({
       where: { organizationId, folderId: effectiveFolderId, isDeleted: false },
       relations: { versions: true },
@@ -654,22 +617,6 @@ export class FilesService {
     );
   }
 
-  private async requirePersonalFolder(
-    organizationId: string,
-    driveId: string,
-    folderId: string,
-    manager?: EntityManager,
-    lock = false,
-  ): Promise<Folder> {
-    const folderRepo = manager?.getRepository(Folder) ?? this.folderRepository;
-    const folder = await folderRepo.findOne({
-      where: { id: folderId, organizationId, driveId, isDeleted: false },
-      ...(lock && manager ? { lock: { mode: 'pessimistic_write' as const } } : {}),
-    });
-    if (!folder) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
-    return folder;
-  }
-
   async uploadMultipartFile(params: {
     organizationId: string;
     ownerId: string;
@@ -706,8 +653,8 @@ export class FilesService {
         );
       }
 
-      const drive = await this.getOrCreateUserDrive(organizationId, ownerId);
-      await this.requirePersonalFolder(organizationId, drive.id, folderId);
+      await this.getOrCreateUserDrive(organizationId, ownerId);
+      await this.driveAccess.requireFolder({ organizationId, userId: ownerId }, folderId);
       const reservation = await this.reserveUpload({
         organizationId,
         ownerId,
@@ -722,12 +669,10 @@ export class FilesService {
       try {
         const uploaded = await this.dataSource.transaction(async (manager) => {
           await this.lockTenantQuota(manager, organizationId);
-          const folder = await this.requirePersonalFolder(
-            organizationId,
-            drive.id,
+          const { folder } = await this.driveAccess.requireFolder(
+            { organizationId, userId: ownerId },
             folderId,
-            manager,
-            true,
+            { manager, lock: true },
           );
           const fileRepo = manager.getRepository(FileRecord);
           const versionRepo = manager.getRepository(FileVersion);
@@ -1077,7 +1022,9 @@ export class FilesService {
     organizationId: string,
     userId: string,
   ): Promise<{ stream: Readable; mimeType: string; name: string }> {
-    const drive = await this.getOrCreateUserDrive(organizationId, userId);
+    const access = await this.driveAccess.findDrive({ organizationId, userId });
+    if (!access) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
+    const drive = access.drive;
     const file = await this.fileRepository.createQueryBuilder('file')
       .innerJoin('file.folder', 'folder')
       .where('file.id = :fileId', { fileId })
@@ -1127,7 +1074,9 @@ export class FilesService {
   }
 
   async softDelete(fileId: string, organizationId: string, userId: string): Promise<FileRecord> {
-    const drive = await this.getOrCreateUserDrive(organizationId, userId);
+    const access = await this.driveAccess.findDrive({ organizationId, userId });
+    if (!access) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
+    const drive = access.drive;
     const file = await this.fileRepository.createQueryBuilder('file')
       .innerJoin('file.folder', 'folder')
       .where('file.id = :fileId', { fileId })
@@ -1156,8 +1105,9 @@ export class FilesService {
 
   /** Mueve una carpeta y todo su árbol de contenido a la papelera como una unidad restaurable. */
   async softDeleteFolder(folderId: string, organizationId: string, userId: string): Promise<{ success: true; id: string }> {
-    const drive = await this.findPersonalDrive(organizationId, userId);
-    if (!drive) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
+    const access = await this.driveAccess.findDrive({ organizationId, userId });
+    if (!access) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
+    const drive = access.drive;
 
     await this.dataSource.transaction(async (manager) => {
       await this.lockTenantQuota(manager, organizationId);
@@ -1198,8 +1148,9 @@ export class FilesService {
 
   /** Restaura la unidad de carpeta; archivos previamente eliminados individualmente permanecen en la papelera. */
   async restoreFolder(folderId: string, organizationId: string, userId: string): Promise<RestoreFolderResponseDto> {
-    const drive = await this.findPersonalDrive(organizationId, userId);
-    if (!drive) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
+    const access = await this.driveAccess.findDrive({ organizationId, userId });
+    if (!access) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
+    const drive = access.drive;
 
     const restored = await this.dataSource.transaction(async (manager) => {
       await this.lockTenantQuota(manager, organizationId);
@@ -1278,8 +1229,9 @@ export class FilesService {
 
   /** Purga una carpeta con todo su contenido y elimina los objetos tras confirmar la transacción. */
   async purgeFolder(folderId: string, organizationId: string, userId: string): Promise<PurgeFileResponseDto> {
-    const drive = await this.findPersonalDrive(organizationId, userId);
-    if (!drive) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
+    const access = await this.driveAccess.findDrive({ organizationId, userId });
+    if (!access) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
+    const drive = access.drive;
 
     const purged = await this.dataSource.transaction(async (manager) => {
       await this.lockTenantQuota(manager, organizationId);
@@ -1360,11 +1312,12 @@ export class FilesService {
    * SPEC-203: devuelve un archivo de la papelera del solicitante a su carpeta original.
    */
   async restoreFile(fileId: string, organizationId: string, userId: string): Promise<RestoreFileResponseDto> {
-    const drive = await this.findPersonalDrive(organizationId, userId);
-    if (!drive) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
+    // Sin Drive no hay transacción: no se bloquea la cuota ni se escribe nada.
+    const access = await this.driveAccess.findDrive({ organizationId, userId });
+    if (!access) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
 
     const restored = await this.dataSource.transaction((manager) =>
-      this.applyRestore(manager, fileId, organizationId, drive.id),
+      this.applyRestore({ organizationId, userId }, manager, fileId),
     );
 
     // Enganche SPEC-405: FILE_RESTORE tras el commit
@@ -1380,14 +1333,14 @@ export class FilesService {
   }
 
   private async applyRestore(
+    actor: DriveActor,
     manager: EntityManager,
     fileId: string,
-    organizationId: string,
-    driveId: string,
   ): Promise<RestoreFileResponseDto> {
+    const { organizationId } = actor;
     // Serializa con las cargas de la organización (mismo lock que uploadMultipartFile)
     await this.lockTenantQuota(manager, organizationId);
-    const located = await this.locateOwnFile(manager, fileId, organizationId, driveId, true);
+    const located = await this.driveAccess.locateFile(actor, fileId, { manager, lock: true });
     if (!located || !located.file.isDeleted) {
       throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
     }
@@ -1443,11 +1396,12 @@ export class FilesService {
    * Los objetos de SeaweedFS se borran después del commit, con mejor esfuerzo y sin bloquear la respuesta.
    */
   async purgeFile(fileId: string, organizationId: string, userId: string): Promise<PurgeFileResponseDto> {
-    const drive = await this.findPersonalDrive(organizationId, userId);
-    if (!drive) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
+    // Sin Drive no hay transacción: no se bloquea la cuota ni se borra nada.
+    const access = await this.driveAccess.findDrive({ organizationId, userId });
+    if (!access) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
 
     const purged = await this.dataSource.transaction((manager) =>
-      this.applyPurge(manager, fileId, organizationId, drive.id),
+      this.applyPurge({ organizationId, userId }, manager, fileId),
     );
 
     // Enganche SPEC-405: FILE_PURGE tras el commit
@@ -1465,13 +1419,13 @@ export class FilesService {
   }
 
   private async applyPurge(
+    actor: DriveActor,
     manager: EntityManager,
     fileId: string,
-    organizationId: string,
-    driveId: string,
   ): Promise<{ freedBytes: bigint; objectKeys: string[] }> {
+    const { organizationId } = actor;
     await this.lockTenantQuota(manager, organizationId);
-    const located = await this.locateOwnFile(manager, fileId, organizationId, driveId, true);
+    const located = await this.driveAccess.locateFile(actor, fileId, { manager, lock: true });
     if (!located) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
     if (!located.file.isDeleted) {
       throw this.businessError(

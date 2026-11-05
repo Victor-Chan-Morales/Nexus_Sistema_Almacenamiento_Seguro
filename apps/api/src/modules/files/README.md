@@ -20,6 +20,16 @@ Configura `FILES_MASTER_KEY` como una llave aleatoria de 32 bytes en base64, ent
 
 El navegador se comunica únicamente con la API Nexus. `StorageService` encapsula SeaweedFS/S3; los nombres originales nunca forman parte de `object_key` y las credenciales del proveedor no se devuelven a la API.
 
+## Control de acceso a Drives (SPEC-221)
+
+`DriveAccessService` decide qué Drive puede usar cada miembro y en qué nivel. Es el único punto de Files que busca Drives para autorizar una operación; `FilesService` ya no consulta `drive_id` por su cuenta.
+
+- `findDrive(actor)` devuelve el Drive personal del solicitante con nivel `owner`. No crea nada: la creación sigue en `getOrCreateUserDrive` y `ensureUserDrive`.
+- `requireFolder(actor, folderId)` devuelve una carpeta activa de un Drive accesible; si no existe, pertenece a otro Drive u otra organización, responde 404 sin revelar que existe.
+- `locateFile(actor, fileId)` localiza un archivo de un Drive accesible en cualquier estado de papelera, y devuelve `null` si no es accesible.
+
+Todas las búsquedas filtran por organización y propietario. Los Drives de equipo y sus niveles `read`/`write` llegarán con SPEC-220 a 224.
+
 ## Alcance actual
 
 - Solo se expone el Drive personal del usuario autenticado; cada búsqueda valida organización y `drive_id` derivado del JWT.

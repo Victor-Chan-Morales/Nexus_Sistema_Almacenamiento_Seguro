@@ -1,5 +1,6 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { FilesService } from './files.service';
+import { DriveAccessService } from './drive-access.service';
 
 const GB = 1_000_000_000;
 
@@ -31,7 +32,7 @@ describe('FilesService — cuota y reservas de carga', () => {
     const manager = buildManager({ usedBytes: 2 * GB, reservedBytes: 1 * GB });
     const service = new FilesService(
       {} as never, {} as never, {} as never,
-      {} as never, {} as never, {} as never, {} as never,
+      {} as never, {} as never, {} as never, {} as never, {} as never,
     );
 
     const usage = await service.getTotalStorageUsage('org-1', manager as never);
@@ -55,17 +56,18 @@ describe('FilesService — cuota y reservas de carga', () => {
     const storageService = { put: jest.fn(), bucketName: 'nexus' };
     const billingService = { getStorageLimitBytes: jest.fn().mockResolvedValue(BigInt(100)) };
 
+    const driveAccess = new DriveAccessService({} as never);
     const service = new FilesService(
       {} as never, {} as never, {} as never,
-      dataSource as never, storageService as never, billingService as never, {} as never,
+      dataSource as never, storageService as never, billingService as never, {} as never, driveAccess,
     );
     jest.spyOn(service, 'getOrCreateUserDrive').mockResolvedValue({
       id: 'drive-1',
       name: 'Mi unidad',
       rootFolderId: 'folder-root',
     });
-    jest.spyOn(service as never as { requirePersonalFolder: () => unknown }, 'requirePersonalFolder')
-      .mockResolvedValue({ id: 'folder-1' } as never);
+    jest.spyOn(driveAccess, 'requireFolder')
+      .mockResolvedValue({ folder: { id: 'folder-1' } as never, access: { drive: { id: 'drive-1' } as never, level: 'owner' } });
 
     const buffer = Buffer.from('%PDF-1.4 contenido de prueba'); // 28 bytes: 90 + 28 > 100
     const error = await service
@@ -107,15 +109,16 @@ describe('FilesService — tamaño de carpetas', () => {
       find: jest.fn().mockResolvedValue([folderEntity('hija-a', 'raiz'), folderEntity('hija-b', 'raiz')]),
     };
     const fileRepository = { find: jest.fn().mockResolvedValue([]) };
+    const driveAccess = new DriveAccessService({} as never);
     const service = new FilesService(
       fileRepository as never, folderRepository as never, {} as never,
-      dataSource as never, {} as never, {} as never, {} as never,
+      dataSource as never, {} as never, {} as never, {} as never, driveAccess,
     );
     jest.spyOn(service, 'getOrCreateUserDrive').mockResolvedValue({
       id: 'drive-1', name: 'Mi unidad', rootFolderId: 'raiz',
     });
-    jest.spyOn(service as never as { requirePersonalFolder: () => unknown }, 'requirePersonalFolder')
-      .mockResolvedValue(folderEntity('raiz', null) as never);
+    jest.spyOn(driveAccess, 'requireFolder')
+      .mockResolvedValue({ folder: folderEntity('raiz', null) as never, access: { drive: { id: 'drive-1' } as never, level: 'owner' } });
     return { service, dataSource };
   };
 
