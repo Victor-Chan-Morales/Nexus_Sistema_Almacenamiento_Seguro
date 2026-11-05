@@ -22,6 +22,7 @@ import { Response } from 'express';
 import { pipeline } from 'stream/promises';
 import { FilesService } from './files.service';
 import { PurgeFileResponseDto, RestoreFileResponseDto, RestoreFolderResponseDto, TrashResponseDto } from './dto/trash.dto';
+import { FileVersionsResponseDto } from './dto/versions.dto';
 import { CurrentUser } from '../iam/decorators/current-user.decorator';
 import { AuthUser } from '../iam/interfaces/auth-user.interface';
 import { AuditService } from '../audit/audit.service';
@@ -112,6 +113,15 @@ export class FilesController {
   @Get('trash')
   async getTrash(@CurrentUser() user: AuthUser): Promise<TrashResponseDto> {
     return this.filesService.listTrash(user.organizationId, user.userId);
+  }
+
+  /** SPEC-206: historial de versiones (solo lectura) de un archivo propio y activo. */
+  @Get(':id/versions')
+  async listVersions(
+    @CurrentUser() user: AuthUser,
+    @Param('id') fileId: string,
+  ): Promise<FileVersionsResponseDto> {
+    return this.filesService.listVersions(fileId, user.organizationId, user.userId);
   }
 
   /** SPEC-203: `POST` responde 201 por defecto; el contrato exige 200. */
