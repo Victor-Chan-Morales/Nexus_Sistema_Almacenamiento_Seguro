@@ -12,7 +12,7 @@
 | **Dependencias** | SPEC-221 |
 | **Prioridad** | P1 |
 | **Estimación** | 1.5 h |
-| **Estado** | En revisión |
+| **Estado** | Aprobada (2026-11-04, Víctor Chán Morales) |
 
 ## 2. Objetivo
 
@@ -126,3 +126,4 @@ Ninguna.
 | Fecha | Autor | Descripción |
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial, pedida por el coordinador. |
+| 2026-11-04 | Víctor Chán Morales | Aprobada. |
