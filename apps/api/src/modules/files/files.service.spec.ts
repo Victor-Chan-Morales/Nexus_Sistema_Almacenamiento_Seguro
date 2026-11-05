@@ -1,7 +1,6 @@
 import { HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
 import { FilesService } from './files.service';
 import { Drive } from './entities/drive.entity';
-import { FileRecord } from './entities/file-record.entity';
 import { Folder } from './entities/folder.entity';
 import { DriveAccessService } from './drive-access.service';
 
