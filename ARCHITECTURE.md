@@ -14,7 +14,7 @@ Next.js Web ── JSON/multipart ──► NestJS API
                                       ├── IAM: identidad, sesiones y membresías
                                       ├── Billing: planes y suscripción simulada
                                       ├── Files: carpetas, metadatos y reglas de cuota
-                                      ├── Storage: interfaz de proveedor + SeaweedFS (S3)
+                                      ├── Storage: cliente S3 (SeaweedFS)
                                       └── Audit: eventos relevantes
                                                │
                            ┌───────────────────┴──────────────────┐
@@ -33,7 +33,7 @@ La figura expresa límites lógicos. No afirma que todos los módulos ya existan
 - **IAM**: usuario, organización, membresía, rol y sesión. Determina el contexto organizacional autorizado.
 - **Billing**: plan, suscripción y operaciones marcadas como simuladas. No procesa dinero real.
 - **Files**: carpetas, archivos, versiones, límites y autorización de recursos.
-- **Storage**: contrato pequeño (`put`, `get`, `delete`) e implementación SeaweedFS para el primer entorno. La lógica de Files depende del contrato, no del SDK concreto.
+- **Storage**: `StorageService` ofrece `put`, `get` y `delete` sobre SeaweedFS. Files no usa el SDK directamente. SPEC-801 agrega una interfaz y un selector por destino.
 - **PostgreSQL**: fuente de verdad de identidad, permisos, plan, relaciones y metadatos.
 - **SeaweedFS (S3)**: bytes de objetos. PostgreSQL registra la clave de objeto y datos de la versión, no el contenido.
 
@@ -60,7 +60,7 @@ Files valida sesión, pertenencia, carpeta y límites; Storage persiste el objet
 ## Despliegue — Monolito Modular (decisión vigente)
 
 La arquitectura actual usa un **monolito modular**: un único proceso NestJS que contiene
-todos los dominios (IAM, Billing, Files, Storage, Health). Esta decisión fue tomada para
+todos los dominios (IAM, Billing, Files, Storage, Audit, Integration, Dashboard, Health). Esta decisión fue tomada para
 el corte del 30% del proyecto universitario con el objetivo de reducir la complejidad
 operacional y cumplir el plazo de entrega.
 

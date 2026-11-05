@@ -3,7 +3,7 @@
 **Dueño:** Miguel.
 
 ## Responsabilidades
-- Implementación de la estrategia de almacenamiento de objetos con SeaweedFS (S3).
+- Cliente de almacenamiento de objetos con SeaweedFS (S3). SPEC-801 agrega la interfaz y el selector por destino.
 - Métodos de transporte de binarios: `put`, `get`, `delete`, `getPresignedUrl`.
 - Aislamiento multi-tenant a nivel de object-key (`<organizationId>/<fileId>/v<version>`).
 

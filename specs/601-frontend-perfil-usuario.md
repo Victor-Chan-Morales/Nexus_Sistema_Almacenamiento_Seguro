@@ -24,8 +24,8 @@
 
 ## 3. Fuera de Alcance (YAGNI)
 
-- **Editar el nombre o el correo:** no existe endpoint de actualización de perfil ni spec que lo cree. La versión anterior de esta spec lo pedía en el objetivo sin ninguna tarea que lo cumpliera; se retira.
-- Cambiar la contraseña con sesión iniciada: el enlace "Cambiar" lleva al flujo de recuperación (SPEC-105).
+- **Editar el nombre:** lo agrega SPEC-113, que depende de esta spec. Cambiar el correo queda fuera de alcance.
+- Cambiar la contraseña con sesión iniciada: lo agrega SPEC-113. Hasta entonces, el enlace "Cambiar" lleva al flujo de recuperación (SPEC-105).
 - Foto de perfil y preferencias.
 
 ---
@@ -105,3 +105,4 @@ Ninguna.
 | 2026-10-27 | Víctor Chán | Versión inicial. |
 | 2026-10-27 | Revisión | Retirada la edición de nombre (sin endpoint ni tarea); solo lectura con datos de sesión; prioridad P2. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. Se actualiza la prioridad al alcance final (ADR-008). |
+| 2026-11-04 | Claude Code (revisión) | Referencias a SPEC-113, que agrega lo que esta spec deja fuera. Aprobado por el coordinador (2026-11-04). |

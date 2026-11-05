@@ -1,5 +1,7 @@
 # ASIGNACIONES Y PLAN DE TRABAJO — CORTE DEL 80%
 
+> **Documento histórico del corte del 80 %.** No describe el trabajo vigente: el backlog y su orden están en `specs/README.md`, y las decisiones en `docs/decisions/ADR-008-alcance-final.md`.
+
 > **Equipo:** Víctor Chán Morales (coordinador, integración) · Sebastián (IAM) · Miguel (Files & Storage) · Anthony (Billing & Audit).
 > **Hito:** corte del 80% el **viernes 30 de octubre de 2026**. El alcance 100% va a la primera semana de noviembre.
 > **Capacidad confirmada:** ~7 h por persona hasta el viernes (28 h en total).

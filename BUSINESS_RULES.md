@@ -27,13 +27,13 @@ Estas reglas traducen la propuesta aprobada, los lineamientos del curso y el dic
 | Tenant Admin | Administra usuarios, permisos, políticas y configuración de su organización. |
 | Colaborador | Opera archivos dentro de las concesiones de su organización/equipo. |
 
-El rol Auditor no se implementa: la propuesta §7 define tres roles (ADR-008 §2). En el primer corte se permite un rol mínimo de administrador para la cuenta que registra la organización. No implementar autorización solo ocultando botones; cada acción debe verificarse en API. La matriz completa de permisos queda para el diseño RBAC del alcance final.
+El rol Auditor no se implementa: la propuesta §7 define tres roles (ADR-008 §2). La cuenta que registra la organización nace como `tenant_admin`. No implementar autorización solo ocultando botones; cada acción debe verificarse en API. La matriz de permisos está en ADR-007 §4.
 
 ## Planes, suscripciones y pago simulado
 
 1. Cada plan debe tener nombre, descripción, precio, vigencia, límite de almacenamiento y límite de usuarios; los valores salen del catálogo persistido, no se inventan en frontend.
 2. Activar una suscripción registra organización, plan, estado `active`, fecha de inicio y de fin si aplica.
-3. Como regla inicial propuesta, una organización tiene como máximo una suscripción `active` a la vez; el historial conserva suscripciones vencidas/canceladas. El equipo debe revisar esta restricción con Billing antes de migrar.
+3. Una organización tiene como máximo una suscripción `active` a la vez (`uq_subscription_one_active_per_organization`); el historial conserva suscripciones vencidas/canceladas.
 4. Las operaciones de pago/renovación llevan el indicador de simulación y no hacen cargos reales. La activación y la renovación de planes con precio mayor que cero solicitan una **tarjeta de prueba**: solo se aceptan números ficticios fijos definidos en el código. Nunca se guarda ni se registra el número completo ni el CVV, solo los últimos cuatro dígitos de la tarjeta de prueba aprobada (ADR-008 §5, SPEC-305).
 5. Al vencer una suscripción se respetan los estados definidos en el diccionario (`active`, `expired`, `cancelled`) y se aplica una decisión de acceso/cuota documentada antes de programarla.
 6. La capacidad total se mide en bytes; convertir a GB solo para presentación. Nunca aceptar el valor de uso enviado por el cliente.

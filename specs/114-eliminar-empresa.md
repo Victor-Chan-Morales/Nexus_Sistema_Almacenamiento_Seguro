@@ -77,6 +77,7 @@ Sección "Zona de riesgo" en `/configuracion`, visible solo para `tenant_admin`.
 - La contraseña se verifica **antes** de la transacción (Argon2 es costoso).
 - **Auditoría, tras el commit:** `ORGANIZATION_CLOSED`, `AuditResource.ORGANIZATION`.
 - **Bloqueo:** ya lo aplica `findActive`, que exige organización activa.
+- **Error en pantalla:** aquí `401 INVALID_CREDENTIALS` significa contraseña incorrecta, no sesión vencida. La pantalla revisa `code` antes de llamar a `failSession`, que cierra la sesión ante cualquier `401`.
 - **Limitación de ADR-007 §5:** un correo sigue ocupado tras el cierre y no puede registrarse otra vez.
 
 ## 9. Plan de Tareas
@@ -111,3 +112,4 @@ Ninguna.
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
+| 2026-11-04 | Claude Code (revisión) | Se aclara cómo distingue la pantalla una contraseña incorrecta de una sesión vencida. Aprobado por el coordinador (2026-11-04). |

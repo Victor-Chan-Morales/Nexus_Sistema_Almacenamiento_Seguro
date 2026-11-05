@@ -10,7 +10,7 @@ El hook requerido `personal-drive` recibe el mismo `EntityManager` de la transac
 
 Files lee el límite vigente mediante `BillingService`. Antes de aceptar una carga, bloquea `files.tenant_quota` con `SELECT ... FOR UPDATE`, suma versiones retenidas y reservas activas, y registra una reserva durable. El coordinador de suscripciones pasa su `EntityManager` a `getTotalStorageUsage`, por lo que un downgrade y una reserva concurrente se serializan sobre la misma fila. Sin suscripción, el límite es cero.
 
-El uso confirmado cuenta `files.file_version.size_bytes` una vez por versión; no suma un contador duplicado de `files.file`. Los archivos en papelera cuentan durante 30 días. Las reservas se liberan al confirmar o fallar la carga y también se consideran en los cambios de plan.
+El uso confirmado cuenta `files.file_version.size_bytes` una vez por versión; no suma un contador duplicado de `files.file`. Los archivos en papelera cuentan durante 30 días; con SPEC-215 cuentan hasta su eliminación física (ADR-008 §9). Las reservas se liberan al confirmar o fallar la carga y también se consideran en los cambios de plan.
 
 ## Cifrado y Storage
 

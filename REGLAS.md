@@ -24,7 +24,7 @@ Cualquier cambio o adición de librería requiere aprobación previa del Coordin
 | **ORM** | TypeORM | 0.3.x | **Solo mapea entidades** (`synchronize` desactivado). TypeORM **no** crea ni migra el esquema. |
 | **Migraciones** | **dbmate** (contenedor `migrate`) | imagen `ghcr.io/amacneil/dbmate` | SQL versionado en `database/migrations/` (`-- migrate:up` / `-- migrate:down`). Se aplican con `npm run migration:run`. |
 | **Object Storage** | SeaweedFS (S3-compatible) | imagen fijada por *digest* en `docker-compose.yml` | Bytes cifrados de archivos (S3 en 8333, filer en 8888, master en 9333). |
-| **Cifrado en Reposo** | `node:crypto` (AES-256-GCM) | Nativo Node | Envelope DEK/KEK en memoria, límite de 100 MB, sin rotación de llaves (ADR-006). Llave maestra `FILES_MASTER_KEY` en `.env`. |
+| **Cifrado en Reposo** | `node:crypto` (AES-256-GCM) | Nativo Node | Envelope DEK/KEK en memoria, límite de 100 MB, sin rotación de llaves todavía (ADR-006, SPEC-005). Llave maestra `FILES_MASTER_KEY` en `.env`. |
 | **Hash Contraseñas** | Argon2id | `argon2` (npm) | `memoryCost` 19 456 KiB, `timeCost` 2, `parallelism` 1 (mínimos OWASP). |
 | **Tokens / Sesión** | JWT (memoria) + cookie HttpOnly | 15 min / 7 días | Access token volátil; refresh token hasheado en la cookie `nexus_refresh`. |
 | **Pruebas Backend** | Jest + ts-jest; Supertest (solo e2e) | Jest 29.x, Supertest 7.x | Pruebas unitarias por módulo (`*.spec.ts`, junto al código) y e2e en `apps/api/test/`. |
@@ -110,7 +110,7 @@ flowchart LR
 
 | Si vas a trabajar en... | Debes leer obligatoriamente: |
 |---|---|
-| **Cualquier tarea** | `REGLAS.md`, `docs/sdd/constitucion.md`, `docs/equipo/asignaciones.md`, `specs/README.md` y tu spec |
+| **Cualquier tarea** | `REGLAS.md`, `docs/sdd/constitucion.md`, `specs/README.md` y tu spec |
 | **Decisiones y contratos del corte vigente** | `docs/decisions/ADR-008-alcance-final.md` (prevalece donde choque), `docs/decisions/ADR-007-decisiones-corte-80.md`, `CONTRACTS.md` (versión indicada en su encabezado) |
 | **Autenticación, Permisos, Usuarios** | `modules/iam/`, `BUSINESS_RULES.md` (§Identidad y organizaciones, §Roles y permisos), `CONTRACTS.md` (§IAM y sesión) |
 | **Archivos, Carpetas, Cifrado, Papelera** | `modules/files/`, `modules/storage/`, `docs/decisions/ADR-006-cifrado-node-crypto-aes-256-gcm.md`, `CONTRACTS.md` (§Files, almacenamiento y errores) |
