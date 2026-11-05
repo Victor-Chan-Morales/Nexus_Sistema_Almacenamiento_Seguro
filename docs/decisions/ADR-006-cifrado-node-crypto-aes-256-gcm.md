@@ -66,7 +66,7 @@ La DEK se cifra con AES-256-GCM bajo la KEK del tenant (nonce de 12 bytes, AAD `
 - **No es streaming.** El archivo completo se carga en memoria al cifrar y al descifrar (pico de hasta ~100 MB por carga; mitigado con el límite de 3 cargas simultáneas por usuario). Pasar a streaming exigiría un formato por bloques (`formatVersion = 2`), y queda fuera de alcance (ADR-008 §2).
 - **No hay rotación de llaves implementada.** El esquema tiene `kek_id` y el estado `rotated`, pero el descifrado **siempre deriva la KEK de la llave maestra actual e ignora `kek_id`**. Cambiar `FILES_MASTER_KEY` volvería ilegibles todos los archivos existentes. La rotación requiere re-cifrar las DEK (reenvolver); la implementa SPEC-005.
 - **Un solo punto de compromiso:** quien obtenga `FILES_MASTER_KEY` puede derivar la KEK de cualquier tenant. Se mitiga guardándola en el gestor de secretos del entorno, fuera del repositorio y de `JWT_SECRET`.
-- **Sin pruebas dedicadas:** ninguna `*.spec.ts` ejercita `FilesCryptoService` directamente. Medido con `npm run test:cov` el 2026-10-27, `files-crypto.service.ts` tiene **13 % de líneas cubiertas** (9 de 67), y el cifrado de punta a punta no se prueba. Pendiente: pruebas de ida y vuelta, de manipulación del objeto (debe fallar) y de AAD cruzado entre organizaciones.
+- **Pruebas:** `files-crypto.service.spec.ts` (SPEC-006) cubre la ida y vuelta, la manipulación del objeto y el contexto cruzado entre organizaciones, archivos y versiones, con 100 % de líneas de `files-crypto.service.ts`. Son unitarias: el cifrado contra SeaweedFS real sigue sin prueba automatizada.
 
 ---
 

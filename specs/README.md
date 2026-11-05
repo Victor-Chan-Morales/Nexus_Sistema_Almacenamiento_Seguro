@@ -67,7 +67,7 @@ Todas siguen el flujo normal de aprobación y fusión.
 | `SPEC-001` | Corrección del cálculo recursivo de carpetas y bytes | N0 | RF-007, RF-013 | — | — | ✅ Hecho |
 | `SPEC-002` | ADR-006: cifrado `node:crypto` AES-256-GCM | N1 | RF-004, RF-005, RNF-003 | — | — | ✅ Hecho |
 | `SPEC-003` | Integración continua (GitHub Actions) | N1 | Calidad | — | — | ✅ Hecho |
-| `SPEC-004` | [Alinear los documentos con el alcance final](004-alinear-alcance-final.md) | N1 | Gobernanza | P1 | — | Aprobada |
+| `SPEC-004` | [Alinear los documentos con el alcance final](004-alinear-alcance-final.md) | N1 | Gobernanza | P1 | — | ✅ Hecho |
 | `SPEC-005` | [Rotación de llaves](005-rotacion-llaves.md) | N2 | RF-005 | P1 | 006, 802 | Aprobada |
 | `SPEC-006` | [Pruebas del cifrado](006-pruebas-cifrado.md) | N1 | RF-004, RF-005, RNF-003 | P1 | 004 | Aprobada |
 
