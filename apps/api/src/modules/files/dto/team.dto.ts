@@ -42,7 +42,8 @@ export class CreatedTeamDto {
 export class TeamItemDto {
   id: string;
   name: string;
-  driveId: string;
+  /** Nulo solo si falta el Drive del equipo, algo que la creación transaccional no deja pasar. */
+  driveId: string | null;
   memberCount: number;
   myLevel: TeamLevel | null;
 }
