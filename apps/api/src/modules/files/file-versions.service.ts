@@ -1,6 +1,5 @@
 import {
   HttpException,
-  HttpStatus,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -19,7 +18,7 @@ import { FileVersionsResponseDto } from './dto/versions.dto';
 import { FileRecord } from './entities/file-record.entity';
 import { FileVersion } from './entities/file-version.entity';
 import { FilesCryptoService } from './files-crypto.service';
-import { FilesService } from './files.service';
+import { FilesService, versionAlreadyCurrentError } from './files.service';
 
 /** SPEC-210: respuesta de restaurar. `versionId` y `versionNumber` son los de la versión nueva. */
 export interface RestoredVersionDto {
@@ -139,33 +138,19 @@ export class FileVersionsService {
     actor: DriveActor,
   ): Promise<RestoredVersionDto> {
     const { file, version } = await this.locateVersion(fileId, versionId, actor);
-    if (file.currentVersionId === version.id) {
-      throw new HttpException(
-        {
-          statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
-          error: 'Unprocessable Entity',
-          code: 'VERSION_ALREADY_CURRENT',
-          message: 'La versión indicada ya es la vigente',
-        },
-        HttpStatus.UNPROCESSABLE_ENTITY,
-      );
-    }
+    if (file.currentVersionId === version.id) throw versionAlreadyCurrentError();
 
     const plaintext = await this.readVersionBytes(actor.organizationId, file, version);
     const correlationId = randomUUID();
-    const uploaded = await this.filesService.uploadMultipartFile({
+    // La carga escribe en este archivo (bloqueado por id) y decide dentro de la transacción si ya es la vigente.
+    const uploaded = await this.filesService.uploadMultipartFileWithVersion({
       organizationId: actor.organizationId,
       ownerId: actor.userId,
       folderId: file.folderId,
       file: { buffer: plaintext, originalname: file.name, mimetype: file.mimeType ?? '' },
       correlationId,
+      restore: { fileId: file.id, sourceVersionId: version.id, sourceChecksum: version.checksum },
     });
-
-    const created = await this.versionRepository.findOne({ where: { id: uploaded.versionId } });
-    if (!created) {
-      this.logger.error('No se encontró la versión recién creada ' + uploaded.versionId + ' del archivo ' + file.id);
-      throw new InternalServerErrorException('No se pudo recuperar el archivo');
-    }
 
     // Enganche SPEC-405: FILE_VERSION_RESTORED tras el commit, con el mismo correlationId que FILE_UPLOAD
     void this.auditService?.logEvent({
@@ -180,7 +165,7 @@ export class FileVersionsService {
     return {
       fileId: uploaded.id,
       versionId: uploaded.versionId,
-      versionNumber: created.versionNumber,
+      versionNumber: uploaded.versionNumber,
       sizeBytes: uploaded.sizeBytes,
       uploadedAt: uploaded.uploadedAt.toISOString(),
     };

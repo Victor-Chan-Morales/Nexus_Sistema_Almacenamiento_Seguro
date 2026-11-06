@@ -156,7 +156,7 @@ export class FilesController {
   @Get(':id/versions/:versionId/download')
   async downloadVersion(
     @CurrentUser() user: AuthUser,
-    @Param('id') fileId: string,
+    @Param('id', new ParseUUIDPipe()) fileId: string,
     @Param('versionId', new ParseUUIDPipe()) versionId: string,
     @Res() res: Response,
   ): Promise<void> {
@@ -182,7 +182,7 @@ export class FilesController {
   @HttpCode(HttpStatus.OK)
   async restoreVersion(
     @CurrentUser() user: AuthUser,
-    @Param('id') fileId: string,
+    @Param('id', new ParseUUIDPipe()) fileId: string,
     @Param('versionId', new ParseUUIDPipe()) versionId: string,
   ): Promise<RestoredVersionDto> {
     return this.fileVersions.restoreVersion(fileId, versionId, {

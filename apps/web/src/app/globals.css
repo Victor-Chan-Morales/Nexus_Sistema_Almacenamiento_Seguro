@@ -390,7 +390,7 @@ h1, h2, h3 { font-family: "Inter", Arial, sans-serif; }
 .drive-notice { display: flex; align-items: center; gap: 8px; margin: 9px 0; padding: 10px 12px; border: 1px solid #d6e9dd; border-radius: 8px; background: #f3faf5; color: #397452; font-size: 10.5px; }
 .drive-notice button { margin-left: auto; border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 18.9px; }
 .drive-list-card { overflow: hidden; border: 1px solid #ececf1; border-radius: 11px; background: white; }
-.drive-list-head, .drive-list-row { display: grid; grid-template-columns: minmax(180px, 1.7fr) minmax(70px, .65fr) minmax(80px, .7fr) minmax(90px, .85fr) minmax(80px, .7fr); align-items: center; gap: 11px; padding: 0 15px; }
+.drive-list-head, .drive-list-row { display: grid; grid-template-columns: minmax(180px, 1.7fr) minmax(70px, .65fr) minmax(80px, .7fr) minmax(90px, .85fr) minmax(216px, .9fr); align-items: center; gap: 11px; padding: 0 15px; }
 .drive-list-head { min-height: 39px; background: #fafafd; color: #9298a6; font-size: 9.45px; font-weight: 700; }
 .drive-list-row { min-height: 53px; border-top: 1px solid #f0f0f4; color: #858b99; font-size: 9.45px; }
 .trash-page { display: grid; gap: 20px; }
@@ -454,6 +454,14 @@ h1, h2, h3 { font-family: "Inter", Arial, sans-serif; }
 .drive-row-actions button:hover, .drive-row-actions a:hover { background: var(--color-ice); }
 .drive-row-actions .folder-trash-button { display: inline-flex; width: 30px; min-height: 30px; align-items: center; justify-content: center; padding: 0; color: #bd4d5a; }
 .drive-row-actions .folder-trash-button:hover { background: #fff3f4; color: #a83e4b; }
+/* SPEC-210 (revisión PR 52): las acciones necesitan 216 px. Si la lista tiene menos de 710 px (p. ej. con el panel de detalle abierto),
+   se usa la disposición compacta: sin columna Tipo y acciones apiladas. Se decide por el ancho de la lista, no por el de la ventana. */
+.drive-list-card { container-type: inline-size; }
+@container (max-width: 709px) {
+  .drive-list-head, .drive-list-row { grid-template-columns: minmax(0, 1.6fr) minmax(64px, .6fr) minmax(90px, .9fr) minmax(112px, 1fr); }
+  .drive-list-head > :nth-child(2), .drive-list-row > :nth-child(2) { display: none; }
+  .drive-row-actions { flex-direction: column; align-items: flex-end; gap: 3px; }
+}
 .folder-trash-modal-icon { background: #fff0f1; color: #bd4d5a; }
 .folder-delete-confirm { background: #bd4d5a; }
 .folder-delete-confirm:hover { background: #a83e4b; }

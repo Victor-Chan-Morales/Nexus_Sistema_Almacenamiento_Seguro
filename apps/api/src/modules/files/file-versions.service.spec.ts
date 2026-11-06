@@ -11,7 +11,7 @@ import { FileVersion } from './entities/file-version.entity';
 import { Folder } from './entities/folder.entity';
 import { FileVersionsService } from './file-versions.service';
 import { FilesCryptoService } from './files-crypto.service';
-import { FilesService, UploadedFileDto } from './files.service';
+import { FilesService, UploadResult, versionAlreadyCurrentError } from './files.service';
 
 const ORG = 'org-1';
 const USER = 'user-1';
@@ -138,7 +138,7 @@ const buildFixture = (overrides: { file?: Partial<typeof FILE>; folder?: Partial
   const storageRouter = { forRead: jest.fn(async () => storage), forWrite: jest.fn() };
 
   // Simula la carga real: la versión nueva aparece en la tabla antes de que el servicio la consulte.
-  const uploadMultipartFile = jest.fn<Promise<UploadedFileDto>, [Parameters<FilesService['uploadMultipartFile']>[0]]>(
+  const uploadMultipartFileWithVersion = jest.fn<Promise<UploadResult>, [Parameters<FilesService['uploadMultipartFileWithVersion']>[0]]>(
     async () => {
       versions.push(versionRow('v4', 'file-1', 4, PDF_V1.length));
       return {
@@ -147,11 +147,12 @@ const buildFixture = (overrides: { file?: Partial<typeof FILE>; folder?: Partial
         mimeType: 'application/pdf',
         sizeBytes: PDF_V1.length,
         versionId: 'v4',
+        versionNumber: 4,
         uploadedAt: new Date('2026-11-05T10:00:00.000Z'),
       };
     },
   );
-  const filesService = { uploadMultipartFile } as unknown as FilesService;
+  const filesService = { uploadMultipartFileWithVersion } as unknown as FilesService;
 
   const logEvent = jest.fn<Promise<void>, [AuditEventInput]>().mockResolvedValue(undefined);
   const auditService = { logEvent } as unknown as AuditService;
@@ -165,7 +166,7 @@ const buildFixture = (overrides: { file?: Partial<typeof FILE>; folder?: Partial
     auditService,
   );
 
-  return { service, objects, versions, versionRepository, storageRouter, storage, uploadMultipartFile, logEvent };
+  return { service, objects, versions, versionRepository, storageRouter, storage, uploadMultipartFileWithVersion, logEvent };
 };
 
 describe('FileVersionsService (SPEC-210)', () => {
@@ -204,12 +205,12 @@ describe('FileVersionsService (SPEC-210)', () => {
 
   describe('Escenario 2: restaurar crea una versión nueva', () => {
     it('reutiliza la carga con el contenido de la v1, el nombre y el tipo del archivo', async () => {
-      const { service, uploadMultipartFile } = buildFixture();
+      const { service, uploadMultipartFileWithVersion } = buildFixture();
 
       await service.restoreVersion('file-1', 'v1', ACTOR);
 
-      expect(uploadMultipartFile).toHaveBeenCalledTimes(1);
-      const input = uploadMultipartFile.mock.calls[0][0];
+      expect(uploadMultipartFileWithVersion).toHaveBeenCalledTimes(1);
+      const input = uploadMultipartFileWithVersion.mock.calls[0][0];
       expect(input).toMatchObject({
         organizationId: ORG,
         ownerId: USER,
@@ -218,6 +219,19 @@ describe('FileVersionsService (SPEC-210)', () => {
       });
       expect(input.file.buffer.equals(PDF_V1)).toBe(true);
       expect(input.correlationId).toMatch(/^[0-9a-f-]{36}$/);
+    });
+
+    it('liga la carga al archivo por id y al contenido de la v1 (no busca por nombre)', async () => {
+      const { service, uploadMultipartFileWithVersion, versions } = buildFixture();
+      const v1 = versions.find((row) => row.id === 'v1') as FileVersion;
+
+      await service.restoreVersion('file-1', 'v1', ACTOR);
+
+      expect(uploadMultipartFileWithVersion.mock.calls[0][0].restore).toEqual({
+        fileId: 'file-1',
+        sourceVersionId: 'v1',
+        sourceChecksum: v1.checksum,
+      });
     });
 
     it('devuelve la versión nueva (versionNumber 4) y no borra las anteriores', async () => {
@@ -239,11 +253,11 @@ describe('FileVersionsService (SPEC-210)', () => {
     });
 
     it('registra FILE_VERSION_RESTORED con el mismo correlationId que la carga', async () => {
-      const { service, uploadMultipartFile, logEvent } = buildFixture();
+      const { service, uploadMultipartFileWithVersion, logEvent } = buildFixture();
 
       await service.restoreVersion('file-1', 'v1', ACTOR);
 
-      const correlationId = uploadMultipartFile.mock.calls[0][0].correlationId;
+      const correlationId = uploadMultipartFileWithVersion.mock.calls[0][0].correlationId;
       expect(logEvent).toHaveBeenCalledTimes(1);
       expect(logEvent).toHaveBeenCalledWith({
         organizationId: ORG,
@@ -253,6 +267,14 @@ describe('FileVersionsService (SPEC-210)', () => {
         resourceId: 'file-1',
         correlationId,
       });
+    });
+
+    it('no vuelve a leer la versión creada: el número sale de la carga', async () => {
+      const { service, versionRepository } = buildFixture();
+
+      await service.restoreVersion('file-1', 'v1', ACTOR);
+
+      expect(versionRepository.findOne).not.toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: 'v4' }) }));
     });
 
     it('devuelve el resultado aunque la auditoría falle', async () => {
@@ -267,8 +289,8 @@ describe('FileVersionsService (SPEC-210)', () => {
 
   describe('Escenario 3: cuota', () => {
     it('propaga 422 STORAGE_QUOTA_EXCEEDED, no emite auditoría y no escribe filas', async () => {
-      const { service, uploadMultipartFile, logEvent, versionRepository, versions } = buildFixture();
-      uploadMultipartFile.mockRejectedValueOnce(new HttpException(
+      const { service, uploadMultipartFileWithVersion, logEvent, versionRepository, versions } = buildFixture();
+      uploadMultipartFileWithVersion.mockRejectedValueOnce(new HttpException(
         {
           statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
           error: 'Unprocessable Entity',
@@ -288,9 +310,32 @@ describe('FileVersionsService (SPEC-210)', () => {
     });
   });
 
+  describe('Carrera con la papelera y con otra restauración (revisión PR 52)', () => {
+    it('si el archivo entra en papelera antes de la carga, responde 404 y no registra auditoría', async () => {
+      const { service, uploadMultipartFileWithVersion, logEvent } = buildFixture();
+      uploadMultipartFileWithVersion.mockRejectedValueOnce(new NotFoundException('Archivo file-1 no encontrado'));
+
+      const failure = await failureOf(service.restoreVersion('file-1', 'v1', ACTOR));
+
+      expect(failure.getStatus()).toBe(404);
+      expect(logEvent).not.toHaveBeenCalled();
+    });
+
+    it('si la vigente ya tiene el contenido restaurado, la carga responde 422 VERSION_ALREADY_CURRENT y no audita', async () => {
+      const { service, uploadMultipartFileWithVersion, logEvent } = buildFixture();
+      uploadMultipartFileWithVersion.mockRejectedValueOnce(versionAlreadyCurrentError());
+
+      const failure = await failureOf(service.restoreVersion('file-1', 'v1', ACTOR));
+
+      expect(failure.getStatus()).toBe(422);
+      expect(failure.getResponse()).toMatchObject({ code: 'VERSION_ALREADY_CURRENT' });
+      expect(logEvent).not.toHaveBeenCalled();
+    });
+  });
+
   describe('Escenario 4: versión ya vigente', () => {
     it('responde 422 VERSION_ALREADY_CURRENT sin leer el almacén ni cargar nada', async () => {
-      const { service, uploadMultipartFile, storageRouter, logEvent } = buildFixture();
+      const { service, uploadMultipartFileWithVersion, storageRouter, logEvent } = buildFixture();
 
       const failure = await failureOf(service.restoreVersion('file-1', 'v3', ACTOR));
 
@@ -301,7 +346,7 @@ describe('FileVersionsService (SPEC-210)', () => {
         code: 'VERSION_ALREADY_CURRENT',
         message: 'La versión indicada ya es la vigente',
       });
-      expect(uploadMultipartFile).not.toHaveBeenCalled();
+      expect(uploadMultipartFileWithVersion).not.toHaveBeenCalled();
       expect(storageRouter.forRead).not.toHaveBeenCalled();
       expect(logEvent).not.toHaveBeenCalled();
     });
@@ -309,30 +354,30 @@ describe('FileVersionsService (SPEC-210)', () => {
 
   describe('Escenario 5: versión de otro archivo o ajena responde 404', () => {
     it('versionId válido de otro archivo: 404 al descargar y al restaurar', async () => {
-      const { service, uploadMultipartFile, storageRouter } = buildFixture();
+      const { service, uploadMultipartFileWithVersion, storageRouter } = buildFixture();
 
       await expect(service.downloadVersion('file-1', 'v-other', ACTOR)).rejects.toBeInstanceOf(NotFoundException);
       await expect(service.restoreVersion('file-1', 'v-other', ACTOR)).rejects.toBeInstanceOf(NotFoundException);
       expect(storageRouter.forRead).not.toHaveBeenCalled();
-      expect(uploadMultipartFile).not.toHaveBeenCalled();
+      expect(uploadMultipartFileWithVersion).not.toHaveBeenCalled();
     });
 
     it('archivo de otro usuario del mismo organismo: 404', async () => {
-      const { service, uploadMultipartFile } = buildFixture();
+      const { service, uploadMultipartFileWithVersion } = buildFixture();
       const otherUser = { organizationId: ORG, userId: 'user-2' };
 
       await expect(service.downloadVersion('file-1', 'v1', otherUser)).rejects.toBeInstanceOf(NotFoundException);
       await expect(service.restoreVersion('file-1', 'v1', otherUser)).rejects.toBeInstanceOf(NotFoundException);
-      expect(uploadMultipartFile).not.toHaveBeenCalled();
+      expect(uploadMultipartFileWithVersion).not.toHaveBeenCalled();
     });
 
     it('archivo de otra organización: 404 aunque el usuario exista', async () => {
-      const { service, uploadMultipartFile } = buildFixture();
+      const { service, uploadMultipartFileWithVersion } = buildFixture();
       const otherOrg = { organizationId: 'org-2', userId: USER };
 
       await expect(service.downloadVersion('file-1', 'v1', otherOrg)).rejects.toBeInstanceOf(NotFoundException);
       await expect(service.restoreVersion('file-1', 'v1', otherOrg)).rejects.toBeInstanceOf(NotFoundException);
-      expect(uploadMultipartFile).not.toHaveBeenCalled();
+      expect(uploadMultipartFileWithVersion).not.toHaveBeenCalled();
     });
 
     it('mensaje 404 con el identificador del archivo, en español', async () => {
@@ -347,19 +392,19 @@ describe('FileVersionsService (SPEC-210)', () => {
 
   describe('Escenario 6: archivo o carpeta en papelera responde 404', () => {
     it('archivo en papelera: 404 al descargar y al restaurar', async () => {
-      const { service, uploadMultipartFile } = buildFixture({ file: { isDeleted: true } });
+      const { service, uploadMultipartFileWithVersion } = buildFixture({ file: { isDeleted: true } });
 
       await expect(service.downloadVersion('file-1', 'v1', ACTOR)).rejects.toBeInstanceOf(NotFoundException);
       await expect(service.restoreVersion('file-1', 'v1', ACTOR)).rejects.toBeInstanceOf(NotFoundException);
-      expect(uploadMultipartFile).not.toHaveBeenCalled();
+      expect(uploadMultipartFileWithVersion).not.toHaveBeenCalled();
     });
 
     it('carpeta en papelera: 404 al descargar y al restaurar', async () => {
-      const { service, uploadMultipartFile } = buildFixture({ folder: { isDeleted: true } });
+      const { service, uploadMultipartFileWithVersion } = buildFixture({ folder: { isDeleted: true } });
 
       await expect(service.downloadVersion('file-1', 'v1', ACTOR)).rejects.toBeInstanceOf(NotFoundException);
       await expect(service.restoreVersion('file-1', 'v1', ACTOR)).rejects.toBeInstanceOf(NotFoundException);
-      expect(uploadMultipartFile).not.toHaveBeenCalled();
+      expect(uploadMultipartFileWithVersion).not.toHaveBeenCalled();
     });
   });
 });

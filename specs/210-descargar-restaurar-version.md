@@ -86,9 +86,13 @@ restoreVersion(fileId, versionId, actor): Promise<RestoredVersionDto>;
 
 - `readVersionBytes` lee del almacén y descifra con `FilesCryptoService`. **La reutiliza SPEC-216.**
 - **Restaurar** debe descifrar y re-cifrar: el AAD incluye `versionNumber`, así que el objeto viejo no se puede reutilizar con otro número.
-- Reutilizar `FilesService.uploadMultipartFile` con `{ buffer, originalname: file.name, mimetype: file.mimeType }`. Ya resuelve reserva de cuota, cifrado, compensación e idempotencia; el mismo nombre y carpeta crean una versión nueva (ADR-003).
+- Restaurar llama a `FilesService.uploadMultipartFileWithVersion` con `{ buffer, originalname: file.name, mimetype: file.mimeType }` y `restore: { fileId, sourceVersionId, sourceChecksum }`. Ya resuelve reserva de cuota, cifrado, compensación e idempotencia.
+- **Modo restaurar (revisión PR 52):** la carga no busca el archivo por nombre. Dentro de su transacción bloquea el archivo por id (`FOR UPDATE`) y exige que siga activo y en la misma carpeta; si no, responde 404 y no escribe nada. Con el bloqueo, decide si la vigente ya tiene ese contenido (mismo SHA-256 que el `checksum` de la versión) y responde 422 `VERSION_ALREADY_CURRENT`. Así dos restauraciones del mismo contenido no crean dos versiones, aunque vengan de pestañas distintas.
 - **Auditoría:** `uploadMultipartFile` ya emite `FILE_UPLOAD`. Agregar `FILE_VERSION_RESTORED` con el mismo `correlationId`, y `FILE_DOWNLOAD` al bajar.
-- **Riesgos:** consumo de memoria igual al límite de 100 MB; el límite de 3 cargas simultáneas también aplica.
+- **Riesgos y límites conocidos:**
+  - Memoria: descargar y restaurar cargan la versión completa. Al restaurar el pico es de unas 2 a 3 veces el tamaño del archivo (hasta ~300 MB con 100 MB). Restaurar cuenta dentro del límite de 3 cargas simultáneas por usuario; descargar no. **No se resuelve en esta spec:** el cifrado es AES-GCM sobre el objeto completo, y hacerlo por bloques cambia el formato almacenado. Requiere una SPEC propia.
+  - Dos pestañas con contenidos distintos siguen pudiendo restaurar a la vez; cada una crea su versión, en el orden en que se bloquea el archivo. Es lo esperado: no hay pérdida de datos.
+  - Restaurar una versión cuyo contenido ya es el de la vigente responde 422, aunque sea otra versión con otro número.
 
 ## 9. Plan de Tareas
 
@@ -97,13 +101,19 @@ restoreVersion(fileId, versionId, actor): Promise<RestoredVersionDto>;
 - [x] **T3 (30 min)**: Modal.
 - [x] **T4 (40 min)**: Pruebas.
 
-**Archivos permitidos:** `files/file-versions.service.ts` y su spec (nuevos), `files/files.controller.ts`, `files/files.module.ts`, `audit/audit.types.ts`, el componente del modal de SPEC-207, `lib/api/files.ts`, `lib/api/types.ts`.
+**Archivos permitidos:** `files/file-versions.service.ts` y sus specs (nuevos), `files/files.controller.ts`, `files/files.module.ts`, `files/files.service.ts` (modo restaurar, validación de `folderId`, `versionNumber` en el resultado), `files/files.*.spec.ts` (los de carga y auditoría se ajustan a UUIDs de fixture), `audit/audit.types.ts`, `files/README.md`, el componente del modal de SPEC-207, `lib/api/files.ts`, `lib/api/types.ts`, `lib/api/README.md`, `file-browser-live.tsx` (prop `onRestored`), `globals.css` (clases del modal; disposición de la lista según su ancho con una consulta de contenedor), `CONTRACTS.md` y `specs/README.md`.
 
 ## 10. Estrategia de Pruebas
 
 | Criterio | Tipo | Archivo |
 |---|---|---|
 | Escenarios 1–6 | Unitaria | `file-versions.service.spec.ts` |
+| Carrera con papelera, contenido ya vigente | Unitaria | `file-versions.service.spec.ts`, `files.restore-upload.spec.ts` |
+| Modo restaurar: bloqueo por id, 404, 422, versión nueva | Unitaria | `files.restore-upload.spec.ts` |
+| `folderId` que no es UUID → 400 antes de la base | Unitaria | `files.restore-upload.spec.ts` |
+| Rutas: `:id` y `:versionId` no UUID → 400; contrato 200 | HTTP (supertest) | `files.routes.spec.ts` |
+| Escenario 7 y solapamiento de acciones (con y sin panel de detalle, 390–1920 px) | Manual, Chromium contra la app real | 17 comprobaciones; capturas en `docs/evidencia/spec-210/` |
+| Restauración, descarga, papelera y concurrencia contra PostgreSQL y SeaweedFS reales | Manual, API | 24 comprobaciones; objetos leídos en crudo con SigV4 (cifrados) |
 | Escenario 2 con bytes reales | Manual con SeaweedFS | Evidencia en el PR |
 | Escenario 7 | Manual | Capturas en el PR |
 
@@ -121,4 +131,5 @@ Ninguna.
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
+| 2026-11-05 | Claude Code | Revisión de la PR 52: cierre de los 7 hallazgos. Restaurar bloquea el archivo por id y responde 404 si está en papelera; el contenido igual a la vigente responde 422; se elimina la lectura posterior al commit; `folderId` no UUID responde 400; `:id` no UUID responde 400 en las rutas nuevas; pruebas HTTP de rutas; disposición de la lista según su ancho (consulta de contenedor a 710 px; la columna de acciones pasa a tener 216 px) y no solo con el panel abierto; límite de memoria documentado. Pruebas manuales: 24 comprobaciones de API y 17 de pantalla, todas en verde; capturas en `docs/evidencia/spec-210/`. Ver «Riesgos y límites conocidos». |
 | 2026-11-05 | Claude Code | Implementada. Pruebas unitarias en `file-versions.service.spec.ts` (escenarios 1–6). Restaurar con bytes reales verificado contra SeaweedFS local (21 comprobaciones). `versionId` no UUID responde 400 (`ParseUUIDPipe`). Escenario 7 comprobado en Chromium headless (Playwright, 10 comprobaciones, incluido móvil 390 px sin scroll horizontal). Pendiente: capturas en la PR. |

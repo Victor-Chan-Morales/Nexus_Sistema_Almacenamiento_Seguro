@@ -75,7 +75,7 @@ describe('SPEC-405: Files Audit Hooks', () => {
     it('registra FILE_UPLOAD tras confirmar la transacción de subida', async () => {
       const orgId = 'org-up-1';
       const userId = 'usr-up-1';
-      const folderId = 'folder-up-1';
+      const folderId = '33333333-3333-4333-8333-333333333333';
       const fileId = 'file-new-1';
 
       jest.spyOn(filesService, 'getOrCreateUserDrive').mockResolvedValue({
@@ -131,7 +131,7 @@ describe('SPEC-405: Files Audit Hooks', () => {
         rootFolderId: 'root-1',
       });
       jest.spyOn(driveAccess, 'requireFolder').mockResolvedValue({
-        folder: { id: 'folder-1' } as never,
+        folder: { id: '11111111-1111-4111-8111-111111111111' } as never,
         access: { drive: { id: 'drive-1' } as never, level: 'owner' },
       });
       jest.spyOn(filesService as any, 'reserveUpload').mockResolvedValue({
@@ -147,7 +147,7 @@ describe('SPEC-405: Files Audit Hooks', () => {
         filesService.uploadMultipartFile({
           organizationId: 'org-1',
           ownerId: 'usr-1',
-          folderId: 'folder-1',
+          folderId: '11111111-1111-4111-8111-111111111111',
           file: {
             originalname: 'documento.txt',
             mimetype: 'text/plain',
@@ -166,7 +166,7 @@ describe('SPEC-405: Files Audit Hooks', () => {
         rootFolderId: 'root-1',
       });
       jest.spyOn(driveAccess, 'requireFolder').mockResolvedValue({
-        folder: { id: 'folder-1' } as never,
+        folder: { id: '11111111-1111-4111-8111-111111111111' } as never,
         access: { drive: { id: 'drive-1' } as never, level: 'owner' },
       });
       jest.spyOn(filesService as any, 'reserveUpload').mockResolvedValue({
@@ -188,7 +188,7 @@ describe('SPEC-405: Files Audit Hooks', () => {
       const result = await filesService.uploadMultipartFile({
         organizationId: 'org-1',
         ownerId: 'usr-1',
-        folderId: 'folder-1',
+        folderId: '11111111-1111-4111-8111-111111111111',
         file: {
           originalname: 'documento.txt',
           mimetype: 'text/plain',
@@ -411,7 +411,7 @@ describe('SPEC-405: Files Audit Hooks', () => {
       const orgId = 'org-rs-1';
       const userId = 'usr-rs-1';
       const fileId = 'file-rs-1';
-      const folderId = 'folder-rs-1';
+      const folderId = '44444444-4444-4444-8444-444444444444';
 
       // Carga real de FilesService; se simulan solo sus dependencias de reserva y transacción.
       jest.spyOn(filesService, 'getOrCreateUserDrive').mockResolvedValue({
@@ -435,6 +435,7 @@ describe('SPEC-405: Files Audit Hooks', () => {
         mimeType: 'application/pdf',
         sizeBytes: 4,
         versionId: 'v-new',
+        versionNumber: 4,
         uploadedAt: new Date(),
       });
 
