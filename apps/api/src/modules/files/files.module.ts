@@ -21,6 +21,8 @@ import { TenantQuota } from './entities/tenant-quota.entity';
 import { Upload } from './entities/upload.entity';
 import { FilesCryptoService } from './files-crypto.service';
 import { DriveAccessService } from './drive-access.service';
+import { DestinationsService } from './destinations.service';
+import { DestinationsController } from './destinations.controller';
 
 /**
  * Módulo FILES
@@ -48,7 +50,7 @@ import { DriveAccessService } from './drive-access.service';
     StorageModule, // StorageRouter: guardar/recuperar bytes en el destino de cada versión
     BillingModule, // Para verificar cuota de almacenamiento
   ],
-  controllers: [FoldersController, FilesController, ShareLinksController],
+  controllers: [FoldersController, FilesController, ShareLinksController, DestinationsController],
   providers: [
     FilesService,
     FileVersionsService,
@@ -56,6 +58,7 @@ import { DriveAccessService } from './drive-access.service';
     DriveAccessService,
     PersonalDriveHook,
     ShareLinksService,
+    DestinationsService,
   ],
   exports: [FilesService],
 })
