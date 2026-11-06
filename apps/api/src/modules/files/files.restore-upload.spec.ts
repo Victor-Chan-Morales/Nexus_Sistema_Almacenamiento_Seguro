@@ -85,6 +85,7 @@ const buildService = (fixture: Fixture) => {
   const service = new FilesService(
     {} as never, {} as never, {} as never,
     dataSource as never, storageRouter as never, {} as never, crypto, driveAccess,
+    undefined, {} as never,
   );
   const internals = service as unknown as Record<string, jest.Mock | ((...args: unknown[]) => unknown)>;
   jest.spyOn(service, 'getOrCreateUserDrive').mockResolvedValue({ id: 'drive-1', name: 'Drive', rootFolderId: 'root-1' } as never);

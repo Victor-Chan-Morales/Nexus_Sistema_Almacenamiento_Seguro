@@ -43,6 +43,7 @@ describe('FilesService — cuota y reservas de carga', () => {
     const service = new FilesService(
       {} as never, {} as never, {} as never,
       {} as never, {} as never, {} as never, {} as never, {} as never,
+      undefined, {} as never,
     );
 
     const usage = await service.getTotalStorageUsage('org-1', manager as never);
@@ -70,6 +71,7 @@ describe('FilesService — cuota y reservas de carga', () => {
     const service = new FilesService(
       {} as never, {} as never, {} as never,
       dataSource as never, storageRouter as never, billingService as never, {} as never, driveAccess,
+      undefined, {} as never,
     );
     jest.spyOn(service, 'getOrCreateUserDrive').mockResolvedValue({
       id: 'drive-1',
@@ -151,6 +153,7 @@ describe('SPEC-801: compensación de una carga en el destino donde se escribió'
     const service = new FilesService(
       {} as never, {} as never, {} as never,
       dataSource as never, storageRouter as never, billingService as never, crypto as never, driveAccess,
+      undefined, {} as never,
     );
     jest.spyOn(service, 'getOrCreateUserDrive').mockResolvedValue({
       id: 'drive-1',
@@ -224,6 +227,7 @@ describe('SPEC-801: almacén por destino de la versión', () => {
     const service = new FilesService(
       fileRepository as never, {} as never, versionRepository as never,
       {} as never, storageRouter as never, {} as never, crypto as never, driveAccess,
+      undefined, {} as never,
     );
     return { service, storageRouter, storage };
   };
@@ -243,37 +247,146 @@ describe('SPEC-801: almacén por destino de la versión', () => {
 });
 
 /**
+ * SPEC-803 escenario 9: dos carpetas principales en destinos distintos. Cada archivo se escribe en el almacén de su
+ * carpeta y su versión registra ese mismo destino. La transacción, el almacén y la versión son reales; solo se
+ * simula la reserva de cuota, que tiene sus propias pruebas.
+ */
+describe('SPEC-803 escenario 9: cada carpeta principal escribe en su propio destino', () => {
+  const FOLDER_A = '11111111-1111-4111-8111-111111111111';
+  const FOLDER_B = '22222222-2222-4222-8222-222222222222';
+  const DESTINATION_BY_FOLDER: Record<string, string> = { [FOLDER_A]: 'dest-a', [FOLDER_B]: 'dest-b' };
+
+  const buildTwoFoldersService = () => {
+    const versionSaves: Array<Record<string, unknown>> = [];
+    let sequence = 0;
+    const repo = (overrides: Record<string, unknown> = {}) => ({
+      findOne: jest.fn().mockResolvedValue(null),
+      findOneBy: jest.fn().mockResolvedValue(null),
+      find: jest.fn().mockResolvedValue([]),
+      create: jest.fn((data: object) => ({ ...data })),
+      save: jest.fn(async (data: object) => ({ id: `id-${++sequence}`, ...data })),
+      update: jest.fn(),
+      ...overrides,
+    });
+    const fileVersionRepo = repo({
+      save: jest.fn(async (data: Record<string, unknown>) => {
+        const saved = { id: `v-${++sequence}`, uploadedAt: new Date(), ...data };
+        versionSaves.push(saved);
+        return saved;
+      }),
+    });
+    const repos = new Map<unknown, ReturnType<typeof repo>>([
+      [Destination, repo({ findOne: jest.fn().mockResolvedValue({ id: 'dest-default', organizationId: 'org-1', isDefault: true, isEnabled: true }) })],
+      [TenantEncryptionKey, repo({ findOne: jest.fn().mockResolvedValue({ id: 'key-1' }) })],
+      [TenantQuota, repo({ findOneBy: jest.fn().mockResolvedValue({ organizationId: 'org-1' }) })],
+      [Reservation, repo({ findOne: jest.fn().mockResolvedValue({ id: 'res-1', status: 'active' }) })],
+      [Upload, repo({ findOneBy: jest.fn(async () => ({ id: 'up-1', status: 'Pendiente' })) })],
+      [FileRecord, repo()],
+      [FileVersion, fileVersionRepo],
+    ]);
+    const manager = {
+      query: jest.fn().mockResolvedValue([]),
+      getRepository: jest.fn((entity: unknown) => repos.get(entity)),
+    };
+    const dataSource = { transaction: jest.fn(async (cb: (m: unknown) => Promise<unknown>) => cb(manager)) };
+
+    const storesByDestination = new Map<string, { put: jest.Mock }>(
+      ['dest-a', 'dest-b', 'dest-default'].map((id) => [id, { put: jest.fn().mockResolvedValue(undefined) }]),
+    );
+    const storageRouter = {
+      forWrite: jest.fn(async (_organizationId: string, destinationId: string) => storesByDestination.get(destinationId)),
+      forRead: jest.fn(),
+      defaultBucketName: 'nexus',
+    };
+    const crypto = {
+      encryptFile: jest.fn().mockReturnValue({ bytes: Buffer.from('cifrado'), checksum: 'sum', encryptedDek: 'dek', formatVersion: 1 }),
+    };
+    const billingService = { getStorageLimitBytes: jest.fn().mockResolvedValue(BigInt(1_000_000)) };
+    const driveAccess = new DriveAccessService({} as never);
+    const service = new FilesService(
+      {} as never, {} as never, {} as never,
+      dataSource as never, storageRouter as never, billingService as never, crypto as never, driveAccess,
+      undefined, {} as never,
+    );
+    jest.spyOn(service, 'getOrCreateUserDrive').mockResolvedValue({ id: 'drive-1', name: 'Mi unidad', rootFolderId: 'folder-root' });
+    jest.spyOn(driveAccess, 'requireFolder').mockImplementation(async (_actor, folderId) => ({
+      folder: { id: folderId, destinationId: DESTINATION_BY_FOLDER[folderId] } as never,
+      access: { drive: { id: 'drive-1' } as never, level: 'owner' },
+    }));
+    const uploadInternals = service as unknown as { reserveUpload: (params: unknown) => Promise<unknown> };
+    jest.spyOn(uploadInternals, 'reserveUpload').mockResolvedValue({ uploadId: 'up-1', reservationId: 'res-1' });
+    return { service, storageRouter, storesByDestination, versionSaves };
+  };
+
+  it('cada archivo termina en el almacén de su carpeta y su versión registra ese destino', async () => {
+    const { service, storageRouter, storesByDestination, versionSaves } = buildTwoFoldersService();
+    const pdf = (name: string) => ({ originalname: name, mimetype: 'application/pdf', buffer: Buffer.from('%PDF-1.4 ' + name) });
+
+    const uploadedA = await service.uploadMultipartFile({ organizationId: 'org-1', ownerId: 'user-1', folderId: FOLDER_A, file: pdf('a.pdf') });
+    const uploadedB = await service.uploadMultipartFile({ organizationId: 'org-1', ownerId: 'user-1', folderId: FOLDER_B, file: pdf('b.pdf') });
+
+    expect(storageRouter.forWrite.mock.calls).toEqual([['org-1', 'dest-a'], ['org-1', 'dest-b']]);
+    const [versionA, versionB] = versionSaves;
+    expect(versionA).toMatchObject({ destinationId: 'dest-a' });
+    expect(versionB).toMatchObject({ destinationId: 'dest-b' });
+    expect(uploadedA.versionId).toBe(versionA.id);
+    expect(uploadedB.versionId).toBe(versionB.id);
+    // Cada objeto se escribió en el almacén de su propia versión; el predeterminado no recibe nada.
+    expect(storesByDestination.get('dest-a')!.put).toHaveBeenCalledTimes(1);
+    expect(storesByDestination.get('dest-a')!.put.mock.calls[0][0]).toBe(versionA.objectKey);
+    expect(storesByDestination.get('dest-b')!.put).toHaveBeenCalledTimes(1);
+    expect(storesByDestination.get('dest-b')!.put.mock.calls[0][0]).toBe(versionB.objectKey);
+    expect(storesByDestination.get('dest-default')!.put).not.toHaveBeenCalled();
+  });
+});
+
+/**
  * Tamaño de carpetas (CONTRACTS.md): suma de la versión actual de los archivos activos de la
  * carpeta y de todas sus subcarpetas. La recursión vive en una CTE de PostgreSQL, así que aquí
  * se verifica el contrato del servicio con la fila que devuelve esa consulta; el recorrido real
  * del árbol necesita una prueba de integración contra PostgreSQL.
  */
 describe('FilesService — tamaño de carpetas', () => {
-  const folderEntity = (id: string, parentId: string | null) => ({
+  const folderEntity = (id: string, parentId: string | null, destinationId: string | null = null) => ({
     id,
     name: id,
     parentId,
     driveId: 'drive-1',
+    destinationId,
     createdAt: new Date('2026-01-01T00:00:00Z'),
   });
 
-  const buildService = (sizeRows: Array<{ folderId: string; totalSizeBytes: string }>) => {
+  /** Doble de FolderPlacementService: `locationsOf` responde el mapa indicado y cuenta sus llamadas. */
+  const placementWith = (locations: Array<[string, 'cloud' | 'on_premises']> = []) => ({
+    locationsOf: jest.fn().mockResolvedValue(new Map(locations)),
+  });
+
+  const buildService = (
+    sizeRows: Array<{ folderId: string; totalSizeBytes: string }>,
+    options: {
+      placement?: ReturnType<typeof placementWith>;
+      root?: ReturnType<typeof folderEntity>;
+      children?: ReturnType<typeof folderEntity>[];
+    } = {},
+  ) => {
     const dataSource = { query: jest.fn().mockResolvedValue(sizeRows) };
     const folderRepository = {
-      find: jest.fn().mockResolvedValue([folderEntity('hija-a', 'raiz'), folderEntity('hija-b', 'raiz')]),
+      find: jest.fn().mockResolvedValue(options.children ?? [folderEntity('hija-a', 'raiz'), folderEntity('hija-b', 'raiz')]),
     };
     const fileRepository = { find: jest.fn().mockResolvedValue([]) };
     const driveAccess = new DriveAccessService({} as never);
+    const placement = options.placement ?? placementWith();
     const service = new FilesService(
       fileRepository as never, folderRepository as never, {} as never,
       dataSource as never, {} as never, {} as never, {} as never, driveAccess,
+      undefined, placement as never,
     );
     jest.spyOn(service, 'getOrCreateUserDrive').mockResolvedValue({
       id: 'drive-1', name: 'Mi unidad', rootFolderId: 'raiz',
     });
     jest.spyOn(driveAccess, 'requireFolder')
-      .mockResolvedValue({ folder: folderEntity('raiz', null) as never, access: { drive: { id: 'drive-1' } as never, level: 'owner' } });
-    return { service, dataSource };
+      .mockResolvedValue({ folder: (options.root ?? folderEntity('raiz', null)) as never, access: { drive: { id: 'drive-1' } as never, level: 'owner' } });
+    return { service, dataSource, placement };
   };
 
   it('getFolderItems expone el tamaño anidado como número y 0 para carpetas sin archivos', async () => {
@@ -319,6 +432,43 @@ describe('FilesService — tamaño de carpetas', () => {
     expect(sql).toContain('current_version_id');
     // UNION (sin ALL) descarta pares repetidos y evita la recursión infinita ante un ciclo.
     expect(sql).not.toContain('UNION ALL');
+  });
+
+  // SPEC-803: cada carpeta lleva la ubicación de su destino; sin destino, null. Una sola consulta de ubicaciones.
+  it('getFolderItems añade destinationLocation a la carpeta y a sus hijas con una sola consulta de ubicaciones', async () => {
+    const placement = placementWith([['dest-ok', 'on_premises']]);
+    const { service } = buildService([], {
+      placement,
+      root: folderEntity('raiz', null, 'dest-ok'),
+      children: [folderEntity('hija-a', 'raiz', 'dest-ok'), folderEntity('hija-b', 'raiz', null)],
+    });
+
+    const result = await service.getFolderItems('org-1', 'user-1', 'raiz');
+
+    expect(result.folder.destinationLocation).toBe('on_premises');
+    expect(result.folders.map((f) => [f.id, f.destinationLocation])).toEqual([
+      ['hija-a', 'on_premises'],
+      ['hija-b', null],
+    ]);
+    expect(placement.locationsOf).toHaveBeenCalledTimes(1);
+    expect(placement.locationsOf).toHaveBeenCalledWith('org-1', ['dest-ok', 'dest-ok', null]);
+  });
+
+  it('listFolders añade destinationLocation a cada carpeta con una sola consulta de ubicaciones', async () => {
+    const placement = placementWith([['dest-ok', 'cloud']]);
+    const { service } = buildService([], {
+      placement,
+      children: [folderEntity('hija-a', 'raiz', 'dest-ok'), folderEntity('hija-b', 'raiz', null)],
+    });
+
+    const result = await service.listFolders('org-1', 'user-1', 'raiz');
+
+    expect(result.items.map((f) => [f.id, f.destinationLocation])).toEqual([
+      ['hija-a', 'cloud'],
+      ['hija-b', null],
+    ]);
+    expect(placement.locationsOf).toHaveBeenCalledTimes(1);
+    expect(placement.locationsOf).toHaveBeenCalledWith('org-1', ['dest-ok', null]);
   });
 });
 
@@ -380,6 +530,8 @@ const buildForeignDriveService = () => {
     {} as never,
     {} as never,
     new DriveAccessService(dataSource as never),
+    undefined,
+    {} as never,
   );
   jest.spyOn(service, 'getOrCreateUserDrive').mockResolvedValue({
     id: 'drive-1', name: 'Mi espacio', rootFolderId: 'root-1',

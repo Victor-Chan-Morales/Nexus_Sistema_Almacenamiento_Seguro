@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { HttpException, NotFoundException } from '@nestjs/common';
 import { FilesService } from './files.service';
 import { DriveAccessService } from './drive-access.service';
 import { Destination } from './entities/destination.entity';
@@ -8,7 +8,9 @@ import { Folder } from './entities/folder.entity';
 import { TenantEncryptionKey } from './entities/tenant-encryption-key.entity';
 import { TenantQuota } from './entities/tenant-quota.entity';
 import { Upload } from './entities/upload.entity';
+import { FolderPlacementService } from './placement/folder-placement.service';
 import { AuditAction, AuditResource } from '../audit/audit.types';
+import { DeploymentModel } from '../iam/domain/enums';
 
 const ORG = 'org-1';
 const USER = 'user-1';
@@ -83,7 +85,7 @@ function buildService({
     delete: jest.fn().mockResolvedValue(undefined),
   };
   const driveRepo = { findOne: jest.fn().mockResolvedValue(DRIVE) };
-  const destinationRepo = { findOne: jest.fn().mockResolvedValue({ id: 'destination-1' }) };
+  const destinationRepo = { findOne: jest.fn().mockResolvedValue({ id: 'destination-1', location: 'cloud' }) };
   const keyRepo = { findOne: jest.fn().mockResolvedValue({ id: 'key-1' }) };
   const quotaRepo = { findOneBy: jest.fn().mockResolvedValue({ organizationId: ORG }) };
   const manager = {
@@ -117,6 +119,11 @@ function buildService({
     defaultBucketName: 'nexus',
   };
   const billing = { getStorageLimitBytes: jest.fn().mockResolvedValue(storageLimit) };
+  // Placement real; el modelo de la organización es cloud (raíz -> predeterminado).
+  const placement = new FolderPlacementService(
+    dataSource as never,
+    { findDeploymentModel: jest.fn().mockResolvedValue(DeploymentModel.CLOUD) } as never,
+  );
   const service = new FilesService(
     {} as never,
     {} as never,
@@ -127,6 +134,7 @@ function buildService({
     {} as never,
     new DriveAccessService(dataSource as never),
     audit as never,
+    placement,
   );
   return { service, folderRepo, fileRepo, versionRepo, uploadRepo, manager, dataSource, storage, billing, audit };
 }
@@ -148,6 +156,28 @@ describe('FilesService folder trash', () => {
       resourceType: AuditResource.FOLDER,
       resourceId: 'folder-created',
     });
+  });
+
+  it('una carpeta principal en cloud recibe el destino predeterminado y lo devuelve con su ubicación', async () => {
+    const { service, folderRepo } = buildService();
+
+    await expect(service.createFolder(ORG, USER, 'Nueva carpeta')).resolves.toMatchObject({
+      destinationId: 'destination-1',
+      destinationLocation: 'cloud',
+    });
+    expect(folderRepo.create).toHaveBeenCalledWith(expect.objectContaining({ destinationId: 'destination-1' }));
+  });
+
+  it('una subcarpeta con destinationId responde 422 DESTINATION_SELECTION_NOT_ALLOWED y no guarda nada', async () => {
+    const { service, folderRepo, audit } = buildService();
+
+    const error = await service.createFolder(ORG, USER, 'Nueva carpeta', 'folder-1', 'destination-2').catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(HttpException);
+    expect((error as HttpException).getStatus()).toBe(422);
+    expect((error as HttpException).getResponse()).toMatchObject({ code: 'DESTINATION_SELECTION_NOT_ALLOWED' });
+    expect(folderRepo.save).not.toHaveBeenCalled();
+    expect(audit.logEvent).not.toHaveBeenCalled();
   });
 
   it('does not audit folder creation if its transaction fails', async () => {
