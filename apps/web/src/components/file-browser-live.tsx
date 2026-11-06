@@ -128,10 +128,12 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
 
   const canUpload = Boolean(data && data.folder.id === (folderId ?? data.rootFolderId) && plan && limitBytes > 0 && !busy && !showCreateFolder && !folderDeleteTarget);
 
-  async function uploadOne(file: File, targetId: string) {
+  async function uploadOne(file: File, targetId: string, availableBytes: number) {
     const extension = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() : "";
     if (file.size > MAX_FILE_BYTES) return "El archivo supera el límite de 100 MB.";
     if (!extension || !ALLOWED_EXTENSIONS.has(extension)) return "Tipo no permitido. Se admiten PDF, DOCX, XLSX, PPTX, JPG, PNG, TXT y ZIP.";
+
+    if (file.size > availableBytes) return "La cuota disponible no alcanza para este archivo. Las versiones anteriores y la papelera también ocupan espacio.";
 
     const fingerprint = JSON.stringify([targetId, file.name, file.size, file.lastModified]);
     const idempotencyKey = pendingUploads.current.get(fingerprint) ?? crypto.randomUUID();
@@ -146,17 +148,19 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
     setBusy(true);
     setActionError("");
     let uploaded = false;
+    let availableBytes = limitBytes - usedBytes;
     try {
       for (const [index, file] of files.entries()) {
         const current = index + 1;
         const label = `Archivo ${current} de ${files.length}`;
         setProgress({ current, total: files.length });
         try {
-          const validationError = await uploadOne(file, data.folder.id);
+          const validationError = await uploadOne(file, data.folder.id, availableBytes);
           if (validationError) {
             notify("error", `${label}. ${validationError}`);
             continue;
           }
+          availableBytes -= file.size;
           uploaded = true;
           notify("success", `${label} subido.`);
         } catch (error) {

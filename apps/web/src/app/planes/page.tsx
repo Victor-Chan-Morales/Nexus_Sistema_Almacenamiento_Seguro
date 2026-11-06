@@ -15,16 +15,19 @@ import { useLoad } from "@/lib/use-load";
 export default function PlansPage() {
   const { session, restoring } = useSession();
   const token = session?.accessToken;
-  const fetchCatalog = useCallback(async (signal: AbortSignal) => {
-    const [catalog, dashboard] = await Promise.all([
-      getPlans({ signal }),
-      token ? getDashboard(token, { signal }) : null,
-    ]);
-    return { plans: catalog.items, currentPlanId: dashboard?.plan?.id, token };
+  const fetchCatalog = useCallback((signal: AbortSignal) => getPlans({ signal }), []);
+  const fetchDashboard = useCallback(async (signal: AbortSignal) => {
+    if (!token) return null;
+    const dashboard = await getDashboard(token, { signal });
+    return { token, planId: dashboard.plan?.id };
   }, [token]);
-  const { state, reload } = useLoad(fetchCatalog, !restoring);
-  const data = state.status === "ready" && state.data.token === token ? state.data : null;
-  const loading = restoring || state.status === "loading" || (state.status === "ready" && !data);
+  const { state, reload } = useLoad(fetchCatalog);
+  const { state: dashboard } = useLoad(fetchDashboard, Boolean(token));
+  const currentPlanId = dashboard.status === "ready" && dashboard.data?.token === token
+    ? dashboard.data?.planId
+    : undefined;
+  const data = state.status === "ready" ? state.data : null;
+  const loading = state.status === "loading";
   return (
     <main className="public-site">
       <PublicHeader />
@@ -54,15 +57,15 @@ export default function PlansPage() {
         {loading && <LoadingIndicator>Cargando planes…</LoadingIndicator>}
         {!loading && state.status === "error" && <Notice title="No se pudo cargar el catálogo" message={state.message} onRetry={reload} />}
         {data && <div className="public-plans-grid">
-          {data.plans.map((plan) => {
-            const current = data.currentPlanId === plan.id;
-            const action = data.currentPlanId ? "Cambiar a este plan" : "Contratar";
+          {data.items.map((plan) => {
+            const current = currentPlanId === plan.id;
+            const action = currentPlanId ? "Cambiar a este plan" : "Contratar";
             return <article className={`public-plan-card ${current ? "public-plan-featured" : ""}`} key={plan.id}>
               {current && <span className="public-plan-badge">PLAN ACTUAL</span>}
               <h3>{plan.name}</h3>
               <p className="public-plan-description">{plan.description}</p>
               <div className="public-plan-price">
-                {plan.priceMonthly === 0 ? "Gratis" : `${plan.priceMonthly.toFixed(2)}`}
+                {plan.priceMonthly === 0 ? "Gratis" : <>${plan.priceMonthly.toFixed(2)}</>}
                 {plan.priceMonthly > 0 && <small>USD al mes</small>}
               </div>
               <div className="public-plan-specs">
@@ -70,7 +73,7 @@ export default function PlansPage() {
                 <div><span>Límite de usuarios</span><b>Hasta {plan.userLimit}</b></div>
                 <div><span>Vigencia</span><b>{plan.validityDays === null ? "Sin vencimiento" : `${plan.validityDays} días`}</b></div>
               </div>
-              {!current && <Link className="button public-plan-secondary" href={token ? `/suscripcion/confirmar?plan=${encodeURIComponent(plan.id)}` : "/registro"}>
+              {!current && !restoring && <Link className="button public-plan-secondary" href={token ? `/suscripcion/confirmar?plan=${encodeURIComponent(plan.id)}` : "/registro"}>
                 {action} <UiIcon name="arrowRight" size={14} />
               </Link>}
             </article>;

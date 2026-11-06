@@ -76,7 +76,7 @@ function TrashSession({ session }: { session: Session }) {
       if (item.kind === "folder") await restoreFolder(item.id, token);
       else await restoreFile(item.id, token);
       hideItem(item.id);
-      notify("success", item.kind === "folder" ? "Carpeta restaurada con su contenido." : "Archivo restaurado.");
+      notify("success", `Se restauró «${item.name}»${item.kind === "folder" ? " con su contenido" : ""}.`);
     } catch (error) {
       handleActionError(error);
     } finally {
@@ -92,7 +92,7 @@ function TrashSession({ session }: { session: Session }) {
         ? await purgeFolder(item.id, token)
         : await purgeFile(item.id, token);
       hideItem(item.id);
-      notify("success", `Se completó la eliminación definitiva. Se liberaron ${formatBytes(result.freedBytes)}.`);
+      notify("success", `Se eliminó definitivamente «${item.name}». Se liberaron ${formatBytes(result.freedBytes)}.`);
     } catch (error) {
       handleActionError(error);
     } finally {
