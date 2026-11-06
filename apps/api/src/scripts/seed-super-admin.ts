@@ -1,6 +1,5 @@
 import { Logger } from '@nestjs/common';
 import { IsEmail, MaxLength, validateSync } from 'class-validator';
-import type { DataSource } from 'typeorm';
 import { PasswordPolicy } from '../modules/iam/dto/password-policy';
 import { normalizeEmail } from '../modules/iam/iam.utils';
 import type { MembershipRepository, UserRepository } from '../modules/iam/ports/repositories';
