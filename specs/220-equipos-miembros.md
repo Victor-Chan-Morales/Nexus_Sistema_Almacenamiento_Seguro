@@ -12,7 +12,7 @@
 | **Dependencias** | SPEC-221 |
 | **Prioridad** | P1 |
 | **Estimación** | 2.5 h |
-| **Estado** | Aprobada (2026-11-04, Víctor Chán Morales) |
+| **Estado** | Implementada (2026-11-06). Aprobada el 2026-11-04 por Víctor Chán Morales |
 
 ## 2. Objetivo
 
@@ -101,10 +101,10 @@ CREATE UNIQUE INDEX uq_drive_one_per_team ON files.drive (team_id) WHERE team_id
 
 ## 9. Plan de Tareas
 
-- [ ] **T1 (20 min)**: Migración y entidades.
-- [ ] **T2 (60 min)**: Crear y listar equipos, con su Drive y raíz.
-- [ ] **T3 (35 min)**: Miembros y auditoría.
-- [ ] **T4 (35 min)**: Pruebas.
+- [x] **T1 (20 min)**: Migración y entidades.
+- [x] **T2 (60 min)**: Crear y listar equipos, con su Drive y raíz.
+- [x] **T3 (35 min)**: Miembros y auditoría.
+- [x] **T4 (35 min)**: Pruebas.
 
 **Archivos permitidos:** la migración, `files/teams.service.ts`, `files/teams.controller.ts`, `files/entities/team.entity.ts`, `files/entities/team-member.entity.ts`, `files/dto/team.dto.ts`, su spec (nuevos), `files/files.service.ts` (solo exponer `ensureTenantResources`), `files/files.module.ts`, `iam/member-admission.ts`, `audit/audit.types.ts`.
 
@@ -117,7 +117,8 @@ CREATE UNIQUE INDEX uq_drive_one_per_team ON files.drive (team_id) WHERE team_id
 
 ## 11. Impacto en Documentación
 
-- [ ] `CONTRACTS.md` v0.6, `ENTS_REGISTRY.md`.
+- [x] `CONTRACTS.md` v0.6, `ENTS_REGISTRY.md`.
+- [x] `apps/api/src/modules/files/README.md`.
 - [ ] `database/README.md` si cambia el procedimiento.
 
 ## 12. Preguntas Abiertas
@@ -130,3 +131,4 @@ Ninguna.
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
+| 2026-11-06 | Claude Code | Implementada. Decisiones: `POST /teams/:id/members` responde `201` sin cuerpo; `PATCH` responde `200` sin cuerpo y es idempotente; `myLevel` del tenant_admin es siempre `write`; los eventos de equipo registran el id del equipo como recurso, sin referencia a la persona afectada (el evento solo tiene un `resource_id`); eliminar equipos queda fuera. Migración: `migrate:down` no descarta datos y falla si hay niveles `write`. Pruebas unitarias en `teams.service.spec.ts` (escenarios 1–9), `teams.controller.spec.ts` (roles por ruta y HTTP) y `iam/member-admission.spec.ts`. Verificación manual con Postgres y la API en una base desechable: migración subir, bajar y subir; las tres restricciones; escenarios 1 a 9 por HTTP; cuatro eventos de auditoría en la base. Archivos fuera de la lista original: las dos pruebas nuevas y la documentación de `files/README.md` y `specs/`. |
