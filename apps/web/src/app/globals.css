@@ -446,9 +446,7 @@ h1, h2, h3 { font-family: "Inter", Arial, sans-serif; }
 .drive-item-name b { overflow: hidden; font-size: 10.5px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .drive-item-button { width: 100%; padding: 0; border: 0; background: transparent; cursor: pointer; text-align: left; }
 .drive-folder-glyph { display: grid; width: 32px; height: 30px; flex: 0 0 32px; place-items: center; border-radius: 6px; background: var(--color-ice); color: var(--brand); font-size: 19.95px; }
-.drive-file-glyph { display: grid; width: 28px; height: 31px; flex: 0 0 28px; place-items: center; border-radius: 5px; background: #eff3fc; color: #4d72ad; }
-.drive-file-glyph > span { display: grid; width: 21px; height: 24px; place-items: center; border-radius: 3px; background: currentColor; color: white; font-size: 8.4px; font-weight: 900; }
-.glyph-pdf { color: #dc6875; background: #fff0f1; }.glyph-xlsx { color: #378057; background: #edf8f1; }.glyph-pptx { color: #cc6842; background: #fff2ec; }.glyph-jpg, .glyph-png { color: #7d65b4; background: #f2effa; }
+.drive-file-icon { display: grid; width: 28px; height: 31px; flex: 0 0 28px; place-items: center; border-radius: 5px; background: #eff3fc; color: #4d72ad; }
 .drive-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .drive-row-actions button, .drive-row-actions a { display: inline-flex; align-items: center; justify-content: center; min-height: 27px; padding: 0 6px; border: 0; border-radius: 5px; background: transparent; color: var(--brand); cursor: pointer; font-size: 9.45px; font-weight: 700; white-space: nowrap; }
 .drive-row-actions button:hover, .drive-row-actions a:hover { background: var(--color-ice); }
@@ -466,7 +464,7 @@ h1, h2, h3 { font-family: "Inter", Arial, sans-serif; }
 .drive-detail-panel { position: relative; align-self: start; min-width: 0; padding: 16px; border: 1px solid #ececf2; border-radius: 11px; background: white; }
 .drive-detail-close { position: absolute; top: 7px; right: 9px; z-index: 2; width: 26px; height: 26px; border: 0; border-radius: 50%; background: #fff; color: #757c8b; cursor: pointer; font-size: 19.95px; }
 .drive-preview { display: grid; min-height: 136px; place-items: center; align-content: center; gap: 9px; border-radius: 8px; background: #f7f7fa; color: #9aa0ad; font-size: 9.45px; }
-.drive-preview .drive-file-glyph { transform: scale(1.45); margin-bottom: 7px; }
+.drive-preview .drive-file-icon { transform: scale(1.45); margin-bottom: 7px; }
 .drive-detail-name { display: flex; align-items: center; gap: 9px; margin: 16px 0; }
 .drive-detail-name > div { min-width: 0; }
 .drive-detail-name b, .drive-detail-name small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1146,4 +1144,33 @@ h1, h2, h3 { font-family: "Inter", Arial, sans-serif; }
   text-align: center;
   padding: 2.5rem 1rem;
   color: var(--muted);
-} 
+}
+/* Avisos y carga */
+.toast-stack { position: fixed; z-index: 100; inset: auto 1rem 1rem auto; width: min(23rem, calc(100% - 2rem)); max-height: 65vh; overflow: auto; display: grid; gap: .5rem; }
+.toast { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .75rem 1rem; background: white; color: var(--color-dark); border: 1px solid var(--color-purple); border-radius: .65rem; box-shadow: 0 4px 14px #0002; }
+.toast-error { border-color: var(--color-coral); }
+.toast button { color: inherit; background: transparent; border: 0; font-size: 1.25rem; cursor: pointer; }
+.loading-indicator { display: flex; align-items: center; gap: .65rem; padding: .85rem; color: var(--color-dark); }
+.loading-indicator > span { width: 1em; height: 1em; flex: none; border: 2px solid var(--color-ice); border-top-color: var(--color-purple); border-radius: 50%; }
+.drive-drop-active { outline: 2px dashed var(--color-purple); outline-offset: .35rem; }
+.drive-drop-hint { position: fixed; z-index: 15; inset: auto 1rem 1rem; margin: 0 auto; width: fit-content; max-width: calc(100% - 2rem); padding: .75rem 1rem; pointer-events: none; background: var(--color-ice); color: var(--color-dark); border: 1px solid var(--color-purple); border-radius: .5rem; }
+.profile-form dd { margin: .25rem 0 0; overflow-wrap: anywhere; }
+.profile-form dt { font-weight: 700; }
+
+/* Navegación pública y entradas */
+.public-site { overflow: clip; }
+.public-header { position: sticky; top: 0; }
+.public-site section[id] { scroll-margin-top: 8rem; }
+.public-plan-card { min-width: 0; overflow-wrap: anywhere; }
+.auth-back { display: inline-flex; align-items: center; gap: .4rem; width: fit-content; margin-bottom: 1rem; color: var(--brand); font-weight: 700; }
+
+@keyframes nexus-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes nexus-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: no-preference) {
+  .public-hero-inner, .login-card, .register-card { animation: nexus-enter 240ms ease-out both; }
+  .loading-indicator > span { animation: nexus-spin .8s linear infinite; }
+}

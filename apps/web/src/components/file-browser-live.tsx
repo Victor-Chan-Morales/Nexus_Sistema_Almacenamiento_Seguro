@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { type ChangeEvent, type FormEvent, type ReactNode, useCallback, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type FormEvent, type DragEvent, useCallback, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/lib/api/client";
 import { getDashboard } from "@/lib/api/dashboard";
 import { createFolder, deleteFile, deleteFolder, downloadFile, getFolderItems, listFolders, uploadFile } from "@/lib/api/files";
@@ -13,6 +13,7 @@ import { RequireSession, useSession, type Session } from "@/lib/session";
 import { Brand } from "@/components/brand";
 import { Dialog } from "@/components/dialog";
 import { AccountMenu } from "@/components/account-menu";
+import { LoadingIndicator, useToast } from "@/components/toast";
 import { UiIcon } from "@/components/ui-icon";
 
 const MAX_FILE_BYTES = 100_000_000;
@@ -42,10 +43,13 @@ function extensionOf(name: string) {
   return name.split(".").pop()?.toUpperCase() || "FILE";
 }
 
-function FileGlyph({ name }: { name: string }) {
-  const extension = extensionOf(name);
-  const label = extension === "DOCX" ? "W" : extension === "XLSX" ? "X" : extension === "PPTX" ? "P" : extension.slice(0, 3);
-  return <span aria-hidden="true" className={`drive-file-glyph glyph-${extension.toLowerCase()}`}><span>{label}</span></span>;
+const fileIcons = new Map([
+  ["PDF", "filePdf"], ["DOCX", "fileWord"], ["XLSX", "fileSpreadsheet"], ["PPTX", "fileSlides"],
+  ["JPG", "fileImage"], ["PNG", "fileImage"], ["TXT", "fileText"], ["ZIP", "fileZip"],
+]);
+
+function FileTypeIcon({ name }: { name: string }) {
+  return <span className="drive-file-icon"><UiIcon name={fileIcons.get(extensionOf(name)) ?? "fileGeneric"} /></span>;
 }
 
 export function FileBrowserLive({ quotaExceeded = false }: { quotaExceeded?: boolean }) {
@@ -63,9 +67,13 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
   const [folderDeleteTarget, setFolderDeleteTarget] = useState<Folder | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
-  const [notice, setNotice] = useState<ReactNode>("");
+  const notify = useToast();
+  const [dragging, setDragging] = useState(false);
+  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
+  const dragDepth = useRef(0);
+  const uploadInProgress = useRef(false);
   const [selectedFile, setSelectedFile] = useState<FileMetadata | null>(null);
-  const pendingUpload = useRef<{ fingerprint: string; key: string } | null>(null);
+  const pendingUploads = useRef(new Map<string, string>());
   const token = session.accessToken;
 
   const fetchData = useCallback(async (signal: AbortSignal): Promise<BrowserData> => {
@@ -104,42 +112,115 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
     if (!data) return;
     const name = folderName.trim();
     if (name.length < 1) { setActionError("Escribe un nombre para la carpeta."); return; }
-    setBusy(true); setActionError(""); setNotice("");
+    setBusy(true); setActionError("");
     try {
       await createFolder({ name, parentFolderId: data.folder.id }, token);
       setShowCreateFolder(false);
       setFolderName("");
-      setNotice(`Se creó la carpeta «${name}».`);
+      notify("success", "Carpeta creada.");
       reload();
     } catch (error) {
       if (!failSession(error)) setActionError(errorMessage(error, "No fue posible crear la carpeta."));
     } finally { setBusy(false); }
   }
 
-  async function uploadSelected(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file || !data) return;
-    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-    if (file.size > MAX_FILE_BYTES) { setActionError("El archivo supera el límite de 100 MB."); return; }
-    if (!ALLOWED_EXTENSIONS.has(extension)) { setActionError("Tipo no permitido. Se admiten PDF, DOCX, XLSX, PPTX, JPG, PNG, TXT y ZIP."); return; }
-    if (!plan || limitBytes === 0) { setActionError("Tu organización no tiene una suscripción activa; no puede cargar archivos."); return; }
-    if (usedBytes + file.size > limitBytes) { setActionError("La cuota disponible no alcanza para este archivo. Las versiones anteriores y la papelera también ocupan espacio."); return; }
+  const canUpload = Boolean(data && data.folder.id === (folderId ?? data.rootFolderId) && plan && limitBytes > 0 && !busy && !showCreateFolder && !folderDeleteTarget);
 
-    setBusy(true); setActionError(""); setNotice("");
+  async function uploadOne(file: File, targetId: string) {
+    const extension = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() : "";
+    if (file.size > MAX_FILE_BYTES) return "El archivo supera el límite de 100 MB.";
+    if (!extension || !ALLOWED_EXTENSIONS.has(extension)) return "Tipo no permitido. Se admiten PDF, DOCX, XLSX, PPTX, JPG, PNG, TXT y ZIP.";
+
+    const fingerprint = JSON.stringify([targetId, file.name, file.size, file.lastModified]);
+    const idempotencyKey = pendingUploads.current.get(fingerprint) ?? crypto.randomUUID();
+    pendingUploads.current.set(fingerprint, idempotencyKey);
+    await uploadFile(targetId, file, token, idempotencyKey);
+    pendingUploads.current.delete(fingerprint);
+  }
+
+  async function uploadFiles(files: File[]) {
+    if (!data || !canUpload || uploadInProgress.current || files.length === 0) return;
+    uploadInProgress.current = true;
+    setBusy(true);
+    setActionError("");
+    let uploaded = false;
     try {
-      const fingerprint = `${file.name}:${file.size}:${file.lastModified}`;
-      const idempotencyKey = pendingUpload.current?.fingerprint === fingerprint
-        ? pendingUpload.current.key
-        : crypto.randomUUID();
-      pendingUpload.current = { fingerprint, key: idempotencyKey };
-      await uploadFile(data.folder.id, file, token, idempotencyKey);
-      pendingUpload.current = null;
-      setNotice(`Se subió «${file.name}».`);
-      reload();
-    } catch (error) {
-      if (!failSession(error)) setActionError(errorMessage(error, "No fue posible subir el archivo."));
-    } finally { setBusy(false); }
+      for (const [index, file] of files.entries()) {
+        const current = index + 1;
+        const label = `Archivo ${current} de ${files.length}`;
+        setProgress({ current, total: files.length });
+        try {
+          const validationError = await uploadOne(file, data.folder.id);
+          if (validationError) {
+            notify("error", `${label}. ${validationError}`);
+            continue;
+          }
+          uploaded = true;
+          notify("success", `${label} subido.`);
+        } catch (error) {
+          if (failSession(error)) {
+            notify("error", `${label}. La sesión venció y se detuvo la carga.`);
+            break;
+          }
+          notify("error", `${label}. ${errorMessage(error, "No fue posible subir el archivo.")}`);
+        }
+      }
+    } finally {
+      uploadInProgress.current = false;
+      setProgress(null);
+      setBusy(false);
+      if (uploaded) reload();
+    }
+  }
+
+  function uploadSelected(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.currentTarget.files ?? []);
+    event.currentTarget.value = "";
+    void uploadFiles(files);
+  }
+
+  function dragEnter(event: DragEvent<HTMLElement>) {
+    if (!event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+    dragDepth.current++;
+    if (canUpload) setDragging(true);
+  }
+
+  function dragOver(event: DragEvent<HTMLElement>) {
+    if (!event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = canUpload ? "copy" : "none";
+  }
+
+  function dragLeave(event: DragEvent<HTMLElement>) {
+    if (!event.dataTransfer.types.includes("Files")) return;
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragging(false);
+  }
+
+  function dropFiles(event: DragEvent<HTMLElement>) {
+    if (!event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+    dragDepth.current = 0;
+    setDragging(false);
+    if (!canUpload) return;
+    const { items, files } = event.dataTransfer;
+    const fileItems = Array.from(items).filter((item) => item.kind === "file");
+    if (fileItems.length === 0) {
+      void uploadFiles(Array.from(files));
+      return;
+    }
+
+    const droppedFiles: File[] = [];
+    for (const item of fileItems) {
+      if (item.webkitGetAsEntry?.()?.isDirectory) {
+        notify("error", "Selecciona archivos individuales para subir.");
+        continue;
+      }
+      const file = item.getAsFile();
+      if (file) droppedFiles.push(file);
+    }
+    void uploadFiles(droppedFiles);
   }
 
   async function downloadSelected(file: FileMetadata) {
@@ -153,32 +234,32 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
       anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
-      if (!failSession(error)) setActionError(errorMessage(error, "No fue posible descargar el archivo."));
+      if (!failSession(error)) notify("error", errorMessage(error, "No fue posible descargar el archivo."));
     } finally { setBusy(false); }
   }
 
   /** SPEC-205 T2: borrado lógico. El archivo sale de la lista y el aviso enlaza con la papelera. */
   async function deleteSelected(file: FileMetadata) {
-    setBusy(true); setActionError(""); setNotice("");
+    setBusy(true); setActionError("");
     try {
       await deleteFile(file.id, token);
       setSelectedFile((current) => (current?.id === file.id ? null : current));
-      setNotice(<>Archivo movido a la papelera. <Link href="/papelera">Ver papelera</Link></>);
+      notify("success", <>Archivo movido a la papelera. <Link href="/papelera">Ver papelera</Link></>);
       reload();
     } catch (error) {
-      if (!failSession(error)) setActionError(errorMessage(error, "No fue posible mover el archivo a la papelera."));
+      if (!failSession(error)) notify("error", errorMessage(error, "No fue posible mover el archivo a la papelera."));
     } finally { setBusy(false); }
   }
 
   async function deleteFolderSelected(folder: Folder) {
-    setBusy(true); setActionError(""); setNotice("");
+    setBusy(true); setActionError("");
     try {
       await deleteFolder(folder.id, token);
       setFolderDeleteTarget(null);
-      setNotice(<>La carpeta y su contenido se movieron a la papelera. <Link href="/papelera">Ver papelera</Link></>);
+      notify("success", <>La carpeta y su contenido se movieron a la papelera. <Link href="/papelera">Ver papelera</Link></>);
       reload();
     } catch (error) {
-      if (!failSession(error)) setActionError(errorMessage(error, "No fue posible mover la carpeta a la papelera."));
+      if (!failSession(error)) notify("error", errorMessage(error, "No fue posible mover la carpeta a la papelera."));
     } finally { setBusy(false); }
   }
 
@@ -189,7 +270,7 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
   return <div className="drive-shell">
     <aside className="drive-sidebar">
       <Link className="drive-logo" href="/dashboard" aria-label="Nexus, ir al dashboard"><Brand /></Link>
-      <button className="drive-upload-main" type="button" onClick={() => document.getElementById("drive-upload-input")?.click()} disabled={busy || !plan}><UiIcon name="upload" size={18} /><span>Subir archivo</span></button>
+      <button className="drive-upload-main" type="button" onClick={() => document.getElementById("drive-upload-input")?.click()} disabled={!canUpload} aria-label="Subir archivo"><UiIcon name="upload" size={18} /><span>Subir archivo</span></button>
       <input id="drive-upload-input" type="file" hidden accept=".pdf,.docx,.xlsx,.pptx,.jpg,.png,.txt,.zip" onChange={uploadSelected} />
       <nav className="drive-nav" aria-label="Navegación de archivos">
         <span className="drive-nav-section">MI ESPACIO</span>
@@ -208,32 +289,36 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
     <main className="drive-main">
       <header className="drive-topbar"><div><span className="drive-mobile-brand">Nexus</span><span className="drive-breadcrumb-label">{data?.driveName ?? "Mi espacio"} <i>/</i> {displayName}</span></div><div className="drive-top-tools"><Link className="drive-upgrade" href="/planes">Ver planes</Link><AccountMenu name={session.user.fullName} email={session.user.email} /></div></header>
       <div className={`drive-workspace${selectedFile ? " has-detail" : ""}`}>
-        <section className="drive-content">
+        <section
+          className={`drive-content${dragging && canUpload ? " drive-drop-active" : ""}`}
+          onDragEnter={dragEnter} onDragOver={dragOver} onDragLeave={dragLeave} onDrop={dropFiles}
+        >
+          {dragging && canUpload && <div className="drive-drop-hint" role="status">Suelta para subir a {displayName}</div>}
+          {progress && <LoadingIndicator>Subiendo {progress.current} de {progress.total}…</LoadingIndicator>}
           <div className="drive-title-row"><div><p className="drive-eyebrow">DRIVE PERSONAL</p><h1>{displayName}</h1><p>{data?.folder?.sizeBytes !== undefined ? `${formatBytes(data.folder.sizeBytes)} en total · Carpetas y archivos guardados en Nexus.` : "Carpetas y archivos guardados en Nexus."}</p></div><button className="drive-create-button" type="button" onClick={() => { setShowCreateFolder(true); setActionError(""); }} disabled={!data || busy}><UiIcon name="plus" size={15} />Crear carpeta</button></div>
 
           {plan && limitBytes > 0 && <section className="drive-storage-summary"><div className="drive-storage-head"><div><span className="drive-storage-icon"><UiIcon name="storage" size={16} /></span><span><b>Almacenamiento</b><small>{percent}% utilizado</small></span></div><b>{formatBytes(usedBytes)} <small>de {formatBytes(limitBytes)}</small></b></div><div className={`drive-storage-bar ${atLimit ? "is-full" : ""}`}><i style={{ width: `${percent}%` }} /></div><div className="drive-storage-foot"><span>{formatBytes(Math.max(0, limitBytes - usedBytes))} disponibles</span><Link href="/suscripcion">Administrar plan</Link></div></section>}
           {!plan && data && <section className="drive-quota-alert"><span>!</span><div><b>No hay una suscripción activa</b><p>La cuota es cero hasta que la organización tenga un plan.</p></div><Link href="/planes">Ver planes</Link></section>}
           {(quotaExceeded || atLimit) && <section className="drive-quota-alert"><span>!</span><div><b>Almacenamiento completo</b><p>Libera espacio o cambia a un plan con mayor capacidad para subir archivos.</p></div><Link href="/planes">Ver planes</Link></section>}
           {actionError && <div className="drive-quota-alert" role="alert"><span>!</span><div><b>No se pudo completar la operación</b><p>{actionError}</p></div><button type="button" className="drive-subtle-button" onClick={() => setActionError("")}>Cerrar</button></div>}
-          {notice && <div className="drive-notice" role="status">{notice}<button type="button" onClick={() => setNotice("")} aria-label="Cerrar aviso">×</button></div>}
 
-          <div className="drive-toolbar"><label className="drive-search"><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar en esta carpeta" /></label><button className="drive-upload-button" type="button" onClick={() => document.getElementById("drive-upload-input")?.click()} disabled={busy || !plan}><UiIcon name="upload" size={15} /><span>{busy ? "Procesando…" : "Subir archivo"}</span></button></div>
+          <div className="drive-toolbar"><label className="drive-search"><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar en esta carpeta" /></label><button className="drive-upload-button" type="button" onClick={() => document.getElementById("drive-upload-input")?.click()} disabled={!canUpload} aria-label="Subir archivo"><UiIcon name="upload" size={15} /><span>{busy ? "Procesando…" : "Subir archivo"}</span></button></div>
 
           {data && !isRoot && <div className="drive-crumbs"><Link href={parentHref}>Mi espacio</Link><span>/</span><b>{data.folder.name}</b></div>}
-          {state.status === "loading" && <div className="drive-empty-state" role="status"><b>Cargando archivos…</b></div>}
+          {state.status === "loading" && <LoadingIndicator>Cargando archivos…</LoadingIndicator>}
           {state.status === "error" && <div className="drive-empty-state" role="alert"><b>No se pudieron cargar los archivos</b><p>{state.message}</p><button className="drive-empty-button" type="button" onClick={reload}>Reintentar</button></div>}
 
           {data && <div className="drive-list-card">
             <div className="drive-list-head"><span>Nombre</span><span>Tipo</span><span>Tamaño</span><span>Modificado</span><span>Acciones</span></div>
             {filteredFolders.map((folder) => <div className="drive-list-row" key={`folder-${folder.id}`}><Link className="drive-item-name" href={`/archivos/${encodeURIComponent(folder.id)}`}><span className="drive-folder-glyph"><UiIcon name="folder" size={17} /></span><b>{folder.name}</b></Link><span>Carpeta</span><span>{formatBytes(folder.sizeBytes ?? 0)}</span><span>{formatIsoDate(folder.createdAt)}</span><span className="drive-row-actions"><Link href={`/archivos/${encodeURIComponent(folder.id)}`}>Abrir</Link><button className="folder-trash-button" type="button" onClick={() => setFolderDeleteTarget(folder)} disabled={busy} aria-label={`Mover carpeta y contenido a la papelera: ${folder.name}`} title="Mover carpeta y contenido a la papelera"><UiIcon name="trash" size={15} /></button></span></div>)}
-            {filteredFiles.map((file) => <div className={`drive-list-row ${selectedFile?.id === file.id ? "selected" : ""}`} key={`file-${file.id}`}><button className="drive-item-name drive-item-button" type="button" onClick={() => setSelectedFile(file)}><FileGlyph name={file.name} /><b>{file.name}</b></button><span>{file.mimeType || extensionOf(file.name)}</span><span>{formatBytes(file.sizeBytes)}</span><span>{formatIsoDate(file.uploadedAt)}</span><span className="drive-row-actions"><button type="button" onClick={() => downloadSelected(file)} disabled={busy}>Descargar</button><button type="button" onClick={() => deleteSelected(file)} disabled={busy} aria-label={`Mover a la papelera «${file.name}»`}>Mover a papelera</button></span></div>)}
+            {filteredFiles.map((file) => <div className={`drive-list-row ${selectedFile?.id === file.id ? "selected" : ""}`} key={`file-${file.id}`}><button className="drive-item-name drive-item-button" type="button" onClick={() => setSelectedFile(file)}><FileTypeIcon name={file.name} /><b>{file.name}</b></button><span>{file.mimeType || extensionOf(file.name)}</span><span>{formatBytes(file.sizeBytes)}</span><span>{formatIsoDate(file.uploadedAt)}</span><span className="drive-row-actions"><button type="button" onClick={() => downloadSelected(file)} disabled={busy}>Descargar</button><button type="button" onClick={() => deleteSelected(file)} disabled={busy} aria-label={`Mover a la papelera «${file.name}»`}>Mover a papelera</button></span></div>)}
             {visibleItemsCount === 0 && <div className="drive-empty-state"><span><UiIcon name="files" size={20} /></span><b>{query ? "No encontramos coincidencias" : "Esta carpeta está vacía"}</b><p>{query ? "Prueba con otro término de búsqueda." : "Crea una carpeta o sube un archivo para empezar."}</p>{!query && <button className="drive-empty-button" type="button" onClick={() => setShowCreateFolder(true)}>Crear carpeta</button>}</div>}
           </div>}
 
           <p className="drive-demo-note">Los archivos y carpetas mostrados vienen de la API de Nexus.</p>
         </section>
 
-        {selectedFile && <aside className="drive-detail-panel"><button className="drive-detail-close" type="button" onClick={() => setSelectedFile(null)} aria-label="Cerrar detalles">×</button><div className="drive-preview"><FileGlyph name={selectedFile.name} /><span>Metadatos del archivo</span></div><div className="drive-detail-name"><FileGlyph name={selectedFile.name} /><div><b>{selectedFile.name}</b><small>{selectedFile.mimeType}</small></div></div><dl className="drive-detail-list"><dt>Tamaño</dt><dd>{formatBytes(selectedFile.sizeBytes)}</dd><dt>Versión</dt><dd>{selectedFile.versionId}</dd><dt>Subido</dt><dd>{formatIsoDate(selectedFile.uploadedAt)}</dd></dl><div className="drive-detail-actions"><button className="drive-primary-button" type="button" onClick={() => downloadSelected(selectedFile)} disabled={busy}>Descargar</button><button className="drive-subtle-button" type="button" onClick={() => deleteSelected(selectedFile)} disabled={busy}>Mover a papelera</button></div></aside>}
+        {selectedFile && <aside className="drive-detail-panel"><button className="drive-detail-close" type="button" onClick={() => setSelectedFile(null)} aria-label="Cerrar detalles">×</button><div className="drive-preview"><FileTypeIcon name={selectedFile.name} /><span>Metadatos del archivo</span></div><div className="drive-detail-name"><FileTypeIcon name={selectedFile.name} /><div><b>{selectedFile.name}</b><small>{selectedFile.mimeType}</small></div></div><dl className="drive-detail-list"><dt>Tamaño</dt><dd>{formatBytes(selectedFile.sizeBytes)}</dd><dt>Versión</dt><dd>{selectedFile.versionId}</dd><dt>Subido</dt><dd>{formatIsoDate(selectedFile.uploadedAt)}</dd></dl><div className="drive-detail-actions"><button className="drive-primary-button" type="button" onClick={() => downloadSelected(selectedFile)} disabled={busy}>Descargar</button><button className="drive-subtle-button" type="button" onClick={() => deleteSelected(selectedFile)} disabled={busy}>Mover a papelera</button></div></aside>}
       </div>
     </main>
 

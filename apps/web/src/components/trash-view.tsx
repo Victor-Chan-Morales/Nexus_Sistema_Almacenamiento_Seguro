@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useState } from "react";
 import { Dialog } from "@/components/dialog";
+import { LoadingIndicator, useToast } from "@/components/toast";
 import { Notice } from "@/components/notice";
 import { AppShell } from "@/components/app-shell";
 import { UiIcon } from "@/components/ui-icon";
@@ -54,8 +55,7 @@ function TrashSession({ session }: { session: Session }) {
   const { state, reload } = useLoad(fetchTrash, true, LOAD_ERROR);
   const [removedIds, setRemovedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [notice, setNotice] = useState("");
-  const [actionError, setActionError] = useState("");
+  const notify = useToast();
   const [purgeTarget, setPurgeTarget] = useState<TrashItem | null>(null);
 
   const items = state.status === "ready" ? state.data.items.filter((item) => !removedIds.has(item.id)) : [];
@@ -66,21 +66,17 @@ function TrashSession({ session }: { session: Session }) {
 
   function handleActionError(error: unknown) {
     if (failSession(error)) return;
-    setActionError(trashErrorMessage(error));
+    notify("error", trashErrorMessage(error));
     if (isStaleListError(error)) reload();
   }
 
   async function restore(item: TrashItem) {
     setBusyId(item.id);
-    setNotice("");
-    setActionError("");
     try {
       if (item.kind === "folder") await restoreFolder(item.id, token);
       else await restoreFile(item.id, token);
       hideItem(item.id);
-      setNotice(item.kind === "folder"
-        ? `Se restauró «${item.name}» con su contenido.`
-        : `Se restauró «${item.name}».`);
+      notify("success", item.kind === "folder" ? "Carpeta restaurada con su contenido." : "Archivo restaurado.");
     } catch (error) {
       handleActionError(error);
     } finally {
@@ -91,15 +87,12 @@ function TrashSession({ session }: { session: Session }) {
   async function purge(item: TrashItem) {
     setPurgeTarget(null);
     setBusyId(item.id);
-    setNotice("");
-    setActionError("");
     try {
       const result = item.kind === "folder"
         ? await purgeFolder(item.id, token)
         : await purgeFile(item.id, token);
       hideItem(item.id);
-      const subject = item.kind === "folder" ? `«${item.name}» y su contenido` : `«${item.name}»`;
-      setNotice(`Se eliminó definitivamente ${subject}. Se liberaron ${formatBytes(result.freedBytes)}.`);
+      notify("success", `Se completó la eliminación definitiva. Se liberaron ${formatBytes(result.freedBytes)}.`);
     } catch (error) {
       handleActionError(error);
     } finally {
@@ -128,10 +121,8 @@ function TrashSession({ session }: { session: Session }) {
           <span className="trash-item-count">{state.status === "ready" ? `${items.length} ${items.length === 1 ? "elemento" : "elementos"}` : "Papelera"}</span>
         </section>
 
-        {notice && <div className="drive-notice" role="status">{notice}<button type="button" onClick={() => setNotice("")} aria-label="Cerrar aviso">×</button></div>}
-        {actionError && <Notice title="No se pudo completar la operación" message={actionError} />}
 
-        {state.status === "loading" && <div className="drive-empty-state trash-state-card" role="status"><span><UiIcon name="recent" size={21} /></span><b>Cargando papelera…</b><p>Estamos recuperando tus archivos y carpetas eliminados.</p></div>}
+        {state.status === "loading" && <LoadingIndicator>Cargando papelera…</LoadingIndicator>}
         {state.status === "error" && <Notice title="No se pudo cargar la papelera" message={state.message} onRetry={reload} />}
         {state.status === "ready" && items.length === 0 && (
           <div className="drive-empty-state trash-state-card">

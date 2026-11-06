@@ -1,9 +1,30 @@
+"use client";
+
+import { useCallback } from "react";
 import Link from "next/link";
 import { PublicFooter, PublicHeader } from "@/components/public-site";
 import { UiIcon } from "@/components/ui-icon";
-import { PUBLIC_PLANS } from "@/lib/plans";
+import { Notice } from "@/components/notice";
+import { LoadingIndicator } from "@/components/toast";
+import { getPlans } from "@/lib/api/billing";
+import { getDashboard } from "@/lib/api/dashboard";
+import { formatBytes } from "@/lib/format";
+import { useSession } from "@/lib/session";
+import { useLoad } from "@/lib/use-load";
 
 export default function PlansPage() {
+  const { session, restoring } = useSession();
+  const token = session?.accessToken;
+  const fetchCatalog = useCallback(async (signal: AbortSignal) => {
+    const [catalog, dashboard] = await Promise.all([
+      getPlans({ signal }),
+      token ? getDashboard(token, { signal }) : null,
+    ]);
+    return { plans: catalog.items, currentPlanId: dashboard?.plan?.id, token };
+  }, [token]);
+  const { state, reload } = useLoad(fetchCatalog, !restoring);
+  const data = state.status === "ready" && state.data.token === token ? state.data : null;
+  const loading = restoring || state.status === "loading" || (state.status === "ready" && !data);
   return (
     <main className="public-site">
       <PublicHeader />
@@ -30,30 +51,31 @@ export default function PlansPage() {
           </div>
           <span className="catalog-mark">NEXUS <i>PLANES</i></span>
         </div>
-        <div className="public-plans-grid">
-          {PUBLIC_PLANS.map((plan) => (
-            <article className={`public-plan-card ${plan.id === "business" ? "public-plan-featured" : ""}`} key={plan.id}>
-              <div className="public-plan-top">
-                <span className="public-plan-badge">{plan.id === "demo" ? "PARA COMENZAR" : "PLAN MENSUAL"}</span>
-                {plan.id === "business" && <span className="popular-pill">POPULAR</span>}
-              </div>
+        {loading && <LoadingIndicator>Cargando planes…</LoadingIndicator>}
+        {!loading && state.status === "error" && <Notice title="No se pudo cargar el catálogo" message={state.message} onRetry={reload} />}
+        {data && <div className="public-plans-grid">
+          {data.plans.map((plan) => {
+            const current = data.currentPlanId === plan.id;
+            const action = data.currentPlanId ? "Cambiar a este plan" : "Contratar";
+            return <article className={`public-plan-card ${current ? "public-plan-featured" : ""}`} key={plan.id}>
+              {current && <span className="public-plan-badge">PLAN ACTUAL</span>}
               <h3>{plan.name}</h3>
               <p className="public-plan-description">{plan.description}</p>
               <div className="public-plan-price">
-                {plan.priceUsd === 0 ? "Gratis" : `$${plan.priceUsd.toFixed(2)}`}
-                <small>{plan.priceUsd === 0 ? "sin vencimiento" : `USD · ${plan.priceSource}`}</small>
+                {plan.priceMonthly === 0 ? "Gratis" : `${plan.priceMonthly.toFixed(2)}`}
+                {plan.priceMonthly > 0 && <small>USD al mes</small>}
               </div>
               <div className="public-plan-specs">
-                <div><span>Almacenamiento</span><b>{plan.storageGb >= 1000 ? `${plan.storageGb / 1000} TB` : `${plan.storageGb} GB`}</b></div>
-                <div><span>Límite de usuarios</span><b>Hasta {plan.users}</b></div>
-                <div><span>Vigencia</span><b>{plan.validity}</b></div>
+                <div><span>Almacenamiento</span><b>{formatBytes(plan.storageLimitBytes)}</b></div>
+                <div><span>Límite de usuarios</span><b>Hasta {plan.userLimit}</b></div>
+                <div><span>Vigencia</span><b>{plan.validityDays === null ? "Sin vencimiento" : `${plan.validityDays} días`}</b></div>
               </div>
-              <Link className={`button ${plan.id === "business" ? "public-button-purple" : "public-plan-secondary"}`} href={`/planes/${plan.id}`}>
-                Ver detalles <UiIcon name="arrowRight" size={14} />
-              </Link>
-            </article>
-          ))}
-        </div>
+              {!current && <Link className="button public-plan-secondary" href={token ? `/suscripcion/confirmar?plan=${encodeURIComponent(plan.id)}` : "/registro"}>
+                {action} <UiIcon name="arrowRight" size={14} />
+              </Link>}
+            </article>;
+          })}
+        </div>}
         <div className="catalog-disclaimer">
           <span><UiIcon name="info" size={17} /></span>
           <p><b>Propuesta comercial inicial.</b> Precios SaaS antes de impuestos. La instalación local o híbrida, migraciones y soporte especializado se cotizan según alcance. No se procesan pagos reales.</p>
