@@ -5,6 +5,14 @@
 
 Registro dinámico de decisiones, acuerdos pendientes y bloqueos. Añada entradas nuevas al principio; no borre historia. Los contratos de integración v0.3 fueron aprobados por el integrador para implementación el 2026-10-18.
 
+## 2026-11-06 — SPEC-803: elegir Nube, Local o Híbrido (T1 a T4)
+
+- Se implementó SPEC-803 en `feat/803-elegir-modelo-despliegue` en tres commits: `1d959a1` (base: modelo de despliegue en IAM, `DestinationDefaults`, auditoría), `d38ccfa` (destino de carpetas por modelo) y `32f6b28` (política de almacenamiento y solicitudes de instalación). Sin migración.
+- Prueba manual con dos S3 (`docs/evidencia/spec-803/RESUMEN.md`): los 12 escenarios se comprobaron contra la API, salvo el destino deshabilitado del 10, que tiene prueba automática (la evidencia lo indica). El segundo almacén se registró por la IP de la LAN; `localhost` sigue bloqueado por SPEC-802, lo que corrige la indicación de SPEC-804 §8.
+- Decisiones: Files lee el modelo por el puerto `DeploymentModelSource` (no importa IAM); `IamModule` exporta `OrganizationRepository`. Una sola solicitud pendiente por organización se garantiza con `lockById` dentro de la transacción, sin índice nuevo. El cambio de predeterminado repunta las raíces de todos los Drives, personales y de equipo.
+- Pendiente: el código de la rama (sin specs) suma unas 865 líneas, por encima del límite de 400 de `REGLAS.md` §4. La partición que prevé el plan no es limpia: la política depende de que la base de Files registre `DestinationDefaults`. Decide Víctor cómo abrir el PR.
+- Pendiente de SPEC-503: revisión de solicitudes (cambio de estado y operador asignado). Pendiente de SPEC-804: pantalla `/almacenamiento` y segundo S3 en Compose.
+
 ## 2026-10-31 — Pantalla de auditoría conectada (SPEC-403)
 
 - **Estado:** `/auditoria` deja el `PlaceholderPage` y muestra la bitácora real (`apps/web/src/components/audit-log.tsx`) contra `GET /audit/events` (SPEC-402) mediante el cliente `apps/web/src/lib/api/audit.ts`. Tabla con fecha, actor, acción en español con insignia por familia (`.audit-badge-{auth,files,team,plan}` en `globals.css`) y recurso; filtro visual por acción, "Cargar más" por cursor, estados de carga/vacío/error y aviso para `colaborador` sin llamar a la API. Rama `feat/403-frontend-auditoria` **apilada sobre `feat/106-frontend-miembros-configuracion` (PR #29)**; se rebasará sobre `main` cuando #29 entre.

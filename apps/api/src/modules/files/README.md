@@ -29,6 +29,13 @@ El navegador se comunica únicamente con la API Nexus. `StorageRouter` (SPEC-801
 - Deshabilitar el destino predeterminado o uno con carpetas activas responde `422 DESTINATION_IN_USE`.
 - Los destinos de entorno (`S3_*`) aparecen en el listado sin `endpoint` ni `region`, y no se pueden reemplazar desde la API.
 
+## Destino de carpetas según el modelo (SPEC-803)
+
+- `FolderPlacementService` decide el destino de una carpeta nueva. Las subcarpetas heredan el de su padre y no admiten `destinationId`. Una carpeta principal usa una estrategia por modelo (`ROOT_PLACEMENT_BY_MODEL`): en `cloud` y `on_premises` usa el predeterminado; en `hybrid` acepta un destino disponible. Añadir un modelo es una estrategia nueva (OCP).
+- `DestinationDefaults` concentra las consultas de destinos disponibles y el cambio del predeterminado. El cambio quita primero la marca anterior (índice parcial único) y repunta las carpetas raíz de todos los Drives. Recibe el `EntityManager` del llamador.
+- Files no importa IAM: lee el modelo por el puerto `DeploymentModelSource`, enlazado en `FilesModule` a `OrganizationRepository`.
+- `GET /folders` y `GET /folders/:id/items` añaden `destinationLocation` (`cloud`, `on_premises` o `null`) con una sola consulta.
+
 ## Control de acceso a Drives (SPEC-221)
 
 `DriveAccessService` decide qué Drive puede usar cada miembro y en qué nivel. Es el único punto de Files que busca Drives para autorizar una operación; `FilesService` ya no consulta `drive_id` por su cuenta.
