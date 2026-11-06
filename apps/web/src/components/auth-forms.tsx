@@ -41,7 +41,7 @@ function messageFor(error: unknown, fallback: string) {
 
 export function LoginForm() {
   const router = useRouter();
-  const { signIn, session, restoring } = useSession();
+  const { signIn, restoring } = useSession();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   async function submit(e: FormEvent<HTMLFormElement>) {
@@ -68,7 +68,7 @@ export function LoginForm() {
       <div className="login-brand-lockup"><Image className="login-logo-img" src="/logo-nexus-oficial.svg" width={667} height={492} alt="Nexus, Nexo Digital" priority /><div className="brand-pagination" aria-hidden="true"><i /><i /><i /></div></div>
     </section>
     <section className="login-form-pane"><div className="login-card">
-      {restoring ? <span className="auth-back" aria-disabled="true">Regresar</span> : <AuthBack href={session ? "/dashboard" : "/"} />}
+      {restoring ? <span className="auth-back" aria-disabled="true">Regresar</span> : <AuthBack href="/" />}
       <h1>Bienvenido</h1><p className="login-lead">Conéctate con tu espacio de trabajo digital y lleva tu productividad al siguiente nivel.</p>
       <form onSubmit={submit} noValidate>
         <div className="field login-field"><label htmlFor="login-email">Correo electrónico</label><input id="login-email" name="email" type="email" autoComplete="email" placeholder="Ejemplo@correo.com" required /></div>
