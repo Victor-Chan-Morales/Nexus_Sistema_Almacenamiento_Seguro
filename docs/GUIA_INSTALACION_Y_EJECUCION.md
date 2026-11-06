@@ -158,6 +158,63 @@ Invoke-RestMethod http://localhost:3001/api/health
 
 Para volver al modo de API local, detener el perfil de Compose y arrancar `npm run dev:api`.
 
+### 6.1 Perfil `s3-local`: segundo almacén S3
+
+Este perfil levanta un segundo SeaweedFS independiente del principal, con su propio volumen (`nexus-seaweedfs-local-data`) y su propio bucket. Sirve para:
+
+- probar el modelo híbrido (una parte de los archivos en la nube y otra en un servidor local);
+- probar el destino **Servidor local** en desarrollo, sin depender de un servidor real.
+
+No se inicia con `npm run infra:up` ni con `docker compose up -d`; solo con el perfil:
+
+```powershell
+docker compose --profile s3-local up -d
+docker compose ps
+```
+
+**Crear el bucket `nexus-local`.** El segundo S3 responde en `http://localhost:8334`. Con cualquier cliente S3 se crea el bucket; por ejemplo, con AWS CLI instalado en la computadora, usando como credenciales `S3_LOCAL_ACCESS_KEY` y `S3_LOCAL_SECRET_KEY` del archivo `.env` (en la plantilla, `nexus_local_2` y `local_only_change_me_2`):
+
+```powershell
+$env:AWS_ACCESS_KEY_ID = "<S3_LOCAL_ACCESS_KEY del .env>"
+$env:AWS_SECRET_ACCESS_KEY = "<S3_LOCAL_SECRET_KEY del .env>"
+$env:AWS_DEFAULT_REGION = "us-east-1"
+aws --endpoint-url http://localhost:8334 s3 mb s3://nexus-local
+aws --endpoint-url http://localhost:8334 s3 ls
+```
+
+Este paso es independiente de la API: `localhost` funciona aquí porque la conexión la hace la computadora directamente contra Docker.
+
+**Registrar el destino en Nexus.** Iniciar sesión como administrador, abrir `http://localhost:3000/almacenamiento` y crear un destino de tipo **Servidor local** con estos datos:
+
+| Campo | Valor |
+| --- | --- |
+| Endpoint | `http://<IP-de-la-LAN>:8334` (por ejemplo, `http://192.168.1.20:8334`) |
+| Bucket | `nexus-local` |
+| Clave de acceso | `S3_LOCAL_ACCESS_KEY` del `.env` |
+| Clave secreta | `S3_LOCAL_SECRET_KEY` del `.env` |
+
+Para obtener la IP de la LAN de la computadora:
+
+```powershell
+ipconfig
+```
+
+Usar la línea **Dirección IPv4** del adaptador que está conectado a la red.
+
+Si la API corre dentro de Docker (sección 6), el endpoint es `http://seaweedfs-local:8333`, con el puerto interno. En ese caso el perfil `s3-local` también debe estar iniciado.
+
+Para que la API acepte el endpoint de un destino en red privada, poner `DESTINATION_ALLOW_PRIVATE=true` en `.env` y reiniciar la API. Con el valor `false` (el de la plantilla), el registro del segundo almacén se rechaza.
+
+> **No usar `localhost` ni `127.0.0.1` como endpoint del destino.** La API bloquea siempre las direcciones de loopback (SPEC-802), aunque `DESTINATION_ALLOW_PRIVATE` esté en `true`. Si se intenta, Nexus responde `DESTINATION_ENDPOINT_NOT_ALLOWED`. Usar la IP de la LAN o el nombre de servicio `seaweedfs-local`.
+
+Para detener el segundo almacén sin borrar sus datos:
+
+```powershell
+docker compose --profile s3-local stop seaweedfs-local
+```
+
+No usar `docker compose down -v` para apagarlo: borra también los volúmenes de PostgreSQL y de SeaweedFS.
+
 ## 7. Base de datos y datos de desarrollo
 
 PostgreSQL se ejecuta dentro del contenedor `postgres`. En la configuración actual, TypeORM carga las entidades y sincroniza el esquema automáticamente cuando `NODE_ENV` no es `production`. Por eso, para desarrollo local no se debe ejecutar un comando manual de migración a menos que el proyecto incorpore y documente un flujo de migraciones vigente.
@@ -178,6 +235,7 @@ La sincronización automática del esquema es una comodidad exclusiva del desarr
 | SeaweedFS S3 | `localhost:8333` | `8333` |
 | SeaweedFS Master | `localhost:9333` | `9333` |
 | SeaweedFS Filer | `localhost:8888` | `8888` |
+| SeaweedFS local, perfil `s3-local` (S3) | `localhost:8334` | `8333` |
 
 Si un puerto ya está ocupado, cerrar el proceso que lo usa o coordinar un cambio de puerto en Compose y `.env`. Si se cambia un puerto, todos los integrantes deben actualizar la misma configuración documentada.
 
