@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SessionProvider } from "@/lib/session";
+import { ToastProvider } from "@/components/toast";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -10,7 +11,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="es">
-      <body><SessionProvider>{children}</SessionProvider></body>
+      <body><SessionProvider><ToastProvider>{children}</ToastProvider></SessionProvider></body>
     </html>
   );
 }
