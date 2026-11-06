@@ -546,3 +546,29 @@ describe('SPEC-802 escenario 3: probar conexión', () => {
     expect(router.invalidate).toHaveBeenCalledWith(created.id);
   });
 });
+
+describe('SPEC-802: DESTINATION_TESTED refleja el resultado de la conexión', () => {
+  it('una prueba fallida se audita como failure con su causa segura', async () => {
+    const { service, router, audit, rows } = setup();
+    const created = await service.create(createDto(), ACTOR);
+    router.probe.mockResolvedValueOnce({ ok: false, reason: 'AUTH' });
+
+    await service.testConnection(created.id, ACTOR);
+
+    expect(rows[0].connectionStatus).toBe('Sin conexión');
+    expect(audit.logEvent).toHaveBeenLastCalledWith(
+      expect.objectContaining({ action: 'DESTINATION_TESTED', resourceId: created.id, result: 'failure', safeReason: 'AUTH' }),
+    );
+  });
+
+  it('una prueba exitosa se audita como success sin causa', async () => {
+    const { service, audit } = setup();
+    const created = await service.create(createDto(), ACTOR);
+
+    await service.testConnection(created.id, ACTOR);
+
+    expect(audit.logEvent).toHaveBeenLastCalledWith(
+      expect.objectContaining({ action: 'DESTINATION_TESTED', result: 'success', safeReason: null }),
+    );
+  });
+});

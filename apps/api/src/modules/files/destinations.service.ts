@@ -5,6 +5,7 @@ import { lookup } from 'dns/promises';
 import { isIP } from 'net';
 import { DataSource, IsNull, Repository } from 'typeorm';
 import { AuditService } from '../audit/audit.service';
+import { AuditResult } from '../audit/entities/audit-event.entity';
 import { AuditAction, AuditResource } from '../audit/audit.types';
 import { StorageRouter } from '../storage/storage-router.service';
 import {
@@ -293,12 +294,13 @@ export class DestinationsService {
     row.connectionStatus = status;
     await this.destinations.save(row);
 
-    this.audit(AuditAction.DESTINATION_TESTED, id, actor);
-    return {
-      status,
-      checkedAt: checkedAt.toISOString(),
-      reason: 'reason' in result ? result.reason : null,
-    };
+    // El resultado de la conexión queda en la auditoría: un fallo se registra como `failure` con su causa segura.
+    const reason = 'reason' in result ? result.reason : null;
+    this.audit(AuditAction.DESTINATION_TESTED, id, actor, {
+      result: reason ? AuditResult.FAILURE : AuditResult.SUCCESS,
+      safeReason: reason,
+    });
+    return { status, checkedAt: checkedAt.toISOString(), reason };
   }
 
   private encrypt(organizationId: string, details: ConnectionDetails): string {
@@ -331,13 +333,19 @@ export class DestinationsService {
     return this.config.get<string>('DESTINATION_ALLOW_PRIVATE') === 'true';
   }
 
-  private audit(action: AuditAction, resourceId: string, actor: DestinationActor): void {
+  private audit(
+    action: AuditAction,
+    resourceId: string,
+    actor: DestinationActor,
+    outcome: { result?: AuditResult; safeReason?: string | null } = {},
+  ): void {
     void this.auditService?.logEvent({
       organizationId: actor.organizationId,
       actorId: actor.userId,
       action,
       resourceType: AuditResource.DESTINATION,
       resourceId,
+      ...outcome,
     });
   }
 }
