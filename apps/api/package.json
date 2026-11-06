@@ -12,7 +12,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "seed:demo": "ts-node src/scripts/seed-demo.ts"
+    "seed:demo": "ts-node src/scripts/seed-demo.ts",
+    "seed:super-admin": "ts-node src/scripts/seed-super-admin.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1147.0",

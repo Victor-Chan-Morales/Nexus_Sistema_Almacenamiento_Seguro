@@ -20,6 +20,8 @@ export interface AuthUser {
   email: string;
   fullName: string;
   organizationName: string;
+  /** SPEC-501: sale de iam.user.is_super_admin, releído de la BD en cada request. Nunca del JWT. */
+  isSuperAdmin: boolean;
 }
 
 /** CONTRACTS.md v0.4 · POST /auth/login (y refresh): fechas ISO-8601 UTC. */
@@ -29,6 +31,7 @@ export interface LoginResponse {
   user: { id: string; fullName: string; email: string };
   organization: { id: string; name: string };
   role: string;
+  isSuperAdmin: boolean; // SPEC-501
 }
 
 /** CONTRACTS.md v0.4 · POST /auth/register */
@@ -44,4 +47,5 @@ export interface MeResponse {
   user: { id: string; fullName: string; email: string };
   organization: { id: string; name: string };
   role: string;
+  isSuperAdmin: boolean; // SPEC-501
 }

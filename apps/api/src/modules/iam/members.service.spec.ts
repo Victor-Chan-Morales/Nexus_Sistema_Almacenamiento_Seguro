@@ -21,6 +21,7 @@ const ACTOR = {
   email: 'admin@empresa.com',
   fullName: 'Admin',
   organizationName: 'Empresa SA',
+  isSuperAdmin: false,
 };
 const DTO = { fullName: 'Ana Pérez', email: ' ANA@Empresa.com ', role: Role.COLABORADOR };
 const CREATED_AT = new Date('2026-10-29T12:00:00.000Z');
@@ -107,6 +108,7 @@ const build = (opts: Options = {}) => {
     outbox as never,
     admission,
     audit as never,
+    {} as never,
   );
   return { service, log, db, uow, users, organizations, memberships, hasher, opaque, outbox, audit };
 };
@@ -226,7 +228,7 @@ describe('MembersService.addMember (sin base de datos: puertos simulados)', () =
     admission.register(async () => null);
     const service = new MembersService(
       t.uow as never, t.users as never, t.organizations as never, t.memberships as never,
-      t.hasher as never, t.opaque as never, t.outbox as never, admission, t.audit as never,
+      t.hasher as never, t.opaque as never, t.outbox as never, admission, t.audit as never, {} as never,
     );
     expect(await codeOf(service.addMember(ACTOR, DTO))).toBe('USER_LIMIT_EXCEEDED');
   });
@@ -329,7 +331,7 @@ describe('MembersService.list (SPEC-104)', () => {
     if (limit !== null) admission.register(async () => limit);
     const service = new MembersService(
       {} as never, {} as never, {} as never, memberships as never,
-      {} as never, {} as never, {} as never, admission, {} as never,
+      {} as never, {} as never, {} as never, admission, {} as never, {} as never,
     );
     return { service, memberships, admission };
   };
@@ -388,5 +390,257 @@ describe('MembersService.list (SPEC-104)', () => {
       );
     }
     expect(Object.keys(result).sort()).toEqual(['members', 'totalMembers', 'userLimit']);
+  });
+});
+
+describe('MembersService.update / remove (SPEC-108, puertos simulados con estado y rollback)', () => {
+  type MemberRow = {
+    id: string; userId: string; organizationId: string; role: Role; status: string; createdAt: Date;
+    user: { fullName: string; email: string };
+  };
+  const row = (id: string, userId: string, role: Role, status = 'active', organizationId = 'ORG-1'): MemberRow => ({
+    id, userId, organizationId, role, status, createdAt: new Date('2026-10-01T12:00:00Z'),
+    user: { fullName: `Persona ${userId}`, email: `${userId}@empresa.com` },
+  });
+  const ADMIN = { ...ACTOR, userId: 'u-admin', role: Role.TENANT_ADMIN };
+
+  const world = (members: MemberRow[], limit: number | null = 5) => {
+    const log: string[] = [];
+    const store = { rows: members.map((m) => ({ ...m })), userStatus: new Map(members.map((m) => [m.userId, 'active'])), revoked: [] as string[] };
+    const snapshot = () => ({
+      rows: store.rows.map((r) => ({ ...r })), userStatus: new Map(store.userStatus), revoked: [...store.revoked],
+    });
+    const uow = {
+      run: jest.fn(async (work: (tx: unknown) => Promise<unknown>) => {
+        const before = snapshot();
+        try {
+          const result = await work('tx');
+          log.push('commit');
+          return result;
+        } catch (err) {
+          store.rows = before.rows; store.userStatus = before.userStatus; store.revoked = before.revoked;
+          log.push('rollback');
+          throw err;
+        }
+      }),
+    };
+    const memberships = {
+      findActive: jest.fn(async (userId: string, organizationId?: string) =>
+        store.rows.find((r) => r.userId === userId && r.status === 'active' && store.userStatus.get(userId) === 'active'
+          && (!organizationId || r.organizationId === organizationId)) ?? null),
+      findInOrganization: jest.fn(async (_tx: unknown, id: string, organizationId: string) =>
+        store.rows.find((r) => r.id === id && r.organizationId === organizationId) ?? null),
+      countActiveAdmins: jest.fn(async (_tx: unknown, organizationId: string) =>
+        store.rows.filter((r) => r.organizationId === organizationId && r.status === 'active' && r.role === Role.TENANT_ADMIN
+          && store.userStatus.get(r.userId) === 'active').length),
+      countActiveInOrganization: jest.fn(async (_tx: unknown, organizationId: string) =>
+        store.rows.filter((r) => r.organizationId === organizationId && r.status === 'active').length),
+      updateRole: jest.fn(async (_tx: unknown, id: string, role: Role) => void (store.rows.find((r) => r.id === id)!.role = role)),
+      updateStatus: jest.fn(async (_tx: unknown, id: string, status: string) => void (store.rows.find((r) => r.id === id)!.status = status)),
+      remove: jest.fn(async (_tx: unknown, id: string) => void (store.rows = store.rows.filter((r) => r.id !== id))),
+    };
+    const users = { setStatus: jest.fn(async (_tx: unknown, userId: string, status: string) => void store.userStatus.set(userId, status)) };
+    const sessions = { revokeAllActiveOf: jest.fn(async (_tx: unknown, userId: string) => void store.revoked.push(userId)) };
+    const organizations = { lockById: jest.fn(async () => (log.push('lock'), true)) };
+    const audit = { logEvent: jest.fn().mockResolvedValue(undefined) };
+    const admission = new MemberAdmission();
+    if (limit !== null) admission.register(async () => limit);
+    const service = new MembersService(
+      uow as never, users as never, organizations as never, memberships as never,
+      {} as never, {} as never, {} as never, admission, audit as never, sessions as never,
+    );
+    return { service, store, log, uow, memberships, users, sessions, organizations, audit };
+  };
+
+  const base = () => [
+    row('m-admin', 'u-admin', Role.TENANT_ADMIN),
+    row('m-ana', 'u-ana', Role.COLABORADOR),
+  ];
+
+  // ---------- Escenario 1: cambiar rol ----------
+  it('Escenario 1: cambia el rol, responde el miembro actualizado y lo audita tras el commit', async () => {
+    const w = world(base());
+    const result = await w.service.update(ADMIN, 'm-ana', { role: Role.TENANT_ADMIN });
+
+    expect(result).toEqual({
+      id: 'm-ana', userId: 'u-ana', fullName: 'Persona u-ana', email: 'u-ana@empresa.com',
+      role: 'tenant_admin', status: 'active', joinedAt: '2026-10-01T12:00:00.000Z',
+    });
+    expect(w.store.rows.find((r) => r.id === 'm-ana')!.role).toBe(Role.TENANT_ADMIN);
+    expect(w.sessions.revokeAllActiveOf).not.toHaveBeenCalled(); // el rol se relee en cada solicitud
+    expect(w.audit.logEvent).toHaveBeenCalledTimes(1);
+    expect(w.audit.logEvent).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: 'ORG-1', actorId: 'u-admin', action: 'MEMBER_ROLE_CHANGED', resourceType: 'membership', resourceId: 'm-ana',
+    }));
+  });
+
+  it('Escenario 1: el bloqueo de la organización se toma antes que cualquier lectura', async () => {
+    const w = world(base());
+    await w.service.update(ADMIN, 'm-ana', { role: Role.TENANT_ADMIN });
+    expect(w.log).toEqual(['lock', 'commit']);
+    expect(w.organizations.lockById).toHaveBeenCalledWith('tx', 'ORG-1');
+  });
+
+  // ---------- Escenarios 2 y 3: suspender y reactivar ----------
+  it('Escenario 2: suspender revoca las sesiones y la siguiente solicitud con access token vigente deja de autenticarse', async () => {
+    const w = world(base());
+    const result = await w.service.update(ADMIN, 'm-ana', { status: 'suspended' as never });
+
+    expect(result.status).toBe('suspended');
+    expect(w.store.revoked).toEqual(['u-ana']);
+    // JwtStrategy usa findActive en cada solicitud: sin membresía activa responde 401
+    expect(await w.memberships.findActive('u-ana', 'ORG-1')).toBeNull();
+    expect(w.audit.logEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'MEMBER_SUSPENDED', resourceId: 'm-ana' }));
+  });
+
+  it('Escenario 3: reactivar con cupo deja la membresía activa de nuevo y lo audita', async () => {
+    const w = world([...base(), row('m-bea', 'u-bea', Role.COLABORADOR, 'suspended')], 5);
+    const result = await w.service.update(ADMIN, 'm-bea', { status: 'active' as never });
+
+    expect(result.status).toBe('active');
+    expect(await w.memberships.findActive('u-bea', 'ORG-1')).not.toBeNull(); // puede iniciar sesión otra vez
+    expect(w.audit.logEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'MEMBER_REACTIVATED', resourceId: 'm-bea' }));
+  });
+
+  // ---------- Escenario 4: reactivar sin cupo ----------
+  it('Escenario 4: reactivar con el límite alcanzado → USER_LIMIT_EXCEEDED y no cambia nada', async () => {
+    const w = world([...base(), row('m-bea', 'u-bea', Role.COLABORADOR, 'suspended')], 2); // 2 activos de 2
+    expect(await codeOf(w.service.update(ADMIN, 'm-bea', { status: 'active' as never }))).toBe('USER_LIMIT_EXCEEDED');
+    expect(w.store.rows.find((r) => r.id === 'm-bea')!.status).toBe('suspended');
+    expect(w.audit.logEvent).not.toHaveBeenCalled();
+  });
+
+  it('Escenario 4: sin plan vigente (o sin fuente) reactivar también falla cerrado', async () => {
+    const w = world([...base(), row('m-bea', 'u-bea', Role.COLABORADOR, 'suspended')], null);
+    expect(await codeOf(w.service.update(ADMIN, 'm-bea', { status: 'active' as never }))).toBe('USER_LIMIT_EXCEEDED');
+  });
+
+  it('suspender no consulta el límite ni exige cupo', async () => {
+    const w = world(base(), 1); // ya por encima del límite
+    expect(await codeOf(w.service.update(ADMIN, 'm-ana', { status: 'suspended' as never }))).toBe('NO_ERROR');
+  });
+
+  // ---------- Escenario 5: eliminar ----------
+  it('Escenario 5: eliminar borra la membresía, deja la cuenta inactive, revoca sesiones y libera el cupo', async () => {
+    const w = world(base());
+    const before = await w.memberships.countActiveInOrganization('tx', 'ORG-1');
+    await w.service.remove(ADMIN, 'm-ana');
+
+    expect(w.store.rows.map((r) => r.id)).toEqual(['m-admin']);
+    expect(w.users.setStatus).toHaveBeenCalledWith('tx', 'u-ana', 'inactive'); // la cuenta (y sus archivos) no se borran
+    expect(w.store.userStatus.get('u-ana')).toBe('inactive');
+    expect(w.store.revoked).toEqual(['u-ana']);
+    expect(await w.memberships.countActiveInOrganization('tx', 'ORG-1')).toBe(before - 1);
+    expect(w.audit.logEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'MEMBER_REMOVED', resourceType: 'membership', resourceId: 'm-ana' }));
+  });
+
+  it('Escenario 5: eliminar a un miembro suspendido también funciona', async () => {
+    const w = world([...base(), row('m-bea', 'u-bea', Role.COLABORADOR, 'suspended')]);
+    await w.service.remove(ADMIN, 'm-bea');
+    expect(w.store.rows.find((r) => r.id === 'm-bea')).toBeUndefined();
+  });
+
+  // ---------- Escenario 6: último administrador ----------
+  it('Escenario 6: el único administrador que intenta quitarse el rol → LAST_ADMIN_REQUIRED', async () => {
+    const w = world(base());
+    expect(await codeOf(w.service.update(ADMIN, 'm-admin', { role: Role.COLABORADOR }))).toBe('LAST_ADMIN_REQUIRED');
+    expect(w.store.rows.find((r) => r.id === 'm-admin')!.role).toBe(Role.TENANT_ADMIN);
+    expect(w.audit.logEvent).not.toHaveBeenCalled();
+  });
+
+  it('Escenario 6: con otro administrador activo, uno puede quitarse el rol', async () => {
+    const w = world([...base(), row('m-otro', 'u-otro', Role.TENANT_ADMIN)]);
+    const result = await w.service.update(ADMIN, 'm-admin', { role: Role.COLABORADOR });
+    expect(result.role).toBe('colaborador');
+  });
+
+  it('Escenario 6: un administrador suspendido no cuenta como administrador activo', async () => {
+    const w = world([...base(), row('m-otro', 'u-otro', Role.TENANT_ADMIN, 'suspended')]);
+    expect(await codeOf(w.service.update(ADMIN, 'm-admin', { role: Role.COLABORADOR }))).toBe('LAST_ADMIN_REQUIRED');
+  });
+
+  // ---------- Escenario 7: concurrencia (el resultado de la serialización por el bloqueo) ----------
+  it('Escenario 7: dos administradores que se eliminan entre sí → el segundo ya no es administrador y queda uno', async () => {
+    const w = world([row('m-a', 'u-admin', Role.TENANT_ADMIN), row('m-b', 'u-b', Role.TENANT_ADMIN)]);
+    const B = { ...ADMIN, userId: 'u-b' };
+
+    // El bloqueo de la organización las ordena: la primera confirma y la segunda ve el estado ya cambiado.
+    await w.service.remove(ADMIN, 'm-b');
+    expect(await codeOf(w.service.remove(B, 'm-a'))).toBe('NO_ACTIVE_MEMBERSHIP');
+
+    const activeAdmins = await w.memberships.countActiveAdmins('tx', 'ORG-1');
+    expect(activeAdmins).toBe(1);
+  });
+
+  it('Escenario 7: el actor se revalida dentro de la transacción: un administrador degradado no puede actuar', async () => {
+    const w = world([row('m-a', 'u-admin', Role.COLABORADOR), row('m-b', 'u-b', Role.TENANT_ADMIN)]);
+    expect(await codeOf(w.service.remove(ADMIN, 'm-b'))).toBe('FORBIDDEN_ROLE'); // su token aún decía tenant_admin
+    expect(w.store.rows).toHaveLength(2);
+  });
+
+  // ---------- Escenario 8: sobre uno mismo ----------
+  it.each([
+    ['suspenderse', (w: ReturnType<typeof world>) => w.service.update(ADMIN, 'm-admin', { status: 'suspended' as never })],
+    ['eliminarse', (w: ReturnType<typeof world>) => w.service.remove(ADMIN, 'm-admin')],
+    ['quitarse el rol y suspenderse a la vez', (w: ReturnType<typeof world>) =>
+      w.service.update(ADMIN, 'm-admin', { role: Role.COLABORADOR, status: 'suspended' as never })],
+  ])('Escenario 8: intentar %s → CANNOT_MODIFY_SELF, aunque sea el único administrador', async (_name, act) => {
+    const w = world(base());
+    expect(await codeOf(act(w))).toBe('CANNOT_MODIFY_SELF');
+    expect(w.store.rows.find((r) => r.id === 'm-admin')!.status).toBe('active');
+  });
+
+  it('Escenario 8: con otro administrador activo sigue siendo CANNOT_MODIFY_SELF', async () => {
+    const w = world([...base(), row('m-otro', 'u-otro', Role.TENANT_ADMIN)]);
+    expect(await codeOf(w.service.remove(ADMIN, 'm-admin'))).toBe('CANNOT_MODIFY_SELF');
+  });
+
+  // ---------- Escenario 9: aislamiento ----------
+  it('Escenario 9: una membresía de otra organización es 404 NOT_FOUND y no se toca', async () => {
+    const w = world([...base(), row('m-ajena', 'u-ajena', Role.COLABORADOR, 'active', 'ORG-2')]);
+    expect(await codeOf(w.service.update(ADMIN, 'm-ajena', { role: Role.TENANT_ADMIN }))).toBe('NOT_FOUND');
+    expect(await codeOf(w.service.remove(ADMIN, 'm-ajena'))).toBe('NOT_FOUND');
+    expect(w.store.rows.find((r) => r.id === 'm-ajena')!.role).toBe(Role.COLABORADOR);
+    expect(w.memberships.findInOrganization).toHaveBeenCalledWith('tx', 'm-ajena', 'ORG-1'); // filtra por la organización del token
+  });
+
+  it('Escenario 9: un id inexistente es 404 NOT_FOUND', async () => {
+    const w = world(base());
+    expect(await codeOf(w.service.update(ADMIN, 'no-existe', { role: Role.TENANT_ADMIN }))).toBe('NOT_FOUND');
+    expect(await codeOf(w.service.remove(ADMIN, 'no-existe'))).toBe('NOT_FOUND');
+  });
+
+  // ---------- Comportamiento general ----------
+  it('sin cambios reales (mismo rol y estado) responde el miembro actual sin escribir ni auditar', async () => {
+    const w = world(base());
+    const result = await w.service.update(ADMIN, 'm-ana', { role: Role.COLABORADOR, status: 'active' as never });
+    expect(result.role).toBe('colaborador');
+    expect(w.memberships.updateRole).not.toHaveBeenCalled();
+    expect(w.memberships.updateStatus).not.toHaveBeenCalled();
+    expect(w.audit.logEvent).not.toHaveBeenCalled();
+  });
+
+  it('rol y estado en la misma solicitud generan dos eventos con el mismo correlationId', async () => {
+    const w = world(base());
+    await w.service.update(ADMIN, 'm-ana', { role: Role.TENANT_ADMIN, status: 'suspended' as never });
+    const calls = w.audit.logEvent.mock.calls.map(([event]) => event);
+    expect(calls.map((c) => c.action)).toEqual(['MEMBER_ROLE_CHANGED', 'MEMBER_SUSPENDED']);
+    expect(calls[0].correlationId).toBeDefined();
+    expect(calls[0].correlationId).toBe(calls[1].correlationId);
+  });
+
+  it('un fallo de la auditoría no rompe la operación ni la respuesta', async () => {
+    const w = world(base());
+    w.audit.logEvent.mockRejectedValue(new Error('Audit DB down'));
+    await expect(w.service.update(ADMIN, 'm-ana', { role: Role.TENANT_ADMIN })).resolves.toMatchObject({ role: 'tenant_admin' });
+    await expect(w.service.remove(ADMIN, 'm-ana')).resolves.toBeUndefined();
+  });
+
+  it('si falla una escritura se revierte todo y no se audita ni se revocan sesiones', async () => {
+    const w = world(base());
+    w.sessions.revokeAllActiveOf.mockRejectedValueOnce(new Error('falla'));
+    await expect(w.service.update(ADMIN, 'm-ana', { status: 'suspended' as never })).rejects.toThrow();
+    expect(w.store.rows.find((r) => r.id === 'm-ana')!.status).toBe('active');
+    expect(w.audit.logEvent).not.toHaveBeenCalled();
   });
 });

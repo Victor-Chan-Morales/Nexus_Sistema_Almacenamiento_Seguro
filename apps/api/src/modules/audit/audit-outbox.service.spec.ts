@@ -1,9 +1,9 @@
 import { Logger } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { AuditChainWriter, ResolvedAuditEvent } from './audit-chain-writer';
+import { AuditActorType, AuditResult } from './entities/audit-event.entity';
 import { AuditOutboxService } from './audit-outbox.service';
 import { AuditAction, AuditResource } from './audit.types';
-import { AuditResult } from './entities/audit-event.entity';
 
 const ORG_ID = '11111111-1111-4111-8111-111111111111';
 const ACTOR_ID = '33333333-3333-4333-8333-333333333333';
@@ -173,6 +173,45 @@ describe('AuditOutboxService — reintento de eventos de auditoría (issue #17)'
     expect(db.chain).toHaveLength(1);
     expect(db.chain[0]).toMatchObject({ eventId: EVENT_ID, correlationId: CORRELATION_ID, chainSeq: '1' });
     expect(db.outbox.size).toBe(0);
+  });
+
+  it('SPEC-407 Escenario 5: un evento de visitante con resultado failure se reintenta con el mismo actor y resultado', async () => {
+    const visitorEvent: ResolvedAuditEvent & { occurredAt: Date } = {
+      ...event,
+      actorId: undefined,
+      actorType: AuditActorType.VISITOR,
+      result: AuditResult.FAILURE,
+    };
+    await service.enqueue(visitorEvent);
+    // El outbox lo guarda tal cual: sin actor_id, con su tipo y su resultado
+    expect(db.outbox.get(EVENT_ID)).toMatchObject({ actorId: null, actorType: 'visitor', result: 'failure' });
+
+    db.failures.push(transient());
+    await service.dispatchDue();
+    expect(db.chain).toHaveLength(0);
+
+    jest.setSystemTime(new Date(T0.getTime() + 3 * MINUTE));
+    await service.dispatchDue();
+
+    expect(db.chain).toHaveLength(1);
+    expect(db.chain[0]).toMatchObject({ eventId: EVENT_ID, actorType: 'visitor', actorId: null, result: 'failure' });
+    expect(db.outbox.size).toBe(0);
+  });
+
+  it('SPEC-407: un evento del sistema (purga automática) conserva actor_type system y sin actor_id al reintentarse', async () => {
+    await service.enqueue({ ...event, actorId: undefined, actorType: AuditActorType.SYSTEM });
+    db.failures.push(transient());
+    await service.dispatchDue();
+    jest.setSystemTime(new Date(T0.getTime() + 3 * MINUTE));
+    await service.dispatchDue();
+    expect(db.chain[0]).toMatchObject({ actorType: 'system', actorId: null, result: 'success' });
+  });
+
+  it('SPEC-407 Escenario 1: un evento sin actorType ni result se encola y registra como user y success, como antes', async () => {
+    await service.enqueue(event);
+    expect(db.outbox.get(EVENT_ID)).toMatchObject({ actorId: ACTOR_ID, actorType: 'user', result: 'success' });
+    await service.dispatchDue();
+    expect(db.chain[0]).toMatchObject({ actorType: 'user', actorId: ACTOR_ID, result: 'success' });
   });
 
   it('si el evento ya estaba en la cadena (el INSERT llegó pero el cliente vio error), no se duplica ni altera la cadena', async () => {

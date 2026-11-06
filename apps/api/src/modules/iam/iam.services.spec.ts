@@ -31,7 +31,11 @@ describe('AuthService.authenticate (sin base de datos: puertos simulados)', () =
       role: Role.TENANT_ADMIN,
       organization: { id: 'o1', name: 'Org' },
     };
-    const users = { findByEmail: jest.fn().mockResolvedValue(user) };
+    const users = {
+      findByEmail: jest.fn().mockResolvedValue(user),
+      registerFailedLogin: jest.fn().mockResolvedValue(undefined), // SPEC-112
+      clearFailedLogins: jest.fn().mockResolvedValue(undefined),
+    };
     const memberships = { findActive: jest.fn().mockResolvedValue(membership) };
     const hasher = {
       hash: jest.fn(async (p: string) => `hash:${p}`),

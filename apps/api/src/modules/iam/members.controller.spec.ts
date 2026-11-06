@@ -1,8 +1,10 @@
-import { BadRequestException, HttpException, ValidationPipe } from '@nestjs/common';
+import { BadRequestException, HttpException, NotFoundException, RequestMethod, ValidationPipe } from '@nestjs/common';
+import { PATH_METADATA, HTTP_CODE_METADATA, METHOD_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from './decorators/roles.decorator';
 import { Role } from './domain/enums';
 import { AddMemberDto } from './dto/add-member.dto';
+import { UpdateMemberDto } from './dto/update-member.dto';
 import { RolesGuard } from './guards/roles.guard';
 import { MembersController } from './members.controller';
 
@@ -91,5 +93,71 @@ describe('MembersController (POST /organizations/members)', () => {
     expect(await controller.list(admin as never)).toBe(result);
     expect(service.list).toHaveBeenCalledWith(admin);
     expect(MembersController.prototype.list.length).toBe(1); // solo recibe al actor
+  });
+
+  describe('SPEC-108: PATCH y DELETE /organizations/members/:id', () => {
+    const pipe108 = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
+    const parse = (body: unknown) => pipe108.transform(body, { type: 'body', metatype: UpdateMemberDto }) as Promise<UpdateMemberDto>;
+    const MEMBERSHIP = '5f1c4b0a-3c1d-4f6e-9a55-0d1d2c3b4a59';
+
+    it('Escenario 9: ambas rutas exigen tenant_admin y un colaborador recibe 403 FORBIDDEN_ROLE', () => {
+      for (const handler of [MembersController.prototype.update, MembersController.prototype.remove]) {
+        expect(Reflect.getMetadata(ROLES_KEY, handler)).toEqual([Role.TENANT_ADMIN]);
+        const guard = new RolesGuard(new Reflector());
+        let error: HttpException | undefined;
+        try {
+          guard.canActivate(contextOf(colaborador, handler));
+        } catch (err) {
+          error = err as HttpException;
+        }
+        expect(error?.getResponse()).toMatchObject({ code: 'FORBIDDEN_ROLE' });
+        expect(guard.canActivate(contextOf(admin, handler))).toBe(true);
+      }
+    });
+
+    it('PATCH y DELETE usan la ruta :id y DELETE responde 204', () => {
+      expect(Reflect.getMetadata(METHOD_METADATA, MembersController.prototype.update)).toBe(RequestMethod.PATCH);
+      expect(Reflect.getMetadata(PATH_METADATA, MembersController.prototype.update)).toBe(':id');
+      expect(Reflect.getMetadata(METHOD_METADATA, MembersController.prototype.remove)).toBe(RequestMethod.DELETE);
+      expect(Reflect.getMetadata(PATH_METADATA, MembersController.prototype.remove)).toBe(':id');
+      expect(Reflect.getMetadata(HTTP_CODE_METADATA, MembersController.prototype.remove)).toBe(204);
+    });
+
+    it('delegan en el servicio con el actor del token y el id de la ruta', async () => {
+      const service = { update: jest.fn().mockResolvedValue({ id: MEMBERSHIP }), remove: jest.fn().mockResolvedValue(undefined) };
+      const controller = new MembersController(service as never);
+      const dto = await parse({ role: 'tenant_admin' });
+
+      expect(await controller.update(admin as never, MEMBERSHIP, dto)).toEqual({ id: MEMBERSHIP });
+      expect(service.update).toHaveBeenCalledWith(admin, MEMBERSHIP, dto);
+      expect(await controller.remove(admin as never, MEMBERSHIP)).toBeUndefined();
+      expect(service.remove).toHaveBeenCalledWith(admin, MEMBERSHIP);
+    });
+
+    it.each([{ role: 'tenant_admin' }, { status: 'suspended' }, { status: 'active' }, { role: 'colaborador', status: 'active' }])(
+      'el cuerpo %j es válido', async (body) => {
+        await expect(parse(body)).resolves.toBeDefined();
+      },
+    );
+
+    it.each([
+      [{}], [{ role: 'super_admin' }], [{ role: 'auditor' }], [{ status: 'locked' }], [{ status: 'inactive' }],
+      [{ role: 'colaborador', status: 'desconocido' }], [{ role: 123 }],
+    ])('rechaza el cuerpo %j (al menos uno, con valores válidos)', async (body) => {
+      await expect(parse(body)).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('Escenario 9: rechaza organizationId, userId o email en el cuerpo (forbidNonWhitelisted)', async () => {
+      for (const extra of [{ organizationId: 'ORG-2' }, { userId: 'u9' }, { email: 'x@y.co' }, { isSuperAdmin: true }]) {
+        await expect(parse({ role: 'colaborador', ...extra })).rejects.toBeInstanceOf(BadRequestException);
+      }
+    });
+
+    it('Escenario 9: un id que no es UUID se responde 404 NOT_FOUND, igual que uno ajeno', () => {
+      const params = Reflect.getMetadata('__routeArguments__', MembersController, 'update') as Record<string, { data: string; pipes: Array<{ transform: (v: string) => Promise<string> }> }>;
+      const idArg = Object.values(params).find((arg) => arg.data === 'id')!;
+      const uuidPipe = idArg.pipes[0];
+      return expect(uuidPipe.transform('no-es-uuid')).rejects.toBeInstanceOf(NotFoundException);
+    });
   });
 });

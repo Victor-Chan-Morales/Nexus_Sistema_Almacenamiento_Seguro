@@ -1,6 +1,13 @@
 import { HttpException } from '@nestjs/common';
 import { MembershipStatus, OrgStatus, Role, TokenPurpose, UserStatus } from './domain/enums';
-import { TypeOrmMembershipRepository } from './infrastructure/typeorm-repositories';
+import {
+  LOCKOUT_BASE_SECONDS,
+  LOCKOUT_MAX_SECONDS,
+  LOCKOUT_THRESHOLD,
+  TypeOrmMembershipRepository,
+  TypeOrmUserRepository,
+} from './infrastructure/typeorm-repositories';
+import { AuthService } from './services/auth.service';
 import { EmailVerificationService } from './services/email-verification.service';
 import { VerificationTokenService } from './services/verification-token.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -57,7 +64,41 @@ describe('JwtStrategy.validate (contexto autenticado derivado del servidor)', ()
       email: 'ana@test.com',
       fullName: 'Ana',
       organizationName: 'Empresa SA',
+      isSuperAdmin: false,
     });
+  });
+});
+
+describe('SPEC-501: isSuperAdmin en JwtStrategy.validate (siempre de la base)', () => {
+  const buildWith = (isSuperAdmin: unknown) => {
+    const membership = {
+      userId: 'u1',
+      organizationId: 'o1',
+      role: Role.TENANT_ADMIN,
+      user: { email: 'ana@test.com', fullName: 'Ana', isSuperAdmin },
+      organization: { name: 'Empresa SA' },
+    };
+    const memberships = { findActive: jest.fn().mockResolvedValue(membership) };
+    const config = { getOrThrow: jest.fn().mockReturnValue('x'.repeat(32)) };
+    return new JwtStrategy(config as never, memberships as never);
+  };
+
+  it('Escenario 1: true en la base → isSuperAdmin: true; false → false', async () => {
+    expect((await buildWith(true).validate({ sub: 'u1', org: 'o1', role: 'tenant_admin' })).isSuperAdmin).toBe(true);
+    expect((await buildWith(false).validate({ sub: 'u1', org: 'o1', role: 'tenant_admin' })).isSuperAdmin).toBe(false);
+  });
+
+  it('Escenario 2: un isSuperAdmin alterado en el JWT no tiene efecto (se lee de la base)', async () => {
+    const forged = { sub: 'u1', org: 'o1', role: 'tenant_admin', isSuperAdmin: true } as never;
+    expect((await buildWith(false).validate(forged)).isSuperAdmin).toBe(false);
+    const revoked = { sub: 'u1', org: 'o1', role: 'tenant_admin', isSuperAdmin: false } as never;
+    expect((await buildWith(true).validate(revoked)).isSuperAdmin).toBe(true); // lo que dice la base manda en ambos sentidos
+  });
+
+  it('un valor que no es exactamente true (null, undefined, "true") se trata como false', async () => {
+    for (const value of [undefined, null, 'true', 1]) {
+      expect((await buildWith(value).validate({ sub: 'u1', org: 'o1', role: 'x' })).isSuperAdmin).toBe(false);
+    }
   });
 });
 
@@ -208,3 +249,174 @@ describe('EmailVerificationService (token de un solo uso, 15 minutos, propósito
 
 // La renovación de sesión con varias organizaciones se verifica en iam.session.spec.ts:
 // iam.session ya guarda organization_id y refresh la conserva y revalida.
+
+describe('SPEC-112: bloqueo progresivo en AuthService.authenticate', () => {
+  const FUTURE = new Date(Date.now() + 60_000);
+  const PAST = new Date(Date.now() - 60_000);
+
+  const build = (userOverrides: Record<string, unknown> = {}) => {
+    const log: string[] = [];
+    const user = {
+      id: 'u1',
+      email: 'ana@test.com',
+      fullName: 'Ana',
+      passwordHash: 'hash:Password123',
+      mfaEnabled: false,
+      emailVerified: true,
+      status: UserStatus.ACTIVE,
+      failedLoginAttempts: 0,
+      lockedUntil: null as Date | null,
+      ...userOverrides,
+    };
+    const membership = { userId: 'u1', organizationId: 'o1', role: Role.TENANT_ADMIN, organization: { id: 'o1', name: 'Org' } };
+    const users = {
+      findByEmail: jest.fn().mockResolvedValue(user),
+      registerFailedLogin: jest.fn(async () => void log.push('fail')),
+      clearFailedLogins: jest.fn(async () => void log.push('clear')),
+    };
+    const hasher = {
+      hash: jest.fn(async (p: string) => `hash:${p}`),
+      verify: jest.fn(async (h: string, p: string) => h === `hash:${p}`),
+    };
+    const sessions = {
+      open: jest.fn(async () => (log.push('open'), { accessToken: 'jwt', user: { id: 'u1' }, organization: membership.organization })),
+    };
+    const uow = { run: jest.fn((work: (tx: unknown) => unknown) => work('tx')) };
+    const service = new AuthService(
+      users as never,
+      { findActive: jest.fn().mockResolvedValue(membership) } as never,
+      hasher as never,
+      sessions as never,
+      { verify: jest.fn() } as never,
+      uow as never,
+      { requireVerifiedEmail: true } as never,
+      { logEvent: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+    return { service, users, hasher, sessions, log, user };
+  };
+  const login = async (t: ReturnType<typeof build>, password: string) => {
+    await t.service.onModuleInit();
+    return codeOf(t.service.authenticate('ana@test.com', password));
+  };
+
+  it('Escenario 1: contraseña incorrecta → registra el fallo del usuario y responde 401 INVALID_CREDENTIALS', async () => {
+    const t = build();
+    expect(await login(t, 'Incorrecta1')).toBe('INVALID_CREDENTIALS');
+    expect(t.users.registerFailedLogin).toHaveBeenCalledTimes(1);
+    expect(t.users.registerFailedLogin).toHaveBeenCalledWith('u1', expect.any(Date));
+    expect(t.users.clearFailedLogins).not.toHaveBeenCalled();
+    expect(t.sessions.open).not.toHaveBeenCalled();
+  });
+
+  it('Escenario 1: el fallo se registra fuera de la transacción (no depende de que se revierta)', async () => {
+    const t = build();
+    await login(t, 'Incorrecta1');
+    expect(t.users.registerFailedLogin).toHaveBeenCalledWith('u1', expect.any(Date)); // sin tx
+    expect(t.users.registerFailedLogin.mock.calls[0]).toHaveLength(2);
+  });
+
+  it('Escenario 2: tras vencer el bloqueo, un nuevo fallo vuelve a contarse', async () => {
+    const t = build({ failedLoginAttempts: 5, lockedUntil: PAST });
+    expect(await login(t, 'Incorrecta1')).toBe('INVALID_CREDENTIALS');
+    expect(t.users.registerFailedLogin).toHaveBeenCalledTimes(1);
+  });
+
+  it('Escenario 2: tras vencer el bloqueo, la contraseña correcta inicia sesión', async () => {
+    const t = build({ failedLoginAttempts: 5, lockedUntil: PAST });
+    expect(await login(t, 'Password123')).toBe('NO_ERROR');
+  });
+
+  it('Escenario 3: contraseña correcta durante el bloqueo → INVALID_CREDENTIALS, sin sesión y sin contar', async () => {
+    const t = build({ failedLoginAttempts: 5, lockedUntil: FUTURE });
+    expect(await login(t, 'Password123')).toBe('INVALID_CREDENTIALS');
+    expect(t.sessions.open).not.toHaveBeenCalled();
+    expect(t.users.registerFailedLogin).not.toHaveBeenCalled();
+    expect(t.users.clearFailedLogins).not.toHaveBeenCalled();
+  });
+
+  it('Escenario 3: contraseña incorrecta durante el bloqueo tampoco cuenta ni alarga el bloqueo', async () => {
+    const t = build({ failedLoginAttempts: 5, lockedUntil: FUTURE });
+    expect(await login(t, 'Incorrecta1')).toBe('INVALID_CREDENTIALS');
+    expect(t.users.registerFailedLogin).not.toHaveBeenCalled();
+  });
+
+  it('Escenario 4: bloqueada, contraseña incorrecta y correo inexistente → mismo código y mensaje, con Argon2 verificado en los tres', async () => {
+    const outcome = async (t: ReturnType<typeof build>, email: string, password: string) => {
+      await t.service.onModuleInit();
+      t.hasher.verify.mockClear();
+      try {
+        await t.service.authenticate(email, password);
+      } catch (err) {
+        return { response: (err as HttpException).getResponse(), verifies: t.hasher.verify.mock.calls.length };
+      }
+      throw new Error('debía fallar');
+    };
+    const locked = await outcome(build({ lockedUntil: FUTURE }), 'ana@test.com', 'Password123');
+    const wrong = await outcome(build(), 'ana@test.com', 'Incorrecta1');
+    const unknownTest = build();
+    unknownTest.users.findByEmail.mockResolvedValue(null);
+    const unknown = await outcome(unknownTest, 'nadie@test.com', 'Password123');
+
+    expect(locked.response).toEqual(wrong.response);
+    expect(unknown.response).toEqual(wrong.response);
+    expect(wrong.response).toMatchObject({ code: 'INVALID_CREDENTIALS' });
+    expect([locked.verifies, wrong.verifies, unknown.verifies]).toEqual([1, 1, 1]);
+  });
+
+  it('Escenario 5: login correcto sin bloqueo → contador a 0 y locked_until a NULL, tras abrir la sesión y en la misma transacción', async () => {
+    const t = build({ failedLoginAttempts: 3 });
+    expect(await login(t, 'Password123')).toBe('NO_ERROR');
+    expect(t.users.clearFailedLogins).toHaveBeenCalledWith('u1', 'tx');
+    expect(t.log).toEqual(['open', 'clear']);
+  });
+
+  it('Escenario 5: si el login no se completa (correo sin verificar, MFA) no se limpia el contador', async () => {
+    const t = build({ emailVerified: false });
+    expect(await login(t, 'Password123')).toBe('EMAIL_NOT_VERIFIED');
+    expect(t.users.clearFailedLogins).not.toHaveBeenCalled();
+  });
+});
+
+describe('SPEC-112: TypeOrmUserRepository (bloqueo progresivo, sin base de datos)', () => {
+  const build = () => {
+    const query = jest.fn().mockResolvedValue(undefined);
+    const manager = { query: jest.fn().mockResolvedValue(undefined), findOne: jest.fn(), update: jest.fn(), save: jest.fn() };
+    const repo = new TypeOrmUserRepository({ query, manager } as never);
+    return { repo, query, manager };
+  };
+
+  it('política: a partir del 5.º fallo, 60 s duplicándose hasta 30 min', () => {
+    expect([LOCKOUT_THRESHOLD, LOCKOUT_BASE_SECONDS, LOCKOUT_MAX_SECONDS]).toEqual([5, 60, 1800]);
+  });
+
+  it('Escenarios 1, 2 y 7: registerFailedLogin es UN solo UPDATE atómico en SQL, sin leer antes ni usar transacción', async () => {
+    const t = build();
+    const now = new Date('2026-11-05T12:00:00Z');
+    await t.repo.registerFailedLogin('u1', now);
+
+    expect(t.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = t.query.mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/UPDATE iam\."user"/);
+    expect(sql).toMatch(/failed_login_attempts = LEAST\(failed_login_attempts \+ 1/); // incremento en SQL, no leer-modificar-escribir
+    expect(sql).toMatch(/WHERE user_id = \$1\s*$/); // no condiciona por locked_until: los fallos simultáneos se cuentan todos
+    expect(sql).not.toMatch(/SELECT/);
+    expect(params).toEqual(['u1', now, 5, 60, 32767, 1800]);
+    expect(t.manager.findOne).not.toHaveBeenCalled(); // sin lectura previa
+    expect(t.manager.query).not.toHaveBeenCalled(); // por la conexión del pool, no por una transacción abierta
+  });
+
+  it('Escenarios 5 y 6: clearFailedLogins pone 0 y NULL, usando la transacción si se le da', async () => {
+    const t = build();
+    await t.repo.clearFailedLogins('u1', t.manager as never);
+    const [sql, params] = t.manager.query.mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/failed_login_attempts = 0, locked_until = NULL/);
+    expect(params).toEqual(['u1']);
+    expect(t.query).not.toHaveBeenCalled();
+  });
+
+  it('clearFailedLogins sin transacción usa el manager por defecto', async () => {
+    const t = build();
+    await t.repo.clearFailedLogins('u1');
+    expect(t.manager.query).toHaveBeenCalledTimes(1);
+  });
+});

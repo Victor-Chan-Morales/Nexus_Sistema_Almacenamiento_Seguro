@@ -29,6 +29,13 @@ import { TransactionContext } from '../ports/transaction';
 /** Lecturas sin transacción usan el manager por defecto; las escrituras siempre reciben `tx`. */
 const managerOf = (dataSource: DataSource, tx?: TransactionContext) => tx ?? dataSource.manager;
 
+/** Política de bloqueo progresivo (SPEC-112): a partir del 5.º fallo, 60 s duplicándose hasta 30 min. */
+export const LOCKOUT_THRESHOLD = 5;
+export const LOCKOUT_BASE_SECONDS = 60;
+export const LOCKOUT_MAX_SECONDS = 30 * 60;
+/** failed_login_attempts es smallint. */
+const FAILED_ATTEMPTS_CAP = 32767;
+
 @Injectable()
 export class TypeOrmUserRepository implements UserRepository {
   constructor(private readonly dataSource: DataSource) {}
@@ -66,6 +73,39 @@ export class TypeOrmUserRepository implements UserRepository {
 
   async setPasswordAndVerifyEmail(tx: TransactionContext, userId: string, passwordHash: string): Promise<void> {
     await tx.update(User, { id: userId }, { passwordHash, emailVerified: true });
+  }
+
+  /**
+   * SPEC-112. Con n = intentos tras este fallo: n < 5 → sin bloqueo; n >= 5 → bloqueo de
+   * min(60 s × 2^(n − 5), 30 min) contados desde `now`. El exponente se acota en 10 para que nunca desborde y el
+   * contador (smallint) en 32767. El UPDATE no mira `locked_until`: los fallos simultáneos se cuentan todos.
+   */
+  async registerFailedLogin(userId: string, now: Date): Promise<void> {
+    await this.dataSource.query(
+      `UPDATE iam."user"
+          SET failed_login_attempts = LEAST(failed_login_attempts + 1, $5::int),
+              locked_until = CASE
+                WHEN LEAST(failed_login_attempts + 1, $5::int) >= $3::int
+                THEN $2::timestamptz + make_interval(secs => LEAST(
+                       $4::int * power(2, LEAST(LEAST(failed_login_attempts + 1, $5::int) - $3::int, 10)),
+                       $6::int))
+                ELSE locked_until
+              END
+        WHERE user_id = $1`,
+      [userId, now, LOCKOUT_THRESHOLD, LOCKOUT_BASE_SECONDS, FAILED_ATTEMPTS_CAP, LOCKOUT_MAX_SECONDS],
+    );
+  }
+
+  async setStatus(tx: TransactionContext, userId: string, status: UserStatus): Promise<void> {
+    await tx.update(User, { id: userId }, { status });
+  }
+
+  async clearFailedLogins(userId: string, tx?: TransactionContext): Promise<void> {
+    await managerOf(this.dataSource, tx).query(
+      `UPDATE iam."user" SET failed_login_attempts = 0, locked_until = NULL
+        WHERE user_id = $1 AND (failed_login_attempts <> 0 OR locked_until IS NOT NULL)`,
+      [userId],
+    );
   }
 }
 
@@ -148,6 +188,40 @@ export class TypeOrmMembershipRepository implements MembershipRepository {
         roleRef: { name: true },
       },
       order: { createdAt: 'ASC' },
+    });
+  }
+
+  findInOrganization(tx: TransactionContext, membershipId: string, organizationId: string): Promise<Membership | null> {
+    return tx.findOne(Membership, {
+      where: { id: membershipId, organizationId },
+      relations: { user: true, roleRef: true },
+    });
+  }
+
+  async updateRole(tx: TransactionContext, membershipId: string, role: Role): Promise<void> {
+    const roleRow = await tx.findOne(IamRole, { where: { name: role } });
+    if (!roleRow) {
+      throw new Error(`El catálogo iam.role no contiene el rol "${role}": cargar los datos iniciales de roles`);
+    }
+    await tx.update(Membership, { id: membershipId }, { roleId: roleRow.id });
+  }
+
+  async updateStatus(tx: TransactionContext, membershipId: string, status: MembershipStatus): Promise<void> {
+    await tx.update(Membership, { id: membershipId }, { status });
+  }
+
+  async remove(tx: TransactionContext, membershipId: string): Promise<void> {
+    await tx.delete(Membership, { id: membershipId });
+  }
+
+  countActiveAdmins(tx: TransactionContext, organizationId: string): Promise<number> {
+    return tx.count(Membership, {
+      where: {
+        organizationId,
+        status: MembershipStatus.ACTIVE,
+        roleRef: { name: Role.TENANT_ADMIN },
+        user: { status: UserStatus.ACTIVE },
+      },
     });
   }
 

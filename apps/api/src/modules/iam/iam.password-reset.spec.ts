@@ -54,6 +54,7 @@ const build = (opts: Options = {}) => {
   const users = {
     findByEmailForUpdate: jest.fn(async () => (log.push('lock'), opts.user === undefined ? activeUser : opts.user)),
     findById: jest.fn().mockResolvedValue(opts.user === undefined ? activeUser : opts.user),
+    clearFailedLogins: jest.fn().mockResolvedValue(undefined), // SPEC-112
     setPasswordAndVerifyEmail: jest.fn(async (_tx: unknown, _id: string, hash: string) => {
       state.passwordHash = hash;
       state.emailVerified = true;
@@ -199,6 +200,19 @@ describe('PasswordResetService.reset', () => {
       sessionsRevoked: true,
     });
     expect(t.log.at(-1)).toBe('commit');
+  });
+
+  it('SPEC-112 Escenario 6: restablecer la contraseña deja el contador en 0 y sin bloqueo, dentro de la misma transacción', async () => {
+    const t = build();
+    await t.service.reset(TOKEN, 'NuevaClave123');
+    expect(t.users.clearFailedLogins).toHaveBeenCalledTimes(1);
+    expect(t.users.clearFailedLogins).toHaveBeenCalledWith('u1', 'tx');
+  });
+
+  it('SPEC-112 Escenario 6: un token inválido no desbloquea la cuenta', async () => {
+    const t = build({ record: null });
+    await t.service.reset(TOKEN, 'NuevaClave123').catch(() => undefined);
+    expect(t.users.clearFailedLogins).not.toHaveBeenCalled();
   });
 
   it('el hash de Argon2 se calcula entre dos transacciones, nunca dentro de la que tiene el bloqueo del token', async () => {

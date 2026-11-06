@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  NotFoundException,
   UnauthorizedException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -16,6 +17,22 @@ export const IamErrors = {
     new ConflictException({ code: 'EMAIL_ALREADY_REGISTERED', message: 'El correo ya está registrado' }),
   invalidCredentials: () =>
     new UnauthorizedException({ code: 'INVALID_CREDENTIALS', message: 'Credenciales inválidas' }),
+  memberNotFound: () => new NotFoundException({ code: 'NOT_FOUND', message: 'Miembro no encontrado' }),
+  lastAdminRequired: () =>
+    new UnprocessableEntityException({
+      code: 'LAST_ADMIN_REQUIRED',
+      message: 'La organización debe conservar al menos un administrador',
+    }),
+  cannotModifySelf: () =>
+    new UnprocessableEntityException({
+      code: 'CANNOT_MODIFY_SELF',
+      message: 'No puedes suspenderte ni eliminarte a ti mismo',
+    }),
+  platformAdminRequired: () =>
+    new ForbiddenException({
+      code: 'PLATFORM_ADMIN_REQUIRED',
+      message: 'Esta acción es exclusiva del administrador de la plataforma.',
+    }),
   invalidOrExpiredToken: () =>
     new BadRequestException({
       code: 'INVALID_OR_EXPIRED_TOKEN',

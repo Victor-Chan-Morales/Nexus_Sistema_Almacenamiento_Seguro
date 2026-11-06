@@ -76,6 +76,7 @@ describe('BillingController — Pruebas del controlador y contratos HTTP', () =>
         email: 'admin@nexus.local',
         fullName: 'Admin Nexus',
         organizationName: 'Nexus Corp',
+        isSuperAdmin: false,
       };
 
       const response = await controller.listOperations({ user: tenantAdminUser });
@@ -119,6 +120,7 @@ describe('BillingController — Pruebas del controlador y contratos HTTP', () =>
                 email: 'user@nexus.local',
                 fullName: 'Usuario',
                 organizationName: 'Org',
+                isSuperAdmin: false,
               } satisfies AuthUser,
             }),
           }),
