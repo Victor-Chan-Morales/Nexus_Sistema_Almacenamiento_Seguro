@@ -23,6 +23,16 @@ export interface EncryptedFile {
   formatVersion: number;
 }
 
+/** SPEC-802: datos de conexión propios de un destino. Solo existen dentro del servidor, cifrados en la base. */
+export interface DestinationConnectionDetails {
+  endpoint: string;
+  bucket: string;
+  region: string;
+  accessKey: string;
+  secretKey: string;
+  useSsl: boolean;
+}
+
 @Injectable()
 export class FilesCryptoService {
   constructor(private readonly config: ConfigService) {}
@@ -37,6 +47,16 @@ export class FilesCryptoService {
 
   decryptConnectionDetails(organizationId: string, value: string): string {
     return this.decryptText(value, `destination:${organizationId}:v1`);
+  }
+
+  /**
+   * Datos de conexión propios de un destino, o null si usa la configuración de entorno (`environment:*`).
+   * Quien lo llame debe tratar el resultado como secreto: nunca lo devuelve una respuesta HTTP.
+   */
+  readDestinationDetails(organizationId: string, ciphertext: string): DestinationConnectionDetails | null {
+    const parsed = JSON.parse(this.decryptConnectionDetails(organizationId, ciphertext)) as DestinationConnectionDetails;
+    if (typeof parsed.endpoint === 'string' && parsed.endpoint.startsWith('environment:')) return null;
+    return parsed;
   }
 
   encryptFile(

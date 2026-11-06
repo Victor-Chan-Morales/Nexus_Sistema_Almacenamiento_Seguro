@@ -7,6 +7,7 @@ import { assertEndpointAllowed, classifyAddress, DestinationsService, Destinatio
 import { CreateDestinationDto } from './dto/destination.dto';
 import { Destination } from './entities/destination.entity';
 import { FilesCryptoService } from './files-crypto.service';
+import { StorageRouter } from '../storage/storage-router.service';
 
 /**
  * SPEC-802 escenarios 1, 2, 4 a 9, y los destinos de entorno. La prueba de conexión (escenario 3) va en T3.
@@ -76,6 +77,10 @@ const setup = (allowPrivate = 'false') => {
     find: jest.fn(async ({ where }: { where: { organizationId: string } }) =>
       rows.filter((row) => row.organizationId === where.organizationId).map((row) => ({ ...row })),
     ),
+    findOne: jest.fn(async ({ where }: { where: { id: string; organizationId: string } }) => {
+      const row = rows.find((r) => r.id === where.id && r.organizationId === where.organizationId);
+      return row ? { ...row } : null;
+    }),
     create: (data: Partial<Destination>) => ({ ...data }),
     save: jest.fn(async (entity: Partial<Destination>) => upsert(entity)),
   };
@@ -100,12 +105,17 @@ const setup = (allowPrivate = 'false') => {
     get: (key: string) => ({ FILES_MASTER_KEY: MASTER_KEY, DESTINATION_ALLOW_PRIVATE: allowPrivate })[key],
   } as unknown as ConfigService;
   const crypto = new FilesCryptoService(config);
+  const router = {
+    probe: jest.fn().mockResolvedValue({ ok: true }),
+    invalidate: jest.fn(),
+  };
 
   const service = new DestinationsService(
     repository as never,
     dataSource as never,
     crypto,
     config,
+    router as unknown as StorageRouter,
     audit as unknown as AuditService,
   );
 
@@ -132,7 +142,7 @@ const setup = (allowPrivate = 'false') => {
     return row;
   };
 
-  return { service, rows, folders, crypto, audit, repository, manager, seedEnvironmentDefault };
+  return { service, rows, folders, crypto, audit, repository, manager, router, seedEnvironmentDefault };
 };
 
 describe('DestinationsService (SPEC-802)', () => {
@@ -435,5 +445,103 @@ describe('assertEndpointAllowed (SPEC-802 escenario 8)', () => {
   it('nunca admite loopback ni metadatos aunque la bandera esté activa', async () => {
     expect(await failure(assertEndpointAllowed('http://127.0.0.1:9000', true))).not.toBeNull();
     expect(await failure(assertEndpointAllowed('http://169.254.169.254', true))).not.toBeNull();
+  });
+});
+
+describe('SPEC-802 escenario 3: probar conexión', () => {
+  it('deja el destino en Conectado cuando la prueba pasa, y audita DESTINATION_TESTED', async () => {
+    const { service, rows, router, audit } = setup();
+    const created = await service.create(createDto(), ACTOR);
+
+    const result = await service.testConnection(created.id, ACTOR);
+
+    expect(result).toMatchObject({ status: 'Conectado', reason: null });
+    expect(result.checkedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(rows[0].connectionStatus).toBe('Conectado');
+    expect(router.probe).toHaveBeenCalledWith(ORG, created.id);
+    expect(audit.logEvent).toHaveBeenLastCalledWith(
+      expect.objectContaining({ action: 'DESTINATION_TESTED', resourceId: created.id }),
+    );
+  });
+
+  it('deja el destino en Sin conexión con un motivo seguro, sin detalle del SDK ni credenciales', async () => {
+    const { service, rows, router } = setup();
+    const created = await service.create(createDto(), ACTOR);
+    router.probe.mockResolvedValueOnce({ ok: false, reason: 'AUTH' });
+
+    const result = await service.testConnection(created.id, ACTOR);
+
+    expect(result).toMatchObject({ status: 'Sin conexión', reason: 'AUTH' });
+    expect(rows[0].connectionStatus).toBe('Sin conexión');
+    expect(JSON.stringify(result)).not.toContain(SECRET);
+    expect(JSON.stringify(result)).not.toContain(ACCESS);
+  });
+
+  it('muestra Comprobando mientras corre la prueba', async () => {
+    const { service, rows, router } = setup();
+    const created = await service.create(createDto(), ACTOR);
+    let seenDuringProbe: string | undefined;
+    router.probe.mockImplementationOnce(async () => {
+      seenDuringProbe = rows[0].connectionStatus;
+      return { ok: true };
+    });
+
+    await service.testConnection(created.id, ACTOR);
+
+    expect(seenDuringProbe).toBe('Comprobando');
+  });
+
+  it('repite la validación del endpoint antes de probar: si el DNS ahora apunta a loopback, no se conecta', async () => {
+    const { service, rows, router } = setup();
+    lookupMock.mockResolvedValueOnce([{ address: '203.0.113.10', family: 4 }]);
+    const created = await service.create(createDto({ endpoint: 'https://almacen.ejemplo.test' }), ACTOR);
+    lookupMock.mockResolvedValue([{ address: '127.0.0.1', family: 4 }]);
+
+    const error = await failure(service.testConnection(created.id, ACTOR));
+
+    expect(error?.getStatus()).toBe(422);
+    expect(error?.getResponse()).toMatchObject({ code: 'DESTINATION_ENDPOINT_NOT_ALLOWED' });
+    expect(router.probe).not.toHaveBeenCalled();
+    expect(rows[0].connectionStatus).toBe('Sin comprobar');
+  });
+
+  it('no prueba un destino deshabilitado', async () => {
+    const { service, router } = setup();
+    const created = await service.create(createDto(), ACTOR);
+    await service.update(created.id, { isEnabled: false }, ACTOR);
+
+    const error = await failure(service.testConnection(created.id, ACTOR));
+
+    expect(error?.getStatus()).toBe(409);
+    expect(router.probe).not.toHaveBeenCalled();
+  });
+
+  it('responde 404 al probar un destino de otra organización sin conectarse', async () => {
+    const { service, router } = setup();
+    const created = await service.create(createDto(), OTHER_ACTOR);
+
+    const error = await failure(service.testConnection(created.id, ACTOR));
+
+    expect(error?.getStatus()).toBe(404);
+    expect(router.probe).not.toHaveBeenCalled();
+  });
+
+  it('prueba también el destino de entorno, sin validar un endpoint que no expone', async () => {
+    const { service, seedEnvironmentDefault, router } = setup();
+    const def = seedEnvironmentDefault();
+
+    const result = await service.testConnection(def.id, ACTOR);
+
+    expect(result.status).toBe('Conectado');
+    expect(router.probe).toHaveBeenCalledWith(ORG, def.id);
+  });
+
+  it('al editar, descarta el cliente cacheado del router', async () => {
+    const { service, router } = setup();
+    const created = await service.create(createDto(), ACTOR);
+
+    await service.update(created.id, { region: 'eu-west-1' }, ACTOR);
+
+    expect(router.invalidate).toHaveBeenCalledWith(created.id);
   });
 });

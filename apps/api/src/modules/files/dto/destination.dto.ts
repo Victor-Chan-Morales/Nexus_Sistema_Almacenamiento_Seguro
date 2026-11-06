@@ -120,3 +120,10 @@ export class DestinationDto {
 export class DestinationListDto {
   items!: DestinationDto[];
 }
+
+/** SPEC-802: respuesta de `POST /destinations/:id/test`. `reason` es null cuando la conexión funciona. */
+export class DestinationTestResultDto {
+  status!: 'Conectado' | 'Sin conexión';
+  checkedAt!: string;
+  reason!: 'AUTH' | 'NETWORK' | 'BUCKET_NOT_FOUND' | 'DATA_MISMATCH' | null;
+}

@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { ConflictException, HttpException, HttpStatus, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { lookup } from 'dns/promises';
@@ -6,10 +6,17 @@ import { isIP } from 'net';
 import { DataSource, IsNull, Repository } from 'typeorm';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction, AuditResource } from '../audit/audit.types';
-import { CreateDestinationDto, DestinationDto, DestinationListDto, UpdateDestinationDto } from './dto/destination.dto';
+import { StorageRouter } from '../storage/storage-router.service';
+import {
+  CreateDestinationDto,
+  DestinationDto,
+  DestinationListDto,
+  DestinationTestResultDto,
+  UpdateDestinationDto,
+} from './dto/destination.dto';
 import { Destination } from './entities/destination.entity';
 import { Folder } from './entities/folder.entity';
-import { FilesCryptoService } from './files-crypto.service';
+import { DestinationConnectionDetails, FilesCryptoService } from './files-crypto.service';
 
 /** Misma forma que los errores de negocio de Files: { statusCode, error, code, message }. */
 function businessError(status: HttpStatus, code: string, message: string): HttpException {
@@ -143,14 +150,7 @@ export interface DestinationActor {
 }
 
 /** Datos de conexión de un destino propio. Viven cifrados en `connection_details_encrypted`. */
-interface ConnectionDetails {
-  endpoint: string;
-  bucket: string;
-  region: string;
-  accessKey: string;
-  secretKey: string;
-  useSsl: boolean;
-}
+type ConnectionDetails = DestinationConnectionDetails;
 
 const CONNECTION_FIELDS = ['endpoint', 'bucket', 'region', 'accessKey', 'secretKey', 'useSsl'] as const;
 
@@ -168,6 +168,7 @@ export class DestinationsService {
     private readonly dataSource: DataSource,
     private readonly crypto: FilesCryptoService,
     private readonly config: ConfigService,
+    private readonly router: StorageRouter,
     @Optional() private readonly auditService?: AuditService,
   ) {}
 
@@ -263,8 +264,39 @@ export class DestinationsService {
       return { row: saved, details: nextDetails };
     });
 
+    // Credenciales nuevas: el cliente cacheado con las anteriores ya no sirve.
+    this.router.invalidate(id);
     this.audit(AuditAction.DESTINATION_UPDATED, id, actor);
     return this.toDto(row, details);
+  }
+
+  /**
+   * SPEC-802 escenario 3: prueba la conexión del destino. Repite la validación del endpoint antes de conectarse
+   * (el DNS pudo cambiar desde que se guardó), marca `Comprobando` mientras corre y guarda el resultado.
+   */
+  async testConnection(id: string, actor: DestinationActor): Promise<DestinationTestResultDto> {
+    const row = await this.destinations.findOne({ where: { id, organizationId: actor.organizationId } });
+    if (!row) throw destinationNotFoundError();
+    if (!row.isEnabled) throw new ConflictException('El destino está deshabilitado');
+
+    const details = this.readDetails(row);
+    if (details) await assertEndpointAllowed(details.endpoint, this.allowPrivate());
+
+    row.connectionStatus = 'Comprobando';
+    await this.destinations.save(row);
+
+    const result = await this.router.probe(actor.organizationId, id);
+    const checkedAt = new Date();
+    const status = result.ok ? ('Conectado' as const) : ('Sin conexión' as const);
+    row.connectionStatus = status;
+    await this.destinations.save(row);
+
+    this.audit(AuditAction.DESTINATION_TESTED, id, actor);
+    return {
+      status,
+      checkedAt: checkedAt.toISOString(),
+      reason: 'reason' in result ? result.reason : null,
+    };
   }
 
   private encrypt(organizationId: string, details: ConnectionDetails): string {
@@ -273,11 +305,7 @@ export class DestinationsService {
 
   /** Devuelve los datos propios, o null si el destino usa la configuración del servidor. */
   private readDetails(row: Destination): ConnectionDetails | null {
-    const parsed = JSON.parse(
-      this.crypto.decryptConnectionDetails(row.organizationId, row.connectionDetailsEncrypted),
-    ) as ConnectionDetails;
-    if (typeof parsed.endpoint === 'string' && parsed.endpoint.startsWith('environment:')) return null;
-    return parsed;
+    return this.crypto.readDestinationDetails(row.organizationId, row.connectionDetailsEncrypted);
   }
 
   /** Solo los campos públicos: nunca accessKey ni secretKey. */

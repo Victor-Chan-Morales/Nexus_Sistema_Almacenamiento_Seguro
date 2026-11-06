@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Destination } from '../files/entities/destination.entity';
+import { FilesCryptoService } from '../files/files-crypto.service';
 import { StorageService } from './storage.service';
 import { StorageRouter } from './storage-router.service';
 
@@ -18,6 +19,8 @@ import { StorageRouter } from './storage-router.service';
   providers: [
     StorageService,
     StorageRouter,
+    // SPEC-802: el router descifra las credenciales propias de cada destino (solo las usa en memoria).
+    FilesCryptoService,
     // Cliente compatible con S3 configurado desde variables de entorno
     {
       provide: 'S3_CLIENT',
