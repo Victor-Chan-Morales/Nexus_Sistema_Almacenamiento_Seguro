@@ -28,7 +28,7 @@ El navegador se comunica únicamente con la API Nexus. `StorageRouter` (SPEC-801
 - `requireFolder(actor, folderId)` devuelve una carpeta activa de un Drive accesible; si no existe, pertenece a otro Drive u otra organización, responde 404 sin revelar que existe.
 - `locateFile(actor, fileId)` localiza un archivo de un Drive accesible en cualquier estado de papelera, y devuelve `null` si no es accesible.
 
-Todas las búsquedas filtran por organización y propietario. Los Drives de equipo y sus niveles `read`/`write` llegarán con SPEC-220 a 224.
+Todas las búsquedas filtran por organización y propietario. Los Drives de equipo ya existen desde SPEC-220 (ver abajo); su acceso por nivel `read`/`write` para operar archivos llega con SPEC-222 y SPEC-224.
 
 ## Historial de versiones (SPEC-206)
 
@@ -43,6 +43,12 @@ Todas las búsquedas filtran por organización y propietario. Los Drives de equi
 ## Enlaces compartidos (SPEC-209)
 
 `ShareLinksService` crea, lista y revoca enlaces temporales a la versión vigente de un archivo. `POST /files/:id/share-links` genera un token de 256 bits y lo devuelve en claro una sola vez; la base guarda solo su hash SHA-256. La contraseña opcional se guarda con Argon2id y tiene política propia (8 a 128 caracteres), no la de la cuenta. El estado (`active`, `expired`, `revoked`) se calcula al leer con `shareLinkStatus`, función pura que SPEC-216 reutiliza. Revocar es idempotente y funciona aunque el archivo esté en papelera. Crear, listar y revocar exigen nivel `write` u `owner`; con otro nivel responden 404. Auditoría: `SHARE_LINK_CREATED` y `SHARE_LINK_REVOKED`, sin token ni contraseña. El acceso público por el token es SPEC-216.
+
+## Equipos y miembros (SPEC-220)
+
+`TeamsService` crea equipos y administra sus miembros. `POST /teams` crea en una sola transacción el equipo, su Drive de tipo `team` y la carpeta raíz `Archivos`, con el destino predeterminado del tenant (`FilesService.ensureTenantResources`, ahora pública). Cada miembro (`files.team_member`) tiene nivel `read` o `write`. Agregar un miembro exige membresía activa en la organización, validada con `MemberAdmission.isActiveMember` (IAM); Files no lee tablas de IAM. Un duplicado responde `409 TEAM_MEMBER_EXISTS` sin cambiar el nivel existente: el servicio usa `insert`, no `save`. El nombre del equipo es único por organización sin distinguir mayúsculas; la restricción de la base decide, y el servicio la traduce a `409 TEAM_NAME_CONFLICT`.
+
+`myLevel` en `GET /teams` es `write` para todo `tenant_admin` y el nivel de la fila para los demás; `teamLevelOf` implementa la regla y SPEC-222 la reutiliza. `memberCount` cuenta solo miembros activos. La administración exige `tenant_admin` mediante `RolesGuard`; `GET /teams` lo puede usar cualquier miembro. Auditoría: `TEAM_CREATED`, `TEAM_MEMBER_ADDED`, `TEAM_MEMBER_LEVEL_CHANGED` y `TEAM_MEMBER_REMOVED`, todas con `resource_type = team`. Eliminar equipos queda fuera.
 
 ## Alcance actual
 
