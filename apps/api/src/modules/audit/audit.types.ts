@@ -26,6 +26,8 @@ export enum AuditAction {
   FOLDER_PURGE = 'FOLDER_PURGE',
   PLAN_ACTIVATED = 'PLAN_ACTIVATED',
   PLAN_RENEWED = 'PLAN_RENEWED',
+  DEPLOYMENT_MODEL_CHANGED = 'DEPLOYMENT_MODEL_CHANGED',
+  INSTALLATION_REQUESTED = 'INSTALLATION_REQUESTED',
 }
 
 /** Recurso afectado. `resource_type` es varchar(20). */
@@ -38,6 +40,8 @@ export enum AuditResource {
   SHARE_LINK = 'share_link',
   DESTINATION = 'destination',
   TEAM = 'team',
+  ORGANIZATION = 'organization',
+  INSTALLATION_REQUEST = 'installation_request',
 }
 
 /** Entrada de `logEvent`. Sin campos libres: no puede transportar contraseñas, tokens ni nombres de archivo. */

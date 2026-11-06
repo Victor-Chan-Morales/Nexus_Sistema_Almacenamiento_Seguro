@@ -112,6 +112,8 @@ function resolveJwtSecret(config: ConfigService): string {
     JwtAuthGuard,
     RegistrationHooks,
     MemberAdmission,
+    // SPEC-803: Files y Integration leen y cambian el modelo de despliegue sin tocar TypeORM de IAM
+    OrganizationRepository,
     // SPEC-209: tokens opacos y hash de contraseña para los enlaces compartidos
     OpaqueTokens,
     PasswordHasher,
