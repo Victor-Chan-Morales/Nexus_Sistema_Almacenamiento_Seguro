@@ -12,7 +12,7 @@
 | **Dependencias** | SPEC-206 |
 | **Prioridad** | P1 |
 | **Estimación** | 2 h |
-| **Estado** | Aprobada (2026-11-04, Víctor Chán Morales) |
+| **Estado** | Implementada (2026-11-06). Aprobada el 2026-11-04 por Víctor Chán Morales |
 
 ## 2. Objetivo
 
@@ -89,10 +89,10 @@ Sin migración. `files.share_link` existe con `uq_share_link_token_hash`, `ck_sh
 
 ## 9. Plan de Tareas
 
-- [ ] **T1 (20 min)**: Entidad, DTO y exportaciones.
-- [ ] **T2 (50 min)**: `ShareLinksService` y controlador.
-- [ ] **T3 (15 min)**: Acciones y recurso de auditoría (`SHARE_LINK`).
-- [ ] **T4 (35 min)**: Pruebas.
+- [x] **T1 (20 min)**: Entidad, DTO y exportaciones.
+- [x] **T2 (50 min)**: `ShareLinksService` y controlador.
+- [x] **T3 (15 min)**: Acciones y recurso de auditoría (`SHARE_LINK`).
+- [x] **T4 (35 min)**: Pruebas.
 
 **Archivos permitidos:** `files/share-links.service.ts`, `files/share-links.controller.ts`, `files/entities/share-link.entity.ts`, `files/dto/share-link.dto.ts`, su spec (nuevos), `files/files.module.ts`, `iam/iam.module.ts` (solo `exports`), `audit/audit.types.ts`.
 
@@ -104,8 +104,8 @@ Sin migración. `files.share_link` existe con `uq_share_link_token_hash`, `ck_sh
 
 ## 11. Impacto en Documentación
 
-- [ ] `CONTRACTS.md` v0.6.
-- [ ] `ENTS_REGISTRY.md`.
+- [x] `CONTRACTS.md` v0.6.
+- [x] `ENTS_REGISTRY.md`.
 
 ## 12. Preguntas Abiertas
 
@@ -117,3 +117,4 @@ Ninguna.
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
+| 2026-11-06 | Claude Code | Implementada. Pruebas unitarias en `share-links.service.spec.ts` (escenarios 1–9 y `shareLinkStatus`). Decisiones de implementación: la contraseña del enlace tiene política propia (8 a 128 caracteres, sin exigir letras ni números); crear, listar y revocar exigen nivel `write` u `owner` y responden 404 con `read`; revocar funciona con el archivo en papelera. Verificación manual contra la API y PostgreSQL de desarrollo: 30 comprobaciones en verde. Pendiente: la PR. |

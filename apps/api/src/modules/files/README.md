@@ -40,6 +40,10 @@ Todas las búsquedas filtran por organización y propietario. Los Drives de equi
 
 `readVersionBytes` lee y descifra una versión; SPEC-216 la reutiliza para enlaces públicos.
 
+## Enlaces compartidos (SPEC-209)
+
+`ShareLinksService` crea, lista y revoca enlaces temporales a la versión vigente de un archivo. `POST /files/:id/share-links` genera un token de 256 bits y lo devuelve en claro una sola vez; la base guarda solo su hash SHA-256. La contraseña opcional se guarda con Argon2id y tiene política propia (8 a 128 caracteres), no la de la cuenta. El estado (`active`, `expired`, `revoked`) se calcula al leer con `shareLinkStatus`, función pura que SPEC-216 reutiliza. Revocar es idempotente y funciona aunque el archivo esté en papelera. Crear, listar y revocar exigen nivel `write` u `owner`; con otro nivel responden 404. Auditoría: `SHARE_LINK_CREATED` y `SHARE_LINK_REVOKED`, sin token ni contraseña. El acceso público por el token es SPEC-216.
+
 ## Alcance actual
 
 - Solo se expone el Drive personal del usuario autenticado; cada búsqueda valida organización y `drive_id` derivado del JWT.

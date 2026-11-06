@@ -9,6 +9,8 @@ export enum AuditAction {
   FILE_RESTORE = 'FILE_RESTORE',
   FILE_PURGE = 'FILE_PURGE',
   FILE_VERSION_RESTORED = 'FILE_VERSION_RESTORED',
+  SHARE_LINK_CREATED = 'SHARE_LINK_CREATED',
+  SHARE_LINK_REVOKED = 'SHARE_LINK_REVOKED',
   FOLDER_CREATE = 'FOLDER_CREATE',
   FOLDER_DELETE = 'FOLDER_DELETE',
   FOLDER_RESTORE = 'FOLDER_RESTORE',
@@ -24,6 +26,7 @@ export enum AuditResource {
   FILE = 'file',
   FOLDER = 'folder',
   SUBSCRIPTION = 'subscription',
+  SHARE_LINK = 'share_link',
 }
 
 /** Entrada de `logEvent`. Sin campos libres: no puede transportar contraseñas, tokens ni nombres de archivo. */

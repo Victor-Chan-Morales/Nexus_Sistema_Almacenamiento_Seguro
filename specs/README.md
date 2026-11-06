@@ -101,7 +101,7 @@ Todas siguen el flujo normal de aprobación y fusión.
 | `SPEC-206` | [Listar versiones](206-historial-versiones.md) | N1 | RF-008 | P1 | 221 | ✅ Hecho |
 | `SPEC-207` | [Modal de versiones](207-frontend-historial-versiones.md) | N1 | RF-008 | P1 | 206 | ✅ Hecho |
 | `SPEC-208` | [Descargar carpeta en ZIP](208-descargar-carpeta-zip.md) | N2 | Usabilidad | P3 | 221 | Aprobada |
-| `SPEC-209` | [Crear, listar y revocar enlaces](209-enlaces-compartidos.md) | N2 | RF-010, RF-011 | P1 | 206 | Aprobada |
+| `SPEC-209` | [Crear, listar y revocar enlaces](209-enlaces-compartidos.md) | N2 | RF-010, RF-011 | P1 | 206 | ✅ Hecho |
 | `SPEC-210` | [Descargar y restaurar una versión](210-descargar-restaurar-version.md) | N2 | RF-008 | P1 | 206, 207 | ✅ Hecho |
 | `SPEC-211` | [Renombrar y mover: backend](211-renombrar-mover.md) | N2 | RF-007 | P2 | 221, 224 | Aprobada |
 | `SPEC-212` | [Renombrar y mover: pantalla](212-frontend-renombrar-mover.md) | N1 | RF-007 | P2 | 211 | Aprobada |

@@ -3,6 +3,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { FilesController, FoldersController } from './files.controller';
 import { FilesService } from './files.service';
 import { FileVersionsService } from './file-versions.service';
+import { ShareLinksService } from './share-links.service';
+import { ShareLinksController } from './share-links.controller';
+import { ShareLink } from './entities/share-link.entity';
 import { FileRecord } from './entities/file-record.entity';
 import { Folder } from './entities/folder.entity';
 import { FileVersion } from './entities/file-version.entity';
@@ -39,13 +42,21 @@ import { DriveAccessService } from './drive-access.service';
       Reservation,
       TenantQuota,
       Upload,
+      ShareLink,
     ]),
     IamModule,     // Guard JWT y RegistrationHooks
     StorageModule, // StorageRouter: guardar/recuperar bytes en el destino de cada versión
     BillingModule, // Para verificar cuota de almacenamiento
   ],
-  controllers: [FoldersController, FilesController],
-  providers: [FilesService, FileVersionsService, FilesCryptoService, DriveAccessService, PersonalDriveHook],
+  controllers: [FoldersController, FilesController, ShareLinksController],
+  providers: [
+    FilesService,
+    FileVersionsService,
+    FilesCryptoService,
+    DriveAccessService,
+    PersonalDriveHook,
+    ShareLinksService,
+  ],
   exports: [FilesService],
 })
 export class FilesModule {}
