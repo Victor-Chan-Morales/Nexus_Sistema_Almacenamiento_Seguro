@@ -4,13 +4,18 @@ import { NotFoundException } from '@nestjs/common';
 import { Response } from 'express';
 import { PassThrough, Readable } from 'stream';
 import { FilesService } from './files.service';
+import { DriveAccessService } from './drive-access.service';
 import { FilesController } from './files.controller';
+import { FileVersionsService } from './file-versions.service';
 import { AuditService } from '../audit/audit.service';
-import { AuditAction, AuditResource } from '../audit/audit.types';
+import { AuditAction, AuditEventInput, AuditResource } from '../audit/audit.types';
+import { AuthUser } from '../iam/interfaces/auth-user.interface';
 import { FileRecord } from './entities/file-record.entity';
 
 describe('SPEC-405: Files Audit Hooks', () => {
   let filesService: FilesService;
+  let fileVersions: FileVersionsService;
+  let driveAccess: DriveAccessService;
   let filesController: FilesController;
   let mockAuditService: { logEvent: jest.Mock };
   let mockFileRepo: { createQueryBuilder: jest.Mock; save: jest.Mock };
@@ -32,6 +37,12 @@ describe('SPEC-405: Files Audit Hooks', () => {
       transaction: jest.fn(),
     };
 
+    // Drive personal del solicitante para SPEC-221; la lectura del Drive devuelve un Drive propio.
+    driveAccess = new DriveAccessService({
+      getRepository: () => ({
+        findOne: jest.fn().mockResolvedValue({ id: 'drive-1', name: 'Drive', rootFolderId: 'root-1' }),
+      }),
+    } as never);
     filesService = new FilesService(
       mockFileRepo as never,
       {} as never,
@@ -40,11 +51,22 @@ describe('SPEC-405: Files Audit Hooks', () => {
       { delete: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never,
       {} as never,
+      driveAccess,
+      mockAuditService as unknown as AuditService,
+    );
+
+    fileVersions = new FileVersionsService(
+      { findOne: jest.fn() } as never,
+      filesService,
+      {} as never,
+      {} as never,
+      driveAccess,
       mockAuditService as unknown as AuditService,
     );
 
     filesController = new FilesController(
       filesService,
+      fileVersions,
       mockAuditService as unknown as AuditService,
     );
   });
@@ -53,7 +75,7 @@ describe('SPEC-405: Files Audit Hooks', () => {
     it('registra FILE_UPLOAD tras confirmar la transacción de subida', async () => {
       const orgId = 'org-up-1';
       const userId = 'usr-up-1';
-      const folderId = 'folder-up-1';
+      const folderId = '33333333-3333-4333-8333-333333333333';
       const fileId = 'file-new-1';
 
       jest.spyOn(filesService, 'getOrCreateUserDrive').mockResolvedValue({
@@ -61,7 +83,10 @@ describe('SPEC-405: Files Audit Hooks', () => {
         name: 'Drive',
         rootFolderId: 'root-1',
       });
-      jest.spyOn(filesService as any, 'requirePersonalFolder').mockResolvedValue({ id: folderId });
+      jest.spyOn(driveAccess, 'requireFolder').mockResolvedValue({
+        folder: { id: folderId } as never,
+        access: { drive: { id: 'drive-1' } as never, level: 'owner' },
+      });
       jest.spyOn(filesService as any, 'reserveUpload').mockResolvedValue({
         reservationId: 'res-1',
         uploadId: 'up-1',
@@ -105,7 +130,10 @@ describe('SPEC-405: Files Audit Hooks', () => {
         name: 'Drive',
         rootFolderId: 'root-1',
       });
-      jest.spyOn(filesService as any, 'requirePersonalFolder').mockResolvedValue({ id: 'folder-1' });
+      jest.spyOn(driveAccess, 'requireFolder').mockResolvedValue({
+        folder: { id: '11111111-1111-4111-8111-111111111111' } as never,
+        access: { drive: { id: 'drive-1' } as never, level: 'owner' },
+      });
       jest.spyOn(filesService as any, 'reserveUpload').mockResolvedValue({
         reservationId: 'res-1',
         uploadId: 'up-1',
@@ -119,7 +147,7 @@ describe('SPEC-405: Files Audit Hooks', () => {
         filesService.uploadMultipartFile({
           organizationId: 'org-1',
           ownerId: 'usr-1',
-          folderId: 'folder-1',
+          folderId: '11111111-1111-4111-8111-111111111111',
           file: {
             originalname: 'documento.txt',
             mimetype: 'text/plain',
@@ -137,7 +165,10 @@ describe('SPEC-405: Files Audit Hooks', () => {
         name: 'Drive',
         rootFolderId: 'root-1',
       });
-      jest.spyOn(filesService as any, 'requirePersonalFolder').mockResolvedValue({ id: 'folder-1' });
+      jest.spyOn(driveAccess, 'requireFolder').mockResolvedValue({
+        folder: { id: '11111111-1111-4111-8111-111111111111' } as never,
+        access: { drive: { id: 'drive-1' } as never, level: 'owner' },
+      });
       jest.spyOn(filesService as any, 'reserveUpload').mockResolvedValue({
         reservationId: 'res-1',
         uploadId: 'up-1',
@@ -157,7 +188,7 @@ describe('SPEC-405: Files Audit Hooks', () => {
       const result = await filesService.uploadMultipartFile({
         organizationId: 'org-1',
         ownerId: 'usr-1',
-        folderId: 'folder-1',
+        folderId: '11111111-1111-4111-8111-111111111111',
         file: {
           originalname: 'documento.txt',
           mimetype: 'text/plain',
@@ -314,6 +345,129 @@ describe('SPEC-405: Files Audit Hooks', () => {
 
       expect(mockAuditService.logEvent).toHaveBeenCalledTimes(1);
       expect((res as any).set).toHaveBeenCalled();
+    });
+  });
+
+  describe('FILE_DOWNLOAD en FilesController.downloadVersion (SPEC-210)', () => {
+    const user = { organizationId: 'org-vd-1', userId: 'usr-vd-1' } as AuthUser;
+
+    const buildResponse = () =>
+      Object.assign(new PassThrough(), {
+        set: jest.fn(),
+        status: jest.fn(),
+        json: jest.fn(),
+        headersSent: false,
+      });
+
+    it('registra FILE_DOWNLOAD con el fileId tras resolver la versión', async () => {
+      const res = buildResponse();
+      jest.spyOn(fileVersions, 'downloadVersion').mockResolvedValue({
+        stream: Readable.from(['contenido-v1']),
+        mimeType: 'application/pdf',
+        name: 'informe.pdf',
+      });
+
+      await filesController.downloadVersion(user, 'file-9', 'v-1', res as unknown as Response);
+
+      expect(mockAuditService.logEvent).toHaveBeenCalledTimes(1);
+      expect(mockAuditService.logEvent).toHaveBeenCalledWith({
+        organizationId: 'org-vd-1',
+        actorId: 'usr-vd-1',
+        action: AuditAction.FILE_DOWNLOAD,
+        resourceType: AuditResource.FILE,
+        resourceId: 'file-9',
+      });
+    });
+
+    it('usa las mismas cabeceras que la descarga actual, con el nombre saneado', async () => {
+      const res = buildResponse();
+      jest.spyOn(fileVersions, 'downloadVersion').mockResolvedValue({
+        stream: Readable.from(['contenido']),
+        mimeType: 'application/pdf',
+        name: 'informe: "final"/v2.pdf',
+      });
+
+      await filesController.downloadVersion(user, 'file-9', 'v-2', res as unknown as Response);
+
+      expect(res.set).toHaveBeenCalledWith({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="informe_ _final__v2.pdf"; filename*=UTF-8''informe_%20_final__v2.pdf`,
+        'Access-Control-Expose-Headers': 'Content-Disposition',
+      });
+    });
+
+    it('no registra FILE_DOWNLOAD si la versión no es accesible (404)', async () => {
+      const res = new PassThrough() as unknown as Response;
+      jest.spyOn(fileVersions, 'downloadVersion').mockRejectedValue(new NotFoundException('no existe'));
+
+      await expect(filesController.downloadVersion(user, 'file-9', 'v-otra', res)).rejects.toThrow(NotFoundException);
+
+      expect(mockAuditService.logEvent).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('FILE_VERSION_RESTORED en FileVersionsService.restoreVersion (SPEC-210)', () => {
+    it('FILE_UPLOAD y FILE_VERSION_RESTORED comparten correlationId', async () => {
+      const orgId = 'org-rs-1';
+      const userId = 'usr-rs-1';
+      const fileId = 'file-rs-1';
+      const folderId = '44444444-4444-4444-8444-444444444444';
+
+      // Carga real de FilesService; se simulan solo sus dependencias de reserva y transacción.
+      jest.spyOn(filesService, 'getOrCreateUserDrive').mockResolvedValue({
+        id: 'drive-1',
+        name: 'Drive',
+        rootFolderId: 'root-1',
+      });
+      jest.spyOn(driveAccess, 'requireFolder').mockResolvedValue({
+        folder: { id: folderId } as never,
+        access: { drive: { id: 'drive-1' } as never, level: 'owner' },
+      });
+      const uploadInternals = filesService as unknown as {
+        reserveUpload(params: unknown): Promise<{ reservationId: string; uploadId: string }>;
+        hasExpectedContent(extension: string, bytes: Buffer): boolean;
+      };
+      jest.spyOn(uploadInternals, 'reserveUpload').mockResolvedValue({ reservationId: 'res-1', uploadId: 'up-1' });
+      jest.spyOn(uploadInternals, 'hasExpectedContent').mockReturnValue(true);
+      mockDataSource.transaction.mockResolvedValue({
+        id: fileId,
+        name: 'informe.pdf',
+        mimeType: 'application/pdf',
+        sizeBytes: 4,
+        versionId: 'v-new',
+        versionNumber: 4,
+        uploadedAt: new Date(),
+      });
+
+      // Localización y lecturas de versión simuladas.
+      jest.spyOn(driveAccess, 'locateFile').mockResolvedValue({
+        file: { id: fileId, folderId, name: 'informe.pdf', mimeType: 'application/pdf', currentVersionId: 'v-cur', isDeleted: false } as never,
+        folder: { id: folderId, isDeleted: false } as never,
+        access: { drive: { id: 'drive-1' } as never, level: 'owner' },
+      });
+      const versionRepository = {
+        findOne: jest.fn(({ where }: { where: { id: string } }) =>
+          Promise.resolve(where.id === 'v-old' ? { id: 'v-old', fileId, versionNumber: 1 } : { id: 'v-new', fileId, versionNumber: 4 }),
+        ),
+      };
+      const restoringService = new FileVersionsService(
+        versionRepository as never,
+        filesService,
+        {} as never,
+        {} as never,
+        driveAccess,
+        mockAuditService as unknown as AuditService,
+      );
+      jest.spyOn(restoringService, 'readVersionBytes').mockResolvedValue(Buffer.from('hola'));
+
+      const result = await restoringService.restoreVersion(fileId, 'v-old', { organizationId: orgId, userId });
+
+      expect(result.versionNumber).toBe(4);
+      const events: AuditEventInput[] = mockAuditService.logEvent.mock.calls.map(([event]) => event as AuditEventInput);
+      expect(events.map((event) => event.action)).toEqual([AuditAction.FILE_UPLOAD, AuditAction.FILE_VERSION_RESTORED]);
+      expect(events[0].correlationId).toEqual(expect.any(String));
+      expect(events[1].correlationId).toBe(events[0].correlationId);
+      expect(events[1]).toMatchObject({ organizationId: orgId, actorId: userId, resourceId: fileId });
     });
   });
 });

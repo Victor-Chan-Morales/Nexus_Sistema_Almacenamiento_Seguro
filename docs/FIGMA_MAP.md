@@ -48,9 +48,9 @@ Se preparó navegación y contenido inicial en estas rutas. La implementación v
 | `/` | Landing con accesos a registro, login y planes | Pendiente cotejo Figma; frame de landing disponible |
 | `/servicios` | Servicios cloud, local e híbrido | Pendiente cotejo con `docs/figma/landing/mk_01_Servicios.png` |
 | `/contacto` | Formulario de solicitud de información, sin envío | Pendiente de frame específico |
-| `/registro` | Formulario local de demostración | Pendiente de frame |
-| `/verificar-correo` | Confirmación de cuenta simulada | Pendiente de frame |
-| `/login` | Selector de espacio de trabajo y acceso simulado | `docs/figma/acceso/mk_01_login.png`; revisar captura final del navegador |
+| `/registro` | Formulario conectado a `POST /auth/register` | Pendiente de frame |
+| `/verificar-correo` | Verificación con `POST /auth/verify-email` | Pendiente de frame |
+| `/login` | Acceso conectado a `POST /auth/login` | `docs/figma/acceso/mk_01_login.png`; revisar captura final del navegador |
 | `/login` | Correo, contraseña, recordar sesión y recuperación | Pendiente cotejo con `docs/figma/crear_cuenta/mk_03_acceder_crear_cuenta.png` |
 | `/recuperar-contrasena`, `/nueva-contrasena`, `/sesion-vencida` | Recuperación, cambio de contraseña y retorno al login tras expirar sesión | Pendiente de frame |
 | `/planes` | Comparativa del catálogo de la API con precio, capacidad, usuarios, vigencia y plan actual | Pendiente de frame |
@@ -58,10 +58,10 @@ Se preparó navegación y contenido inicial en estas rutas. La implementación v
 | `/dashboard/vacio` | Estado inicial de organización nueva, sin archivos ni actividad | Sin mockup específico |
 | `/dashboard/cuota-excedida` | Aviso al 100% de uso y acceso para mejorar plan | Basado en `docs/figma/carga_archivos/mk_07_espacio_almacenamiento_alcanzado.png` |
 | `/dashboard/super-admin` | Organizaciones, planes, instalaciones, actividad global y estado de plataforma | Sin mockup; métricas de muestra rotuladas como simuladas |
-| `/archivos`, `/archivos/[folderId]`, `/archivos/cuota-excedida` | Mi espacio, lista de carpetas/archivos, carpeta vacía y con contenido, creación y validación, detalle, carga por botón o arrastre, resultados por archivo, íconos por tipo, duplicados, versiones, descarga de demostración y estado de cuota llena | Basado en `docs/figma/carga_archivos/mk_01_vista_panel_archivos_existentes.png`, `mk_02_detalles_al_selecciona_archivo.png`, `mk_03_opciones_con_archivos.png` y `mk_07_espacio_almacenamiento_alcanzado.png`; cotejo final pendiente |
+| `/archivos`, `/archivos/[folderId]`, `/archivos/cuota-excedida` | Mi espacio, lista de carpetas/archivos, carpeta vacía y con contenido, creación y validación, detalle, carga por botón o arrastre, resultados por archivo, íconos por tipo, duplicados que crean una versión nueva, descarga real y estado de cuota llena | Basado en `docs/figma/carga_archivos/mk_01_vista_panel_archivos_existentes.png`, `mk_02_detalles_al_selecciona_archivo.png`, `mk_03_opciones_con_archivos.png` y `mk_07_espacio_almacenamiento_alcanzado.png`; cotejo final pendiente |
 | `/papelera` | Papelera con estado vacío, restauración, confirmación y eliminación definitiva | Basado en `docs/figma/carga_archivos/mk_04_papelera.png`. Implementada en SPEC-205 (`components/trash-view.tsx`): listado, estados de carga/vacío/error, restaurar, eliminar definitivamente con diálogo accesible y aviso de cuota. Cotejo visual contra el PNG pendiente |
 | `/perfil` | Perfil de solo lectura con nombre, correo, organización y rol de la sesión, y acceso a recuperación de contraseña | Sin frame específico; cotejo visual pendiente |
 | `/configuracion` | Gestión de miembros del equipo | Conectada a la API (SPEC-106) |
 | `/auditoria` | Bitácora conectada a la API: tabla (fecha, actor, acción con insignia por familia, recurso), filtro visual por acción, "Cargar más" por cursor y aviso para colaborador | Sin frame específico; cotejo visual pendiente |
 
-Las acciones de demostración solo alteran datos locales del navegador. La selección de un archivo no transfiere sus bytes a SeaweedFS ni sustituye las operaciones de API de IAM, Billing o Files.
+Las acciones de demostración que aún quedan (las retiran SPEC-601 y SPEC-606) solo alteran datos locales del navegador. La selección de un archivo no transfiere sus bytes a SeaweedFS ni sustituye las operaciones de API de IAM, Billing o Files.

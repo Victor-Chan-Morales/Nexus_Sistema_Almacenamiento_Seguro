@@ -9,10 +9,10 @@
 | **Aprobador** | Víctor Chán Morales |
 | **Módulo Afectado** | `apps/api/src/modules/files/` |
 | **Requisitos Vinculados** | RF-006, RF-007, RF-003 |
-| **Dependencias** | SPEC-006. **Oleada 0: nadie más toca Files hasta fusionarla.** |
+| **Dependencias** | SPEC-006. **Etapa 1: nadie más toca Files hasta fusionarla.** |
 | **Prioridad** | P1 |
 | **Estimación** | 3 h |
-| **Estado** | Aprobada (2026-11-04, Víctor Chán Morales) |
+| **Estado** | Implementada (2026-11-05). Aprobada el 2026-11-04 por Víctor Chán Morales |
 
 ## 2. Objetivo
 
@@ -106,3 +106,5 @@ Ninguna.
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
+| 2026-11-04 | Claude Code (revisión) | "Oleada 0" pasa a "Etapa 1", como en el catálogo. Aprobado por el coordinador (2026-11-04). |
+| 2026-11-05 | Claude Code | Implementada en PR #48. Añadidas pruebas de Drive ajeno (404) por operación, sección 10. |

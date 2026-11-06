@@ -20,7 +20,7 @@ Subir archivos arrastrándolos al explorador y distinguir su tipo de un vistazo 
 
 ## 3. Fuera de Alcance
 
-- Mover archivos arrastrando entre carpetas (SPEC-212).
+- Mover archivos arrastrando entre carpetas, que tampoco cubre SPEC-212.
 - Subir carpetas completas.
 - Cambios en la API o librerías nuevas.
 
@@ -105,3 +105,4 @@ Ninguna.
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
+| 2026-11-04 | Claude Code (revisión) | Corrige la referencia a SPEC-212. Aprobado por el coordinador (2026-11-04). |

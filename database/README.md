@@ -18,11 +18,9 @@ database/
 
 ## Herramienta de migraciones: dbmate
 
-## Arquitectura: esquemas y Servicio de Base de Datos unificado
+## Arquitectura: esquemas en un monolito modular
 
-Cinco esquemas de Postgres (`admin`, `iam`, `files`, `billing`, `audit`) organizan las 29 tablas por dominio — decisión evaluada, no automática: con **un solo servicio** (el `database-service`) accediendo a toda la base, los esquemas ya no son un límite de seguridad (eso se abandonó en la revisión v3 del MER), pero siguen siendo la forma más clara de navegar 29 tablas relacionadas, y permiten que todas las FK entre dominios sean llaves foráneas **reales** (no hay necesidad de esquemas separados por cuenta).
-
-Ningún otro microservicio (iam, files, billing, audit, admin) tiene credenciales de PostgreSQL. Le hablan al `database-service` por HTTP usando `DATABASE_SERVICE_URL` (ver `.env.example` y `services/_shared/database-client/README.md`).
+Cinco esquemas de Postgres (`admin`, `iam`, `files`, `billing`, `audit`) organizan las tablas por dominio. Como un solo proceso, la API NestJS, accede a toda la base (ADR-008 §1), los esquemas no son un límite de seguridad. Se conservan porque facilitan navegar las tablas relacionadas y permiten que todas las FK entre dominios sean llaves foráneas **reales**.
 
 ## Comandos
 
@@ -116,18 +114,10 @@ docker compose run --rm migrate rollback   # revierte la ÚLTIMA migración apli
 - El `migrate:down` nunca debe borrar datos. Si la restauración no es posible porque hay filas que la impiden, debe fallar en lugar de descartarlas. Ejemplo: `20261027090000_allow_password_reset_outbox_kinds.sql`.
 - `rollback` solo se usa en desarrollo, sobre una base sin datos reales.
 
-### Conectar un microservicio
+### Conectar la API
 
-Dentro de Docker, el hostname de PostgreSQL es el **nombre del servicio de Compose**:
-
-```         
-postgres
-```
-
-Pero en este proyecto casi ningún microservicio debería conectarse a `postgres` directamente: **solo `database-service` lo hace.** El resto usa:
+La API se conecta directamente con las variables `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD` y `POSTGRES_DB`. Dentro de Docker, el host es el **nombre del servicio de Compose**:
 
 ```         
-DATABASE_SERVICE_URL=http://database-service:3000
+POSTGRES_HOST=postgres
 ```
-
-(Necesaria implementaicon de servicio de db)

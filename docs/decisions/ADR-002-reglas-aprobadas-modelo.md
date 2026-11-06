@@ -15,7 +15,7 @@ La revisión del modelo entidad-relación y del diccionario de datos dejó varia
 3. Drives, carpetas, archivos, versiones, destinos, equipos y permisos no pueden cruzar organizaciones.
 4. Cada versión conserva el destino donde fue almacenada; una carpeta puede heredar el destino predeterminado de la organización.
 5. Las cargas son idempotentes y solo crean una versión disponible después de confirmar tamaño, integridad y cifrado.
-6. Los permisos se otorgan a usuarios o equipos; se aplica el nivel más alto cuando existen permisos directos y heredados.
+6. Los permisos se otorgan a usuarios o equipos; se aplica el nivel más alto cuando existen permisos directos y heredados. **Enmendado por ADR-008 §2 y §7:** el permiso se asigna por miembro de equipo, con nivel `read` o `write`; no hay permisos por archivo.
 7. Las sesiones pueden coexistir en varios dispositivos. Cambiar la contraseña revoca las sesiones activas.
 8. Los enlaces compartidos son de solo lectura, apuntan a una versión fija, vencen obligatoriamente y pueden revocarse.
 9. La creación inicial de usuario, organización, membresía, suscripción demo y cuota es atómica.

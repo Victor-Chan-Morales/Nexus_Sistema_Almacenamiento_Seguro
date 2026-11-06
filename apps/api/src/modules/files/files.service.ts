@@ -16,7 +16,7 @@ import { randomUUID } from 'crypto';
 import { Readable } from 'stream';
 import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
 import { BillingService } from '../billing/billing.service';
-import { StorageService } from '../storage/storage.service';
+import { StorageRouter } from '../storage/storage-router.service';
 import { Destination } from './entities/destination.entity';
 import { Drive } from './entities/drive.entity';
 import { FileRecord } from './entities/file-record.entity';
@@ -27,6 +27,7 @@ import { TenantEncryptionKey } from './entities/tenant-encryption-key.entity';
 import { TenantQuota } from './entities/tenant-quota.entity';
 import { Upload } from './entities/upload.entity';
 import { EncryptedFile, FilesCryptoService } from './files-crypto.service';
+import { DriveAccessService, DriveActor } from './drive-access.service';
 import { PurgeFileResponseDto, RestoreFileResponseDto, RestoreFolderResponseDto, TrashItemDto, TrashResponseDto } from './dto/trash.dto';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction, AuditResource } from '../audit/audit.types';
@@ -63,10 +64,64 @@ interface StorageUsage {
   totalBytes: bigint;
 }
 
+/** Objeto guardado en un destino concreto (SPEC-801): la clave sola no basta para localizarlo. */
+interface StoredObjectRef {
+  destinationId: string;
+  objectKey: string;
+}
+
+function uniqueStoredObjects(refs: StoredObjectRef[]): StoredObjectRef[] {
+  const seen = new Map<string, StoredObjectRef>();
+  for (const ref of refs) seen.set(ref.destinationId + '\u0000' + ref.objectKey, ref);
+  return [...seen.values()];
+}
+
 interface UploadReservation {
   uploadId: string;
   reservationId: string;
-  existingResponse?: UploadedFileDto;
+  existingResponse?: UploadResult;
+}
+
+/**
+ * SPEC-210: la carga escribe una versión nueva en un archivo concreto (bloqueado por id), no en el que
+ * coincide por nombre. `sourceChecksum` es el SHA-256 del contenido restaurado: si la vigente ya lo tiene, no se crea nada.
+ */
+export interface RestoreTarget {
+  fileId: string;
+  sourceVersionId: string;
+  sourceChecksum: string;
+}
+
+export interface UploadParams {
+  organizationId: string;
+  ownerId: string;
+  folderId: string;
+  file: any;
+  idempotencyKey?: string;
+  /** Permite a la operación llamante (p. ej. restaurar versión) correlacionar sus propios eventos de auditoría. */
+  correlationId?: string;
+  /** SPEC-210: si se indica, la carga añade una versión a ese archivo en lugar de buscarlo por nombre. */
+  restore?: RestoreTarget;
+}
+
+/** Resultado de una carga: incluye el número de versión, que la restauración necesita sin releer. */
+export interface UploadResult extends UploadedFileDto {
+  versionNumber: number;
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** SPEC-210: 422 VERSION_ALREADY_CURRENT. Lo usan la restauración y la carga cuando la vigente ya tiene ese contenido. */
+export function versionAlreadyCurrentError(): HttpException {
+  return new HttpException(
+    {
+      statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+      error: 'Unprocessable Entity',
+      code: 'VERSION_ALREADY_CURRENT',
+      message: 'La versión indicada ya es la vigente',
+    },
+    HttpStatus.UNPROCESSABLE_ENTITY,
+  );
 }
 
 export interface UploadedFileDto {
@@ -91,9 +146,10 @@ export class FilesService {
     @InjectRepository(FileVersion)
     private readonly versionRepository: Repository<FileVersion>,
     private readonly dataSource: DataSource,
-    private readonly storageService: StorageService,
+    private readonly storageRouter: StorageRouter,
     private readonly billingService: BillingService,
     private readonly crypto: FilesCryptoService,
+    private readonly driveAccess: DriveAccessService,
     @Optional() private readonly auditService?: AuditService,
   ) {}
 
@@ -118,11 +174,12 @@ export class FilesService {
    * SPEC-202: lista archivos y carpetas eliminados del Drive del solicitante.
    */
   async listTrash(organizationId: string, userId: string): Promise<TrashResponseDto> {
-    const drive = await this.findPersonalDrive(organizationId, userId);
+    const access = await this.driveAccess.findDrive({ organizationId, userId });
 
-    if (!drive) {
+    if (!access) {
       return { items: [], totalItems: 0 };
     }
+    const drive = access.drive;
 
     // 2. Archivos borrados lógicamente del Drive del solicitante, con su versión vigente en la misma consulta
     const [files, fileCount] = (await this.fileRepository
@@ -222,45 +279,6 @@ export class FilesService {
     };
   }
 
-  /**
-   * Drive personal del solicitante. No lo crea: las lecturas y acciones sobre la papelera no escriben.
-   */
-  private async findPersonalDrive(
-    organizationId: string,
-    userId: string,
-    manager?: EntityManager,
-  ): Promise<Drive | null> {
-    const driveRepo = (manager ?? this.dataSource).getRepository(Drive);
-    return driveRepo.findOne({
-      where: { organizationId, ownerUserId: userId, teamId: IsNull(), type: 'personal' },
-      order: { createdAt: 'ASC' },
-    });
-  }
-
-  /**
-   * Localiza un archivo de la organización y comprueba que su carpeta pertenece al Drive indicado.
-   * No filtra por estado de papelera: cada operación decide qué hacer con él.
-   */
-  private async locateOwnFile(
-    manager: EntityManager,
-    fileId: string,
-    organizationId: string,
-    driveId: string,
-    lock = false,
-  ): Promise<{ file: FileRecord; folder: Folder } | null> {
-    const file = await manager.getRepository(FileRecord).findOne({
-      where: { id: fileId, organizationId },
-      lock: lock ? { mode: 'pessimistic_write' } : undefined,
-    });
-    if (!file) return null;
-
-    const folder = await manager.getRepository(Folder).findOne({
-      where: { id: file.folderId, organizationId },
-    });
-    if (!folder || folder.driveId !== driveId) return null;
-    return { file, folder };
-  }
-
   /** Error de regla de negocio con la misma forma que STORAGE_QUOTA_EXCEEDED. */
   private businessError(status: HttpStatus, code: string, message: string): HttpException {
     return new HttpException(
@@ -333,7 +351,7 @@ export class FilesService {
         connectionStatus: 'Sin comprobar',
         isEnabled: true,
         isDefault: true,
-        bucketOrPrefix: this.storageService.bucketName + '/' + organizationId,
+        bucketOrPrefix: this.storageRouter.defaultBucketName + '/' + organizationId,
         connectionDetailsEncrypted: this.crypto.encryptConnectionDetails(
           organizationId,
           JSON.stringify({
@@ -412,7 +430,7 @@ export class FilesService {
   }> {
     const drive = await this.getOrCreateUserDrive(organizationId, userId);
     const effectiveParentId = parentId || drive.rootFolderId;
-    await this.requirePersonalFolder(organizationId, drive.id, effectiveParentId);
+    await this.driveAccess.requireFolder({ organizationId, userId }, effectiveParentId);
 
     const folders = await this.folderRepository.find({
       where: {
@@ -460,11 +478,10 @@ export class FilesService {
     const created = await this.dataSource.transaction(async (manager) => {
       await this.lockTenantQuota(manager, organizationId);
       const drive = await this.ensureUserDrive(manager, organizationId, userId);
-      const parentFolder = await this.requirePersonalFolder(
-        organizationId,
-        drive.id,
+      const { folder: parentFolder } = await this.driveAccess.requireFolder(
+        { organizationId, userId },
         parentId || drive.rootFolderId,
-        manager,
+        { manager },
       );
       const folderRepo = manager.getRepository(Folder);
       const saved = await folderRepo.save(folderRepo.create({
@@ -507,7 +524,7 @@ export class FilesService {
     files: UploadedFileDto[];
   }> {
     const drive = await this.getOrCreateUserDrive(organizationId, userId);
-    const folder = await this.requirePersonalFolder(organizationId, drive.id, folderId);
+    const { folder } = await this.driveAccess.requireFolder({ organizationId, userId }, folderId);
     const [folders, files] = await Promise.all([
       this.folderRepository.find({
         where: { organizationId, driveId: drive.id, parentId: folder.id, isDeleted: false },
@@ -551,7 +568,7 @@ export class FilesService {
   ): Promise<UploadedFileDto[]> {
     const drive = await this.getOrCreateUserDrive(organizationId, userId);
     const effectiveFolderId = folderId || drive.rootFolderId;
-    await this.requirePersonalFolder(organizationId, drive.id, effectiveFolderId);
+    await this.driveAccess.requireFolder({ organizationId, userId }, effectiveFolderId);
     const files = await this.fileRepository.find({
       where: { organizationId, folderId: effectiveFolderId, isDeleted: false },
       relations: { versions: true },
@@ -654,31 +671,26 @@ export class FilesService {
     );
   }
 
-  private async requirePersonalFolder(
-    organizationId: string,
-    driveId: string,
-    folderId: string,
-    manager?: EntityManager,
-    lock = false,
-  ): Promise<Folder> {
-    const folderRepo = manager?.getRepository(Folder) ?? this.folderRepository;
-    const folder = await folderRepo.findOne({
-      where: { id: folderId, organizationId, driveId, isDeleted: false },
-      ...(lock && manager ? { lock: { mode: 'pessimistic_write' as const } } : {}),
-    });
-    if (!folder) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
-    return folder;
+  async uploadMultipartFile(params: UploadParams): Promise<UploadedFileDto> {
+    const result = await this.uploadMultipartFileWithVersion(params);
+    return {
+      id: result.id,
+      name: result.name,
+      mimeType: result.mimeType,
+      sizeBytes: result.sizeBytes,
+      versionId: result.versionId,
+      uploadedAt: result.uploadedAt,
+    };
   }
 
-  async uploadMultipartFile(params: {
-    organizationId: string;
-    ownerId: string;
-    folderId: string;
-    file: any;
-    idempotencyKey?: string;
-  }): Promise<UploadedFileDto> {
+  /**
+   * Carga con el número de versión. Restaurar (SPEC-210) la usa con `restore`: la versión nueva va al archivo
+   * indicado, bloqueado por id dentro de la transacción; si ya no está activo responde 404 sin crear nada.
+   */
+  async uploadMultipartFileWithVersion(params: UploadParams): Promise<UploadResult> {
     const { organizationId, ownerId, folderId, file } = params;
     if (!folderId) throw new BadRequestException('El parámetro folderId es obligatorio');
+    if (!UUID_PATTERN.test(folderId)) throw new BadRequestException('El parámetro folderId debe ser un UUID');
     if (!file?.buffer || !Buffer.isBuffer(file.buffer)) {
       throw new UnsupportedMediaTypeException('El archivo multipart no contiene datos válidos');
     }
@@ -706,8 +718,8 @@ export class FilesService {
         );
       }
 
-      const drive = await this.getOrCreateUserDrive(organizationId, ownerId);
-      await this.requirePersonalFolder(organizationId, drive.id, folderId);
+      await this.getOrCreateUserDrive(organizationId, ownerId);
+      await this.driveAccess.requireFolder({ organizationId, userId: ownerId }, folderId);
       const reservation = await this.reserveUpload({
         organizationId,
         ownerId,
@@ -718,36 +730,51 @@ export class FilesService {
       });
       if (reservation.existingResponse) return reservation.existingResponse;
 
-      let objectKey: string | undefined;
+      let stored: StoredObjectRef | undefined;
       try {
         const uploaded = await this.dataSource.transaction(async (manager) => {
           await this.lockTenantQuota(manager, organizationId);
-          const folder = await this.requirePersonalFolder(
-            organizationId,
-            drive.id,
+          const { folder } = await this.driveAccess.requireFolder(
+            { organizationId, userId: ownerId },
             folderId,
-            manager,
-            true,
+            { manager, lock: true },
           );
           const fileRepo = manager.getRepository(FileRecord);
           const versionRepo = manager.getRepository(FileVersion);
           const uploadRepo = manager.getRepository(Upload);
           const reservationRepo = manager.getRepository(Reservation);
 
-          let fileRecord = await fileRepo.findOne({
-            where: { organizationId, folderId: folder.id, name: originalName, isDeleted: false },
-          });
-          if (!fileRecord) {
-            fileRecord = await fileRepo.save(fileRepo.create({
-              organizationId,
-              folderId: folder.id,
-              name: originalName,
-              mimeType,
-              currentVersionId: null,
-              isDeleted: false,
-              deletedAt: null,
-              createdBy: ownerId,
-            }));
+          let fileRecord: FileRecord | null;
+          if (params.restore) {
+            const target = params.restore;
+            fileRecord = await fileRepo.findOne({
+              where: { id: target.fileId, organizationId, folderId: folder.id, isDeleted: false },
+              lock: { mode: 'pessimistic_write' },
+            });
+            if (!fileRecord) throw new NotFoundException('Archivo ' + target.fileId + ' no encontrado');
+            // Con el archivo bloqueado, dos restauraciones del mismo contenido no pueden crear dos versiones.
+            const current = fileRecord.currentVersionId
+              ? await versionRepo.findOne({ where: { id: fileRecord.currentVersionId, fileId: fileRecord.id } })
+              : null;
+            if (fileRecord.currentVersionId === target.sourceVersionId || current?.checksum === target.sourceChecksum) {
+              throw versionAlreadyCurrentError();
+            }
+          } else {
+            fileRecord = await fileRepo.findOne({
+              where: { organizationId, folderId: folder.id, name: originalName, isDeleted: false },
+            });
+            if (!fileRecord) {
+              fileRecord = await fileRepo.save(fileRepo.create({
+                organizationId,
+                folderId: folder.id,
+                name: originalName,
+                mimeType,
+                currentVersionId: null,
+                isDeleted: false,
+                deletedAt: null,
+                createdBy: ownerId,
+              }));
+            }
           }
 
           const latest = await versionRepo.findOne({
@@ -762,10 +789,13 @@ export class FilesService {
             bytes,
           );
           const generatedObjectKey = organizationId + '/' + fileRecord.id + '/v' + versionNumber + '/' + randomUUID();
-          objectKey = generatedObjectKey;
 
           const { destination, key } = await this.ensureTenantResources(manager, organizationId);
-          await this.storageService.put(
+          const destinationId = folder.destinationId ?? destination.id;
+          // Se registra antes de escribir: si la escritura falla a medio camino, la compensación lo borra en este destino.
+          stored = { destinationId, objectKey: generatedObjectKey };
+          const storage = await this.storageRouter.forWrite(organizationId, destinationId);
+          await storage.put(
             generatedObjectKey,
             encrypted.bytes,
             encrypted.bytes.length,
@@ -775,7 +805,7 @@ export class FilesService {
           const savedVersion = await versionRepo.save(versionRepo.create({
             fileId: fileRecord.id,
             versionNumber,
-            destinationId: folder.destinationId ?? destination.id,
+            destinationId,
             objectKey: generatedObjectKey,
             sizeBytes: String(fileSize),
             checksum: encrypted.checksum,
@@ -805,7 +835,7 @@ export class FilesService {
           if (!uploadRow) throw new InternalServerErrorException('No se encontró el registro de carga');
           uploadRow.status = 'Disponible';
           uploadRow.receivedSizeBytes = String(fileSize);
-          uploadRow.destinationId = folder.destinationId ?? destination.id;
+          uploadRow.destinationId = destinationId;
           uploadRow.objectKey = generatedObjectKey;
           await uploadRepo.save(uploadRow);
 
@@ -817,6 +847,7 @@ export class FilesService {
             mimeType: fileRecord.mimeType ?? mimeType,
             sizeBytes: Number(fileSize),
             versionId: savedVersion.id,
+            versionNumber,
             uploadedAt: savedVersion.uploadedAt,
           };
         });
@@ -828,17 +859,19 @@ export class FilesService {
           action: AuditAction.FILE_UPLOAD,
           resourceType: AuditResource.FILE,
           resourceId: uploaded.id,
+          correlationId: params.correlationId,
         }).catch(() => {});
 
         return uploaded;
       } catch (error) {
-        const objectDeleted = objectKey
-          ? await this.storageService.delete(objectKey).then(() => true).catch((deleteError) => {
-              this.logger.error('No se pudo limpiar objeto ' + objectKey + ': ' + String(deleteError));
+        const written = stored;
+        const objectDeleted = written
+          ? await this.deleteStoredObject(organizationId, written).then(() => true).catch((deleteError) => {
+              this.logger.error('No se pudo limpiar objeto ' + written.objectKey + ': ' + String(deleteError));
               return false;
             })
           : true;
-        await this.finishFailedUpload(organizationId, reservation, objectKey, objectDeleted);
+        await this.finishFailedUpload(organizationId, reservation, written, objectDeleted);
         if (error instanceof HttpException) throw error;
         this.logger.error('Falló la carga de archivos: ' + String(error));
         throw new InternalServerErrorException('No se pudo completar la carga del archivo');
@@ -887,6 +920,7 @@ export class FilesService {
                 mimeType: savedFile.mimeType ?? 'application/octet-stream',
                 sizeBytes: Number(version.sizeBytes),
                 versionId: version.id,
+                versionNumber: version.versionNumber,
                 uploadedAt: version.uploadedAt,
               },
             };
@@ -948,7 +982,7 @@ export class FilesService {
   private async finishFailedUpload(
     organizationId: string,
     reservationInfo: UploadReservation,
-    objectKey: string | undefined,
+    stored: StoredObjectRef | undefined,
     objectDeleted: boolean,
   ): Promise<void> {
     try {
@@ -969,7 +1003,8 @@ export class FilesService {
         const upload = await uploadRepo.findOneBy({ id: reservationInfo.uploadId, organizationId });
         if (upload) {
           upload.status = objectDeleted ? 'Fallida' : 'Limpieza pendiente';
-          upload.objectKey = objectKey ?? null;
+          upload.objectKey = stored?.objectKey ?? null;
+          if (stored) upload.destinationId = stored.destinationId;
           await uploadRepo.save(upload);
         }
 
@@ -1077,7 +1112,9 @@ export class FilesService {
     organizationId: string,
     userId: string,
   ): Promise<{ stream: Readable; mimeType: string; name: string }> {
-    const drive = await this.getOrCreateUserDrive(organizationId, userId);
+    const access = await this.driveAccess.findDrive({ organizationId, userId });
+    if (!access) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
+    const drive = access.drive;
     const file = await this.fileRepository.createQueryBuilder('file')
       .innerJoin('file.folder', 'folder')
       .where('file.id = :fileId', { fileId })
@@ -1096,7 +1133,8 @@ export class FilesService {
     if (!version) throw new NotFoundException('Versión no encontrada para el archivo ' + fileId);
 
     try {
-      const objectStream = await this.storageService.get(version.objectKey);
+      const storage = await this.storageRouter.forRead(organizationId, version.destinationId);
+      const objectStream = await storage.get(version.objectKey);
       const objectBytes = await this.readStream(objectStream);
       const plaintext = this.crypto.decryptFile(
         organizationId,
@@ -1127,7 +1165,9 @@ export class FilesService {
   }
 
   async softDelete(fileId: string, organizationId: string, userId: string): Promise<FileRecord> {
-    const drive = await this.getOrCreateUserDrive(organizationId, userId);
+    const access = await this.driveAccess.findDrive({ organizationId, userId });
+    if (!access) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
+    const drive = access.drive;
     const file = await this.fileRepository.createQueryBuilder('file')
       .innerJoin('file.folder', 'folder')
       .where('file.id = :fileId', { fileId })
@@ -1156,8 +1196,9 @@ export class FilesService {
 
   /** Mueve una carpeta y todo su árbol de contenido a la papelera como una unidad restaurable. */
   async softDeleteFolder(folderId: string, organizationId: string, userId: string): Promise<{ success: true; id: string }> {
-    const drive = await this.findPersonalDrive(organizationId, userId);
-    if (!drive) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
+    const access = await this.driveAccess.findDrive({ organizationId, userId });
+    if (!access) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
+    const drive = access.drive;
 
     await this.dataSource.transaction(async (manager) => {
       await this.lockTenantQuota(manager, organizationId);
@@ -1198,8 +1239,9 @@ export class FilesService {
 
   /** Restaura la unidad de carpeta; archivos previamente eliminados individualmente permanecen en la papelera. */
   async restoreFolder(folderId: string, organizationId: string, userId: string): Promise<RestoreFolderResponseDto> {
-    const drive = await this.findPersonalDrive(organizationId, userId);
-    if (!drive) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
+    const access = await this.driveAccess.findDrive({ organizationId, userId });
+    if (!access) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
+    const drive = access.drive;
 
     const restored = await this.dataSource.transaction(async (manager) => {
       await this.lockTenantQuota(manager, organizationId);
@@ -1278,8 +1320,9 @@ export class FilesService {
 
   /** Purga una carpeta con todo su contenido y elimina los objetos tras confirmar la transacción. */
   async purgeFolder(folderId: string, organizationId: string, userId: string): Promise<PurgeFileResponseDto> {
-    const drive = await this.findPersonalDrive(organizationId, userId);
-    if (!drive) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
+    const access = await this.driveAccess.findDrive({ organizationId, userId });
+    if (!access) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
+    const drive = access.drive;
 
     const purged = await this.dataSource.transaction(async (manager) => {
       await this.lockTenantQuota(manager, organizationId);
@@ -1313,11 +1356,13 @@ export class FilesService {
 
       const usage = await this.readStorageUsage(manager, organizationId);
       await this.writeQuotaCounters(manager, organizationId, usage);
-      const objectKeys = [
-        ...versions.map((version) => version.objectKey),
-        ...uploads.flatMap((upload) => (upload.objectKey ? [upload.objectKey] : [])),
-      ];
-      return { freedBytes, objectKeys: [...new Set(objectKeys)] };
+      const objects = uniqueStoredObjects([
+        ...versions.map((version) => ({ destinationId: version.destinationId, objectKey: version.objectKey })),
+        ...uploads.flatMap((upload) => (
+          upload.objectKey ? [{ destinationId: upload.destinationId, objectKey: upload.objectKey }] : []
+        )),
+      ]);
+      return { freedBytes, objects };
     });
 
     void this.auditService?.logEvent({
@@ -1328,7 +1373,7 @@ export class FilesService {
       resourceId: folderId,
     }).catch(() => {});
 
-    void this.deleteOrphanObjects(purged.objectKeys);
+    void this.deleteOrphanObjects(organizationId, purged.objects);
     return { id: folderId, freedBytes: Number(purged.freedBytes) };
   }
 
@@ -1360,11 +1405,12 @@ export class FilesService {
    * SPEC-203: devuelve un archivo de la papelera del solicitante a su carpeta original.
    */
   async restoreFile(fileId: string, organizationId: string, userId: string): Promise<RestoreFileResponseDto> {
-    const drive = await this.findPersonalDrive(organizationId, userId);
-    if (!drive) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
+    // Sin Drive no hay transacción: no se bloquea la cuota ni se escribe nada.
+    const access = await this.driveAccess.findDrive({ organizationId, userId });
+    if (!access) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
 
     const restored = await this.dataSource.transaction((manager) =>
-      this.applyRestore(manager, fileId, organizationId, drive.id),
+      this.applyRestore({ organizationId, userId }, manager, fileId),
     );
 
     // Enganche SPEC-405: FILE_RESTORE tras el commit
@@ -1380,14 +1426,14 @@ export class FilesService {
   }
 
   private async applyRestore(
+    actor: DriveActor,
     manager: EntityManager,
     fileId: string,
-    organizationId: string,
-    driveId: string,
   ): Promise<RestoreFileResponseDto> {
+    const { organizationId } = actor;
     // Serializa con las cargas de la organización (mismo lock que uploadMultipartFile)
     await this.lockTenantQuota(manager, organizationId);
-    const located = await this.locateOwnFile(manager, fileId, organizationId, driveId, true);
+    const located = await this.driveAccess.locateFile(actor, fileId, { manager, lock: true });
     if (!located || !located.file.isDeleted) {
       throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
     }
@@ -1443,11 +1489,12 @@ export class FilesService {
    * Los objetos de SeaweedFS se borran después del commit, con mejor esfuerzo y sin bloquear la respuesta.
    */
   async purgeFile(fileId: string, organizationId: string, userId: string): Promise<PurgeFileResponseDto> {
-    const drive = await this.findPersonalDrive(organizationId, userId);
-    if (!drive) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
+    // Sin Drive no hay transacción: no se bloquea la cuota ni se borra nada.
+    const access = await this.driveAccess.findDrive({ organizationId, userId });
+    if (!access) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
 
     const purged = await this.dataSource.transaction((manager) =>
-      this.applyPurge(manager, fileId, organizationId, drive.id),
+      this.applyPurge({ organizationId, userId }, manager, fileId),
     );
 
     // Enganche SPEC-405: FILE_PURGE tras el commit
@@ -1460,18 +1507,18 @@ export class FilesService {
     }).catch(() => {});
 
     // No se espera al borrado de objetos: la purga ya está confirmada y SeaweedFS no debe bloquear la respuesta
-    void this.deleteOrphanObjects(purged.objectKeys);
+    void this.deleteOrphanObjects(organizationId, purged.objects);
     return { id: fileId, freedBytes: Number(purged.freedBytes) };
   }
 
   private async applyPurge(
+    actor: DriveActor,
     manager: EntityManager,
     fileId: string,
-    organizationId: string,
-    driveId: string,
-  ): Promise<{ freedBytes: bigint; objectKeys: string[] }> {
+  ): Promise<{ freedBytes: bigint; objects: StoredObjectRef[] }> {
+    const { organizationId } = actor;
     await this.lockTenantQuota(manager, organizationId);
-    const located = await this.locateOwnFile(manager, fileId, organizationId, driveId, true);
+    const located = await this.driveAccess.locateFile(actor, fileId, { manager, lock: true });
     if (!located) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
     if (!located.file.isDeleted) {
       throw this.businessError(
@@ -1487,7 +1534,10 @@ export class FilesService {
     await this.removeFileRows(manager, fileId);
     const usage = await this.readStorageUsage(manager, organizationId);
     await this.writeQuotaCounters(manager, organizationId, usage);
-    return { freedBytes, objectKeys: versions.map((version) => version.objectKey) };
+    return {
+      freedBytes,
+      objects: versions.map((version) => ({ destinationId: version.destinationId, objectKey: version.objectKey })),
+    };
   }
 
   /**
@@ -1501,12 +1551,20 @@ export class FilesService {
     await fileRepo.delete({ id: fileId });
   }
 
+  /** Borra un objeto en el destino donde se guardó (lectura y borrado admiten destinos deshabilitados). */
+  private async deleteStoredObject(organizationId: string, object: StoredObjectRef): Promise<void> {
+    const storage = await this.storageRouter.forRead(organizationId, object.destinationId);
+    await storage.delete(object.objectKey);
+  }
+
   /** Borrado de objetos con mejor esfuerzo. Un fallo se registra con su clave; nunca revierte la purga. */
-  private async deleteOrphanObjects(objectKeys: string[]): Promise<void> {
-    const results = await Promise.allSettled(objectKeys.map((key) => this.storageService.delete(key)));
+  private async deleteOrphanObjects(organizationId: string, objects: StoredObjectRef[]): Promise<void> {
+    const results = await Promise.allSettled(
+      objects.map((object) => this.deleteStoredObject(organizationId, object)),
+    );
     results.forEach((result, index) => {
       if (result.status === 'rejected') {
-        this.logger.error('Objeto huérfano tras purga: ' + objectKeys[index]);
+        this.logger.error('Objeto huérfano tras purga: ' + objects[index].objectKey);
       }
     });
   }

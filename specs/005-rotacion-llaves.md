@@ -9,7 +9,7 @@
 | **Aprobador** | Víctor Chán Morales |
 | **Módulo Afectado** | `apps/api/src/modules/files/`, `apps/api/src/scripts/` |
 | **Requisitos Vinculados** | RF-005, Riesgos §16 |
-| **Dependencias** | SPEC-006; SPEC-802 si ya está fusionada (ver §8) |
+| **Dependencias** | SPEC-006, SPEC-802 |
 | **Prioridad** | P1 |
 | **Estimación** | 3 h |
 | **Estado** | Aprobada (2026-11-04, Víctor Chán Morales) |
@@ -118,3 +118,4 @@ Ninguna.
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
+| 2026-11-04 | Claude Code (revisión) | SPEC-802 pasa a ser dependencia firme, como en el orden de ejecución. Aprobado por el coordinador (2026-11-04). |

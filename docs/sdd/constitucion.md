@@ -20,10 +20,10 @@ Todo módulo de NestJS y componente de Next.js debe reflejar fielmente los princ
 ### S — Responsabilidad Única (Single Responsibility Principle)
 - **Controlador (`FilesController`)**: Solo maneja HTTP, deserializa requests, valida DTOs de entrada y retorna respuestas con códigos HTTP canónicos. No toca la base de datos ni ejecuta lógica de cuotas.
 - **Servicio (`FilesService`)**: Orquesta casos de uso de negocio (validar cuota disponible, generar versión, coordinar cifrado y persistencia).
-- **Servicio de almacenamiento (`StorageService`, módulo Storage)**: Solo sabe hablar el protocolo S3 (SeaweedFS) para guardar, leer, borrar y firmar URLs de objetos, y garantizar que exista el bucket. Desconoce conceptos como organizaciones, planes o usuarios.
+- **Almacenamiento (módulo Storage)**: `ObjectStorage` define guardar, leer y borrar un objeto; `S3ObjectStorage` lo implementa sobre el protocolo S3 (SeaweedFS). `StorageService` es el destino de entorno y `StorageRouter` elige el almacén de cada destino (SPEC-801). Ninguno conoce organizaciones, planes ni usuarios: el router solo valida que el destino pertenezca a la organización pedida.
 
 ### O — Abierto para Extensión, Cerrado para Modificación (Open/Closed Principle)
-- `StorageService` habla S3 estándar con el endpoint y las credenciales por variables de entorno (`S3_*`): pasar de SeaweedFS a MinIO o a AWS S3 es configuración y no obliga a tocar `FilesService`. Un proveedor que **no** hable S3 sí exigiría extraer una interfaz propia (`StorageProvider`), que **hoy no existe**; se extraerá cuando haga falta (YAGNI), no antes.
+- `FilesService` depende de `StorageRouter` y trabaja contra la interfaz `ObjectStorage`. Añadir un proveedor es una implementación nueva que el router devuelve para sus destinos, sin tocar `FilesService`. Hoy todo destino usa `StorageService`, que habla S3 con el endpoint y las credenciales de `S3_*`: pasar de SeaweedFS a MinIO o a AWS S3 es configuración.
 
 ### L — Sustitución de Liskov (Liskov Substitution Principle)
 - Cuando se extraiga una interfaz de proveedor (ver O), cualquier implementación deberá respetar escrupulosamente los contratos de streams, excepciones y metadatos que esa interfaz defina, garantizando intercambiabilidad sin efectos colaterales.
@@ -32,18 +32,18 @@ Todo módulo de NestJS y componente de Next.js debe reflejar fielmente los princ
 - Separar interfaces operativas de archivos de interfaces de gestión administrativa. Los clientes que solo leen metadatos no dependen de interfaces que coordinan llaves criptográficas KEK o borrado físico en disco.
 
 ### D — Inversión de Dependencias (Dependency Inversion Principle)
-- Estado actual: `FilesService` recibe la clase `StorageService` por inyección de Nest y **nunca instancia el cliente S3**; ese cliente entra a `StorageService` mediante los tokens `S3_CLIENT` y `S3_PUBLIC_CLIENT`. Depender de una abstracción propia (interfaz + token de inyección) es la evolución prevista, no el estado de hoy.
+- Estado actual (SPEC-801): `FilesService` recibe `StorageRouter` por inyección de Nest, nunca `StorageService` ni el SDK de S3, y **nunca instancia el cliente S3**; ese cliente entra a `StorageService` mediante los tokens `S3_CLIENT` y `S3_PUBLIC_CLIENT`.
 
 ---
 
 ## Artículo 3. YAGNI Explícito (Lo que NO se construye en esta fase)
 
-Para garantizar la entrega puntual del corte 80% (30 de octubre) y el 100% (primera semana de noviembre), queda terminantemente prohibido construir:
+Queda terminantemente prohibido construir (ADR-008 §1 y §2):
 
 1. **MFA / TOTP (Autenticación de Dos Factores)**: Fuera de alcance para este ciclo académico.
 2. **Pasarelas de Pago Reales**: No se integrará Stripe, PayPal ni cobros bancarios reales. Toda operación de facturación es simulada (`simulated: true`).
 3. **Microservicios o Colas Distribuidas complejas**: No se introducirá Redis, Kafka ni RabbitMQ. La arquitectura se mantiene como Monolito Modular con Transactional Outbox en PostgreSQL para correos.
-4. **Almacenamiento Multi-Nube Simultáneo**: El almacenamiento en desarrollo opera exclusivamente con la instancia local de SeaweedFS.
+4. **Proveedores de almacenamiento que no hablen S3**: una organización puede tener varios destinos S3 (ADR-008 §4, SPEC-801 a 803); cualquier otro protocolo queda fuera.
 5. **Previsualización interactiva de documentos pesados / edición colaborativa en vivo**: Solo visualización básica de tipos comunes y descarga binaria directa.
 
 ---

@@ -48,7 +48,7 @@ await this.auditService.logEvent({
 - **Orden de la cadena:** `chain_seq` (1, 2, 3… por organización). El último evento es el de mayor `chain_seq`. La BD rechaza dos eventos con el mismo `chain_seq` o con el mismo `prev_hash` dentro de una organización.
 - **Hash:** `record_hash = sha256` sobre `JSON.stringify` de `prev_hash`, `chain_seq`, `event_id`, organización, actor, acción, recurso, `safe_reason`, resultado, correlación y `occurred_at`. Ver `computeRecordHash` en `apps/api/src/modules/audit/audit-hash.ts`.
 - **Corte de formato:** el hash cambió dos veces en la rama (separador `|` → JSON, y luego `chain_seq` y `safe_reason`). Las filas escritas con un formato anterior no se pueden verificar con la función actual. La migración no recalcula hashes. Si una base de desarrollo tiene filas de `ecc99e9` o de un commit anterior a `c6c12fa`, reiniciarla (`docker compose down -v` y migrar de nuevo, según `database/README.md`) en vez de migrarla.
-- **Alcance del corte:** solo eventos `success` de actores `user`. Eventos fallidos, `visitor`/`system`, IP y agente de usuario quedan fuera (SPEC-401 §3).
+- **Alcance actual:** solo eventos `success` de actores `user`. SPEC-407 habilita los eventos fallidos y los actores `visitor` y `system`. La IP y el agente de usuario siguen fuera (SPEC-401 §3).
 
 ## Invariantes
 
@@ -70,10 +70,10 @@ Si el INSERT directo falla, `logEvent` guarda el evento en `audit.audit_outbox` 
 
 ## Riesgos conocidos
 
-- **Pérdida residual:** si el proceso o la BD caen entre el commit de la operación de negocio y el encolado en el outbox, el evento se pierde. Solo lo cubre encolar dentro de la transacción de negocio (`enqueue(tx)`), que queda para SPEC-405.
+- **Pérdida residual:** si el proceso o la BD caen entre el commit de la operación de negocio y el encolado en el outbox, el evento se pierde. Solo lo cubre encolar dentro de la transacción de negocio (`enqueue(tx)`), que no se implementó: el evento se registra después del commit (ADR-007 §8).
 - **Correlación opcional:** si una operación registra varios eventos sin el mismo `correlationId`, no quedan unidos (ver arriba).
 
 ## Fuera de este corte
 
-- Verificación de la cadena y checkpoints firmados: SPEC-404.
-- Consulta de eventos: SPEC-402.
+- Verificación de la cadena: SPEC-404.
+- Checkpoints firmados: no se implementan (ADR-008 §10).

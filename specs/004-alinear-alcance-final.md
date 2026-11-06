@@ -57,12 +57,13 @@ No modifica la base de datos.
 | `docs/decisions/ADR-006-*.md` | Remitir a SPEC-005 en "sin rotación" y dejar el streaming como fuera de alcance. |
 | `docs/decisions/ADR-007-*.md` | Nota al inicio: §7 enmendado por ADR-008 §9. |
 | `specs/README.md` | Verificar que coincide con este catálogo. |
+| `REGLAS.md` | Agregar `ADR-008` a las decisiones vigentes. |
 
 ## 9. Plan de Tareas
 
 - [x] **T1 (15 min)**: Aprobar ADR-008 (2026-11-04).
-- [ ] **T2 (35 min)**: Aplicar las enmiendas de la tabla.
-- [ ] **T3 (10 min)**: Buscar las frases del escenario 2 y confirmar que no quedan.
+- [x] **T2 (35 min)**: Aplicar las enmiendas de la tabla.
+- [x] **T3 (10 min)**: Buscar las frases del escenario 2 y confirmar que no quedan.
 
 **Archivos permitidos:** los de la tabla.
 
@@ -86,3 +87,4 @@ Ninguna.
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
+| 2026-11-04 | Víctor Chán Morales | Agrega `REGLAS.md` a los archivos permitidos. |

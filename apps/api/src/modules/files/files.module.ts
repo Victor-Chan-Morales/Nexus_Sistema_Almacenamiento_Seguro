@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { FilesController, FoldersController } from './files.controller';
 import { FilesService } from './files.service';
+import { FileVersionsService } from './file-versions.service';
 import { FileRecord } from './entities/file-record.entity';
 import { Folder } from './entities/folder.entity';
 import { FileVersion } from './entities/file-version.entity';
@@ -16,13 +17,14 @@ import { Reservation } from './entities/reservation.entity';
 import { TenantQuota } from './entities/tenant-quota.entity';
 import { Upload } from './entities/upload.entity';
 import { FilesCryptoService } from './files-crypto.service';
+import { DriveAccessService } from './drive-access.service';
 
 /**
  * Módulo FILES
  * Responsable: Miguel
  *
  * Gestiona los metadatos canónicos de files.*, el Drive personal, versiones cifradas y reservas.
- * Consume StorageService y BillingService en proceso, y registra el hook personal-drive para
+ * Consume StorageRouter (SPEC-801) y BillingService en proceso, y registra el hook personal-drive para
  * que IAM confirme Drive, cuota, destino y referencia criptográfica en su transacción.
  */
 @Module({
@@ -39,11 +41,11 @@ import { FilesCryptoService } from './files-crypto.service';
       Upload,
     ]),
     IamModule,     // Guard JWT y RegistrationHooks
-    StorageModule, // Para guardar/recuperar bytes en SeaweedFS
+    StorageModule, // StorageRouter: guardar/recuperar bytes en el destino de cada versión
     BillingModule, // Para verificar cuota de almacenamiento
   ],
   controllers: [FoldersController, FilesController],
-  providers: [FilesService, FilesCryptoService, PersonalDriveHook],
+  providers: [FilesService, FileVersionsService, FilesCryptoService, DriveAccessService, PersonalDriveHook],
   exports: [FilesService],
 })
 export class FilesModule {}

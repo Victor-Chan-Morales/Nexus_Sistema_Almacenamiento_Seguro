@@ -4,7 +4,7 @@ Repositorio para el proyecto de Ingeniería de Software I. Nexus es una platafor
 
 ## Estado de la arquitectura
 
-El backend está implementado y opera como un **Monolito Modular** en NestJS, con los dominios (IAM, Billing, Files, Storage y Health) funcionando en un único proceso mediante inyección de dependencias interna (in-process). El frontend (Next.js) corre como un proceso independiente que consume la API REST.
+El backend está implementado y opera como un **Monolito Modular** en NestJS, con los dominios (IAM, Billing, Files, Storage, Audit, Integration, Dashboard y Health) funcionando en un único proceso mediante inyección de dependencias interna (in-process). El frontend (Next.js) corre como un proceso independiente que consume la API REST.
 
 ## Antes de empezar
 
@@ -13,6 +13,7 @@ El backend está implementado y opera como un **Monolito Modular** en NestJS, co
 3. Consulten `docs/IDENTIDAD_VISUAL.md` para la paleta acordada y la tipografía Inter.
 4. Consulten `docs/decisions/ADR-001-despliegue-del-corte-30.md` para los detalles de la decisión arquitectónica aprobada.
 5. Para el proveedor de objetos local vigente, consulten `docs/decisions/ADR-004-almacenamiento-seaweedfs.md`.
+6. Para el alcance y el trabajo pendiente, consulten `docs/decisions/ADR-008-alcance-final.md` y `specs/README.md`.
 
 ## Stack base
 
@@ -40,7 +41,7 @@ Abra `http://localhost:3000`. La web incluye estas rutas:
 - Sitio público: `/`, `/servicios`, `/planes` y `/contacto`.
 - Planes y suscripción: `/planes/[planId]`, `/suscripcion`, `/suscripcion/confirmar`, `/suscripcion/exito`, `/suscripcion/fallida`, `/suscripcion/cambiar-plan`, `/suscripcion/cambio-rechazado` y `/suscripcion/vencida`.
 - Acceso: `/registro`, `/registro/completado`, `/verificar-correo`, `/login`, `/recuperar-contrasena`, `/nueva-contrasena` y `/sesion-vencida`.
-- Espacio de trabajo: `/dashboard`, `/dashboard/vacio`, `/dashboard/cuota-excedida`, `/dashboard/super-admin`, `/archivos`, `/archivos/[folderId]`, `/archivos/cuota-excedida`, `/papelera`, `/configuracion` y `/auditoria`.
+- Espacio de trabajo: `/dashboard`, `/dashboard/vacio`, `/dashboard/cuota-excedida`, `/dashboard/super-admin`, `/archivos`, `/archivos/[folderId]`, `/archivos/cuota-excedida`, `/papelera`, `/perfil`, `/configuracion` y `/auditoria`.
 
 ## Servicios de infraestructura y API
 
@@ -89,14 +90,17 @@ apps/
       iam/             Autenticación, usuarios, organizaciones, membresías y JWT
       billing/         Planes, suscripciones y control de cuota
       files/           Carpetas, archivos, versiones y control de almacenamiento
-      storage/         Proveedor S3 con SeaweedFS (patrón Strategy)
+      storage/         Cliente S3 con SeaweedFS
+      audit/           Eventos con cadena de hashes y su consulta
+      integration/     Activación y renovación de suscripciones
+      dashboard/       Resumen del espacio de trabajo
       health/          Health check (/api/health) con @nestjs/terminus
     src/shared/        Decoradores, contexto de request y utilidades comunes
     src/main.ts        Punto de entrada de la API (puerto 3001, CORS, ValidationPipe)
     src/app.module.ts  Módulo raíz que integra todos los dominios in-process
     Dockerfile         Imagen de producción para el API
 docs/
-  decisions/            Decisiones arquitectónicas aprobadas (ADR-001, ADR-002, ADR-003)
+  decisions/            Decisiones arquitectónicas aprobadas (ADR-001 a ADR-008)
   IDENTIDAD_VISUAL.md   Colores, tipografía y reglas para pantallas
 .github/                Plantillas para PR e incidencias
 ```

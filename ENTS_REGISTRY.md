@@ -42,7 +42,7 @@ Estas rutas siguen bajo la propiedad de Web común/Víctor. Las rutas marcadas c
 | `/recuperar-contrasena` | Recuperación | Víctor | IAM (Sebastián), EmailService | ID/frame pendiente |
 | `/archivos/[folderId]` | Contenido de carpeta | Víctor | Files/Storage (Miguel) | ID/frame pendiente |
 | `/papelera` | Elementos eliminados | Víctor | Files (Miguel) | ID/frame pendiente |
-| `/configuracion` | Configuración de cuenta/organización | Víctor | IAM; alcance posterior | ID/frame pendiente |
+| `/configuracion` | Configuración de cuenta/organización | Víctor | IAM (miembros, SPEC-106) | ID/frame pendiente |
 | `/auditoria` | Eventos de actividad | Víctor | Audit (`GET /audit/events`, SPEC-402) + miembros para nombres (SPEC-104); conectada en SPEC-403 | ID/frame pendiente |
 
 ## Límites de carpetas
@@ -62,7 +62,7 @@ La clase del diagrama no cambia la propiedad del módulo ni amplía automáticam
 |---|---|---|
 | AuthService | Sebastián | IAM; entrega contrato de sesión y errores a Víctor. |
 | BillingService | Anthony | Billing; publica plan vigente y límite para Dashboard/Files. |
-| InstallationService | Pendiente de acuerdo | El equipo define responsable y alcance antes de implementarlo. |
+| InstallationService | Por asignar | No se crea con ese nombre: lo cubren `StoragePolicyService` (SPEC-803) y `PlatformActionsService` (SPEC-503). |
 | DatabaseServiceClient | No aprobado como servicio compartido | Mantener repositorios/puertos por dominio; Víctor coordina solo la composición y conexión común. |
 
 Las relaciones Usuario–Membresía–Sesión, tenant–recursos, recurso–destino y permiso–sujeto deben conservarse aunque se muevan métodos a servicios. Los hallazgos completos están en `docs/revision-diagrama-clases.md`.
@@ -74,7 +74,7 @@ Las relaciones Usuario–Membresía–Sesión, tenant–recursos, recurso–dest
 | IAM | Web y módulos de API | Usuario autenticado + organización/membresía autorizada; errores de sesión y permisos |
 | Billing | Web y Dashboard | Planes visibles, suscripción vigente y límites de plan |
 | Files | Web y Dashboard | Carpetas/archivos autorizados; uso de espacio derivado de versiones |
-| StorageService | Files | Guardar, recuperar o eliminar objeto; errores previsibles, sin filtrar secreto |
+| StorageRouter (ObjectStorage) | Files | Guardar, recuperar o eliminar objeto en el destino de la versión; errores previsibles, sin filtrar secreto |
 | Web | IAM/Billing/Files | Solicitudes HTTP según `CONTRACTS.md`; no se comunica directamente con DB ni object storage |
 
 ## Ciclo de cambio

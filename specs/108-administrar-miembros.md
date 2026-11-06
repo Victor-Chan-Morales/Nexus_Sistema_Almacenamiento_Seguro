@@ -53,7 +53,7 @@ Escenario 5: Eliminar
 
 Escenario 6: Último administrador
   Dado un único tenant_admin activo
-  Cuando otro actor intenta o él mismo intenta quitarle el rol, suspenderlo o eliminarlo
+  Cuando intenta quitarse el rol de administrador
   Entonces responde 422 LAST_ADMIN_REQUIRED
 
 Escenario 7: Concurrencia
@@ -62,7 +62,7 @@ Escenario 7: Concurrencia
 
 Escenario 8: Sobre uno mismo
   Cuando un administrador intenta suspenderse o eliminarse a sí mismo
-  Entonces responde 422 CANNOT_MODIFY_SELF
+  Entonces responde 422 CANNOT_MODIFY_SELF, aunque sea el único administrador
 
 Escenario 9: Permisos y aislamiento
   Dado un colaborador → 403 FORBIDDEN_ROLE
@@ -129,3 +129,4 @@ Ninguna. Decisiones del coordinador (2026-11-04):
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada, con decisiones de §12. |
+| 2026-11-04 | Claude Code (revisión) | Se aclara qué error responde cuando el único administrador actúa sobre sí mismo. Aprobado por el coordinador (2026-11-04). |

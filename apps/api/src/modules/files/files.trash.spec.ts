@@ -1,5 +1,7 @@
 import { HttpException, Logger, NotFoundException } from '@nestjs/common';
 import { FilesService } from './files.service';
+import { DriveAccessService } from './drive-access.service';
+import { Drive } from './entities/drive.entity';
 import { FileVersion } from './entities/file-version.entity';
 import { FileRecord } from './entities/file-record.entity';
 import { Folder } from './entities/folder.entity';
@@ -52,6 +54,7 @@ const buildService = ({
     {} as never,
     {} as never,
     {} as never,
+    new DriveAccessService(dataSource as never),
   );
   return { service, qb, driveRepository, dataSource, fileRepository };
 };
@@ -227,6 +230,7 @@ const buildRestoreService = ({
       return [];
     }),
     getRepository: jest.fn((entity: unknown) => {
+      if (entity === Drive) return driveRepo;
       if (entity === FileRecord) return fileRepo;
       if (entity === FileVersion) return versionRepo;
       return folderRepo;
@@ -245,6 +249,7 @@ const buildRestoreService = ({
     {} as never,
     billing as never,
     {} as never,
+    new DriveAccessService(dataSource as never),
     audit as unknown as AuditService,
   );
   return { service, fileRepo, folderRepo, manager, audit, billing };
@@ -408,18 +413,22 @@ describe('SPEC-203: FilesService.restoreFile', () => {
  * Se comprueba el orden de borrado (FK RESTRICT), la cuota reescrita dentro de la transacción y que
  * los objetos de SeaweedFS se borran solo después del commit.
  */
-const version = (versionNumber: number, sizeBytes: string) => ({
+const DEST_A = 'dest-a';
+const DEST_B = 'dest-b';
+
+const version = (versionNumber: number, sizeBytes: string, destinationId = DEST_A) => ({
   id: `v${versionNumber}`,
   fileId: FILE_ID,
   versionNumber,
   sizeBytes,
+  destinationId,
   objectKey: `${ORG}/${FILE_ID}/v${versionNumber}/uuid`,
 });
 
 const buildPurgeService = ({
   file = trashedFile() as FileRecord | null,
   folder = activeFolder() as Folder | null,
-  versions = [version(1, '10000000'), version(2, '8000000'), version(3, '5000000')],
+  versions = [version(1, '10000000', DEST_A), version(2, '8000000', DEST_B), version(3, '5000000', DEST_A)],
   storageDelete = jest.fn().mockResolvedValue(undefined),
   transactionFails = false,
   audit = { logEvent: jest.fn().mockResolvedValue(undefined) },
@@ -445,6 +454,7 @@ const buildPurgeService = ({
   const manager = {
     query: jest.fn().mockResolvedValue([]),
     getRepository: jest.fn((entity: unknown) => {
+      if (entity === Drive) return driveRepo;
       if (entity === FileRecord) return fileRepo;
       if (entity === FileVersion) return versionRepo;
       return folderRepo;
@@ -466,20 +476,39 @@ const buildPurgeService = ({
       return storageDelete(key);
     }),
   };
+  const storageRouter = {
+    forRead: jest.fn(async () => storage),
+    forWrite: jest.fn(),
+    defaultBucketName: 'nexus',
+  };
   const service = new FilesService(
     {} as never,
     {} as never,
     {} as never,
     dataSource as never,
-    storage as never,
+    storageRouter as never,
     {} as never,
     {} as never,
+    new DriveAccessService(dataSource as never),
     audit as unknown as AuditService,
   );
-  return { service, fileRepo, versionRepo, manager, storage, audit, dataSource };
+  return { service, fileRepo, versionRepo, manager, storage, storageRouter, audit, dataSource };
 };
 
 describe('SPEC-204: FilesService.purgeFile', () => {
+  it('SPEC-801 escenario 3: cada objeto se borra en el destino de su versión, no en el predeterminado', async () => {
+    const { service, storageRouter } = buildPurgeService();
+
+    await service.purgeFile(FILE_ID, ORG, USER);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(storageRouter.forRead.mock.calls).toEqual([
+      [ORG, DEST_A],
+      [ORG, DEST_B],
+      [ORG, DEST_A],
+    ]);
+  });
+
   it('escenario 1: purga las 3 versiones, libera 23 000 000 bytes y borra los objetos después del commit', async () => {
     const { service, fileRepo, versionRepo, storage } = buildPurgeService();
 

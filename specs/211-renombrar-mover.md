@@ -9,7 +9,7 @@
 | **Aprobador** | Víctor Chán Morales |
 | **Módulo Afectado** | `apps/api/src/modules/files/` |
 | **Requisitos Vinculados** | RF-007 |
-| **Dependencias** | SPEC-221; aplicar los niveles de SPEC-224 si ya está fusionada |
+| **Dependencias** | SPEC-221, SPEC-224 (el escenario 8 usa sus niveles) |
 | **Prioridad** | P2 |
 | **Estimación** | 3 h |
 | **Estado** | Aprobada (2026-11-04, Víctor Chán Morales) |
@@ -99,3 +99,4 @@ Ninguna.
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
+| 2026-11-04 | Claude Code (revisión) | SPEC-224 pasa a ser dependencia firme: el escenario 8 usa sus niveles. Aprobado por el coordinador (2026-11-04). |

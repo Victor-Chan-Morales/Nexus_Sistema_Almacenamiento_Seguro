@@ -2,13 +2,15 @@
 
 > **SPEC-702 · Borrador asistido, 2026-10-27.** Los diagramas están en Mermaid (se ven en GitHub y en cualquier visor de Markdown con soporte) y salen del código, las migraciones y `docker-compose.yml`, no de la propuesta. **Pendiente de revisión de Víctor Chán Morales** antes de exportar a PDF.
 >
-> **Leyenda de estado** (igual que en `REQUISITOS_CASOS_USO.md`): línea **continua** = implementado en el código (no verificado de punta a punta); línea **punteada** o la marca *«planificado»* = especificado para el corte del 80% pero aún sin código; elementos con la marca *«fuera del corte»* = existen en la base de datos pero sin lógica.
+> **Actualización del 2026-11-04.** Los estados se revisaron contra `main` y las decisiones de `ADR-008`, que prevalece donde choque.
+>
+> **Leyenda de estado** (igual que en `REQUISITOS_CASOS_USO.md`): línea **continua** = implementado en el código (no verificado de punta a punta); línea **punteada** = con spec aprobada, pero aún sin código; un estereotipo con el número de spec = existe en la base de datos, y esa spec le agrega la lógica.
 >
 > | Diagrama | Qué muestra |
 > |---|---|
 > | 1 | Casos de uso |
 > | 2 | Clases del dominio |
-> | 3 | Entidad-relación de la base de datos (30 tablas) |
+> | 3 | Entidad-relación de la base de datos (31 tablas) |
 > | 4 | Secuencias: registro, sesión, subida cifrada, cambio de plan, recuperación de contraseña |
 > | 5 | Componentes |
 > | 6 | Despliegue |
@@ -18,7 +20,7 @@
 
 ## 1. Diagrama de casos de uso
 
-Detalle de cada caso en `REQUISITOS_CASOS_USO.md` §7. Los actores y casos punteados están fuera del corte o sin implementar.
+Detalle de cada caso en `REQUISITOS_CASOS_USO.md` §7. Los actores y casos punteados tienen spec aprobada, pero aún no tienen código.
 
 ```mermaid
 flowchart LR
@@ -67,7 +69,7 @@ flowchart LR
   C --- UC14
   C --- UC15
   C --- UC16
-  C -.- UC17
+  C --- UC17
   C -.- UC18
   C -.- UC20
   A --- UC06
@@ -83,15 +85,14 @@ flowchart LR
 
   classDef planned stroke-dasharray: 5 5,fill:#fff8e1,stroke:#b8860b;
   classDef out stroke-dasharray: 2 6,fill:#f3f3f3,stroke:#888,color:#666;
-  class UC05,UC06,UC09,UC10,UC19,UC17,UC18 planned;
-  class UC20,UC21,S out;
+  class UC18,UC20,UC21,S planned;
 ```
 
 ---
 
 ## 2. Diagrama de clases del dominio
 
-Refleja las entidades TypeORM y las tablas de las migraciones. Los nombres siguen el código (`camelCase`); entre paréntesis, la tabla. `BillingOperation` y `AuditEvent` existen como tablas pero **su entidad llega con SPEC-301 y SPEC-401**.
+Refleja las entidades TypeORM y las tablas de las migraciones. Los nombres siguen el código (`camelCase`); entre paréntesis, la tabla. `Team` y `ShareLink` existen como tablas, pero **su entidad llega con SPEC-220 y SPEC-209**.
 
 ```mermaid
 classDiagram
@@ -156,7 +157,6 @@ classDiagram
     +date endDate
   }
   class BillingOperation {
-    <<planificado SPEC-301>>
     +uuid id
     +OperationType type
     +decimal amount
@@ -218,7 +218,6 @@ classDiagram
     +bigint declaredSizeBytes
   }
   class AuditEvent {
-    <<planificado SPEC-401>>
     +uuid eventId
     +string actionType
     +string resourceType
@@ -227,10 +226,10 @@ classDiagram
     +datetime occurredAt
   }
   class Team {
-    <<fuera del corte>>
+    <<SPEC-220>>
   }
   class ShareLink {
-    <<fuera del corte>>
+    <<SPEC-209>>
   }
 
   Organization "1" --> "*" Membership
@@ -272,7 +271,7 @@ classDiagram
 
 ## 3. Diagrama entidad-relación de la base de datos
 
-30 tablas en cinco esquemas: `admin`, `iam`, `files`, `billing` y `audit`. Se muestran claves y columnas relevantes; las columnas de auditoría de fila (`created_at`, `updated_at`) se omiten. Las FK son `RESTRICT` salvo las indicadas en `database/README.md`.
+31 tablas en cinco esquemas: `admin`, `iam`, `files`, `billing` y `audit`. El diagrama omite `audit.audit_outbox`, la cola de reintentos. Se muestran claves y columnas relevantes; las columnas de auditoría de fila (`created_at`, `updated_at`) se omiten. Las FK son `RESTRICT` salvo las indicadas en `database/README.md`.
 
 ```mermaid
 erDiagram
@@ -390,7 +389,7 @@ erDiagram
   }
 ```
 
-> **Estado por esquema.** `iam` (6 tablas) y, de `billing` (4 tablas), `plan` y `subscription`: en uso. `files` (13 tablas; en uso `drive`, `folder`, `file`, `file_version`, `destination`, `tenant_encryption_key`, `tenant_quota`, `reservation`, `upload`): `team`, `team_member`, `resource_access` y `share_link`: **sin código**. `audit`: sin código hasta SPEC-401. `admin` (5 tablas): solo `organization` en uso; `installation_request`, `installation`, `installation_check` y `connection_secret_ref`: **sin código**. `billing.plan_revision` y `billing.billing_operation`: sin código hasta SPEC-301.
+> **Estado por esquema.** `iam` (6 tablas) y, de `billing` (4 tablas), `plan` y `subscription`: en uso. `files` (13 tablas; en uso `drive`, `folder`, `file`, `file_version`, `destination`, `tenant_encryption_key`, `tenant_quota`, `reservation`, `upload`): `team`, `team_member`, `resource_access` y `share_link`: **sin código** (SPEC-220 y SPEC-209; `resource_access` no se implementará, ADR-008 §2). `audit`: `audit_event` y `audit_outbox` en uso. `admin` (5 tablas): solo `organization` en uso; `installation_request` e `installation` llegan con SPEC-803 y SPEC-503; `installation_check` y `connection_secret_ref`: **sin código**. `billing.billing_operation`: en uso; `billing.plan_revision`: sin código.
 
 ---
 
@@ -522,7 +521,7 @@ sequenceDiagram
   end
 ```
 
-### 4.4 Activar o cambiar de plan · implementado (el registro de la operación llega con SPEC-301)
+### 4.4 Activar o cambiar de plan · implementado
 
 ```mermaid
 sequenceDiagram
@@ -548,7 +547,7 @@ sequenceDiagram
       CO-->>W: 422 STORAGE_QUOTA_EXCEEDED (no se borra nada)
     else cabe
       CO->>DB: cancela la suscripción anterior y crea la nueva (30 días si el plan es pagado)
-      CO-->>DB: (planificado SPEC-301) operación "charge" simulada
+      CO->>DB: registra la operación "charge" simulada
       CO->>DB: COMMIT
       CO-->>W: 200 { subscriptionId, status: "active", simulated: true, startDate, endDate }
     end
@@ -556,7 +555,7 @@ sequenceDiagram
   Note over CO,DB: Dos activaciones simultáneas: el índice único parcial responde 409
 ```
 
-### 4.5 Recuperación de contraseña · planificado (SPEC-103)
+### 4.5 Recuperación de contraseña · implementado (SPEC-103)
 
 ```mermaid
 sequenceDiagram
@@ -618,7 +617,7 @@ flowchart LR
     INT["IntegrationModule<br/>SubscriptionCoordinator"]
     DSH["DashboardModule"]
     HLT["HealthModule"]
-    AUD["AuditModule<br/>(planificado SPEC-401, global)"]
+    AUD["AuditModule<br/>(global)"]
   end
 
   PG[("PostgreSQL 16<br/>esquemas iam, admin, files, billing, audit")]
@@ -647,20 +646,18 @@ flowchart LR
   BIL -. "hook demo-subscription" .-> IAM
   FLS -. "hook personal-drive" .-> IAM
 
-  IAM -. "eventos" .-> AUD
-  FLS -. "eventos" .-> AUD
-  BIL -. "eventos" .-> AUD
+  IAM -->|"eventos"| AUD
+  FLS -->|"eventos"| AUD
+  BIL -->|"eventos"| AUD
 
   IAM --> PG
   BIL --> PG
   FLS --> PG
-  AUD -.-> PG
+  AUD --> PG
   STO -->|"objetos cifrados"| S3
   IAM -->|"correo de verificación (outbox)"| SMTP
   HLT --> PG
 
-  classDef planned stroke-dasharray: 5 5,fill:#fff8e1,stroke:#b8860b;
-  class AUD planned;
 ```
 
 > **Lo que el diagrama deja ver:** `BillingModule` no depende de `FilesModule` (para evitar un ciclo), por eso `IntegrationModule` coordina la activación de planes consultando a ambos. Los hooks de registro invierten la dependencia: Billing y Files se registran en IAM sin que IAM los conozca.
@@ -720,13 +717,15 @@ stateDiagram-v2
   [*] --> Activo : subida (versión 1)
   Activo --> Activo : subida con el mismo nombre<br/>(nueva versión)
   Activo --> EnPapelera : DELETE /files/:id<br/>(is_deleted = true)
-  EnPapelera --> Activo : restaurar (SPEC-203, P2)
-  EnPapelera --> Purgado : purgar (SPEC-204, P2)
+  EnPapelera --> Activo : restaurar (SPEC-203)
+  EnPapelera --> Purgado : purgar (SPEC-204)
   Purgado --> [*]
 
   note right of EnPapelera
-    Cuenta para la cuota durante 30 días
-    desde deleted_at. No hay purga automática.
+    Hoy cuenta para la cuota durante 30 días
+    desde deleted_at, sin purga automática.
+    Con SPEC-215 cuenta hasta su borrado físico
+    y una tarea lo purga pasados 30 días.
   end note
 ```
 
@@ -779,13 +778,13 @@ stateDiagram-v2
 | 4.2 | `AuthService`, `SessionService`, `JwtStrategy`, `IamController` |
 | 4.3 | `FilesService.uploadMultipartFile`, `reserveUpload`, `finishFailedUpload`, `FilesCryptoService` |
 | 4.4 | `SubscriptionCoordinator`, `SubscriptionsController` |
-| 4.5 | SPEC-103 (diseño; sin código) |
+| 4.5 | `PasswordResetService`, `IamController` |
 | 5 | `imports` de cada `*.module.ts` |
 | 6 | `docker-compose.yml`, `README.md` |
 | 7 | `files.service.ts`, `subscription.entity.ts`, `files.upload_status` |
 
 ## 9. Puntos para revisar antes de exportar a PDF
 
-- Actualizar los elementos *planificados* según lo que haya entrado al corte (los diagramas 4.4, 4.5, 5, 7.1 y 7.3 cambian).
+- Actualizar los elementos punteados y los estereotipos con número de spec según lo que se implemente.
 - Si el PDF no renderiza Mermaid, exportar cada diagrama a imagen con `mermaid-cli` (`mmdc`) o desde el visor de GitHub.
 - Verificar con el equipo los nombres de clases frente a cualquier diagrama de clases previo del curso (`docs/revision-diagrama-clases.md`).

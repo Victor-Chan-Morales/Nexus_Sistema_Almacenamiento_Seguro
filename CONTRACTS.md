@@ -4,6 +4,8 @@
 
 > **Versión 0.5 — aprobada para implementación por Víctor, coordinador, el 2026-10-28.** Añade las rutas del corte del 80% (RBAC, miembros, recuperación de contraseña, papelera, versiones, facturación, auditoría). Las secciones nuevas están marcadas **[v0.5]**. Si una implementación necesita cambiar una ruta, campo o regla, primero se actualiza este documento. Las decisiones que la sustentan están en `docs/decisions/ADR-007-decisiones-corte-80.md`.
 
+> **Versión 0.6 — aplica `docs/decisions/ADR-008-alcance-final.md`, aprobado por Víctor, coordinador, el 2026-11-04.** Las reglas marcadas **[v0.6]** son el contrato acordado. Cada una indica la spec que la implementa: hasta que esa spec se fusione, el código puede seguir con la regla anterior. Cada spec nueva agrega sus rutas en la sección "Alcance final [v0.6]" antes de programar.
+
 Los tipos del frontend viven en `apps/web/src/lib/api/types.ts`. Son tipos de compilación; la API también debe validar los datos en tiempo de ejecución.
 
 ## Reglas comunes
@@ -14,7 +16,7 @@ Los tipos del frontend viven en `apps/web/src/lib/api/types.ts`. Son tipos de co
 - IAM obtiene la organización activa de una membresía válida. El navegador nunca autoriza el tenant enviando `organizationId`.
 - Error común: `{ "code": "ERROR_CODE", "message": "Mensaje seguro", "requestId": "uuid" }`. No devolver stack traces, secretos, rutas internas ni datos de otra organización.
 - `GET /plans` es público. Las operaciones de organización requieren sesión JWT.
-- La activación de planes es simulada: no se piden tarjetas ni se procesa dinero.
+- La activación y la renovación de planes son simuladas: no se procesa dinero real. **[v0.6, SPEC-305]** Con precio mayor que cero solicitan una tarjeta de prueba (ADR-008 §5).
 
 ## Rutas HTTP
 
@@ -91,7 +93,7 @@ Files expone la lectura interna del uso confirmado:
 getUsedStorageBytes(organizationId: string): Promise<bigint>
 ```
 
-- Files calcula el uso sumando el tamaño real confirmado de cada versión almacenada del tenant. Se incluyen versiones anteriores conservadas y archivos en papelera durante sus 30 días. No se suma además `FileRecord.sizeBytes`, porque duplicaría la versión actual. La eliminación definitiva libera el espacio al borrar las versiones y sus objetos.
+- Files calcula el uso sumando el tamaño real confirmado de cada versión almacenada del tenant. Se incluyen versiones anteriores conservadas y **[v0.6, SPEC-215]** archivos en papelera hasta su eliminación física. No se suma además `FileRecord.sizeBytes`, porque duplicaría la versión actual. La eliminación definitiva libera el espacio al borrar las versiones y sus objetos.
 - Las reservas de carga se controlan aparte del uso confirmado. Tanto una carga como una reducción de plan consideran `usedBytes + reservedBytes`; la reserva se crea de forma atómica por organización y se libera al confirmar o fallar la carga.
 - Billing es dueño de planes y límites. No consulta tablas de Files. Para evitar una dependencia circular, `POST /subscriptions/activate` lo coordina un `SubscriptionCoordinator` en el módulo de integración: consulta uso/reservas mediante Files, valida el nuevo límite y delega la escritura transaccional a Billing. Files puede seguir usando `BillingService` para obtener el límite al cargar.
 - `GET /folders` incluye la unidad Drive `Mi espacio` y su `rootFolderId`; `items` contiene las carpetas hijas de esa raíz. Así el frontend puede consultar la raíz mediante `GET /folders/:rootFolderId/items` sin inventar un UUID especial.
@@ -189,16 +191,16 @@ getUsedStorageBytes(organizationId: string): Promise<bigint>
 
 ## Papelera y versiones [v0.5]
 
-Todas estas rutas se acotan al **Drive personal del solicitante** y tratan un recurso ajeno o inexistente como `404`.
+Todas estas rutas se acotan al **Drive personal del solicitante** y tratan un recurso ajeno o inexistente como `404`. **[v0.6, SPEC-222]** También alcanzan los Drives de equipo accesibles.
 
-- `GET /files/trash` → `{ "items": [...], "totalItems" }`. Cada elemento indica `kind: "file" | "folder"`. Un archivo contiene `{ id, name, mimeType, sizeBytes, deletedAt, retentionEndsAt }`; una carpeta raíz de papelera contiene `{ id, name, parentFolderId, sizeBytes, deletedAt, retentionEndsAt }`. `sizeBytes` de carpeta suma la versión actual de cada archivo del árbol. `retentionEndsAt` = `deletedAt` + 30 días (informativo: no hay purga automática). Los archivos dentro de un árbol de carpeta no se listan por separado.
-- `POST /files/:id/restore` → `200 { "id", "name", "folderId" }`. `404` si no está en la papelera del solicitante; `409 FILE_NAME_CONFLICT` si la carpeta ya tiene un archivo activo con ese nombre; `409 PARENT_FOLDER_UNAVAILABLE` si la carpeta ya no está disponible. `422 STORAGE_QUOTA_EXCEEDED` si el archivo lleva más de 30 días en la papelera (ya no cuenta para la cuota) y al restaurarlo se supera el límite del plan; en ese caso el archivo sigue en la papelera.
+- `GET /files/trash` → `{ "items": [...], "totalItems" }`. Cada elemento indica `kind: "file" | "folder"`. Un archivo contiene `{ id, name, mimeType, sizeBytes, deletedAt, retentionEndsAt }`; una carpeta raíz de papelera contiene `{ id, name, parentFolderId, sizeBytes, deletedAt, retentionEndsAt }`. `sizeBytes` de carpeta suma la versión actual de cada archivo del árbol. `retentionEndsAt` = `deletedAt` + 30 días. **[v0.6, SPEC-215]** Es la fecha de borrado; puede aparecer en el pasado hasta el siguiente ciclo de la tarea. Los archivos dentro de un árbol de carpeta no se listan por separado.
+- `POST /files/:id/restore` → `200 { "id", "name", "folderId" }`. `404` si no está en la papelera del solicitante; `409 FILE_NAME_CONFLICT` si la carpeta ya tiene un archivo activo con ese nombre; `409 PARENT_FOLDER_UNAVAILABLE` si la carpeta ya no está disponible. **[v0.6, SPEC-215]** Restaurar no vuelve a verificar la cuota, porque el archivo ya la consumía.
 - `DELETE /files/:id/purge` → `200 { "id", "freedBytes" }`. `freedBytes` es la suma de **todas** las versiones. `422 CANNOT_PURGE_ACTIVE_FILE` si el archivo no está en la papelera. Borra metadatos y versiones en una transacción (reescribe los contadores de cuota) y elimina los objetos de SeaweedFS **después** del commit, con mejor esfuerzo: un objeto que no se pudo borrar queda huérfano y se registra, nunca al revés.
 - `DELETE /folders/:id` mueve la carpeta y todo su árbol de descendientes a la papelera como una unidad con una fecha de eliminación común. La raíz del Drive no se puede eliminar.
-- `POST /folders/:id/restore` restaura el árbol y los archivos que se eliminaron junto con él; los archivos y subcarpetas que ya estaban eliminados individualmente conservan su fecha y permanecen en la papelera. `409 FOLDER_NAME_CONFLICT` si el nombre raíz está ocupado; `409 PARENT_FOLDER_UNAVAILABLE` si su carpeta contenedora no está activa; `422 STORAGE_QUOTA_EXCEEDED` si los archivos que ya excedieron la retención no caben en la cuota. Si falla, el árbol sigue en la papelera.
+- `POST /folders/:id/restore` restaura el árbol y los archivos que se eliminaron junto con él; los archivos y subcarpetas que ya estaban eliminados individualmente conservan su fecha y permanecen en la papelera. `409 FOLDER_NAME_CONFLICT` si el nombre raíz está ocupado; `409 PARENT_FOLDER_UNAVAILABLE` si su carpeta contenedora no está activa. Si falla, el árbol sigue en la papelera. **[v0.6, SPEC-215]** Restaurar no vuelve a verificar la cuota.
 - `DELETE /folders/:id/purge` elimina definitivamente la carpeta y todo su contenido, libera la suma de todas las versiones y borra objetos de SeaweedFS después del commit con mejor esfuerzo. La interfaz requiere confirmación explícita.
 - `GET /files/:id/versions` → `{ "fileId", "fileName", "currentVersion", "versions": [{ "versionId", "versionNumber", "sizeBytes", "uploadedAt", "isCurrent" }] }`, de la más reciente a la más antigua. Solo archivos activos.
-- Cuota (sin cambio respecto de v0.4): un archivo eliminado sigue contando para la cuota **durante 30 días desde `deleted_at`**; pasado ese plazo deja de contar aunque sus objetos sigan almacenados hasta la purga. No hay purga automática en este corte, así que `retentionEndsAt` indica cuándo deja de contar, no cuándo se borra.
+- Cuota **[v0.6, SPEC-215]** (enmienda v0.4 y v0.5 según ADR-008 §9): todo lo que está en la papelera cuenta en la cuota **hasta su eliminación física**. Una tarea periódica purga lo que supera 30 días.
 
 ## Facturación: historial y renovación [v0.5]
 
@@ -219,9 +221,9 @@ Todas estas rutas se acotan al **Drive personal del solicitante** y tratan un re
 }
 ```
 
-- Acciones del corte: `AUTH_LOGIN`, `AUTH_PASSWORD_RESET`, `MEMBER_ADDED`, `FILE_UPLOAD`, `FILE_DOWNLOAD`, `FILE_DELETE`, `FILE_RESTORE`, `FILE_PURGE`, `FOLDER_CREATE`, `FOLDER_DELETE`, `FOLDER_RESTORE`, `FOLDER_PURGE`, `PLAN_ACTIVATED`, `PLAN_RENEWED`. Tipos de recurso: `user`, `membership`, `file`, `folder`, `subscription`.
+- Acciones del corte: `AUTH_LOGIN`, `AUTH_PASSWORD_RESET`, `MEMBER_ADDED`, `FILE_UPLOAD`, `FILE_DOWNLOAD`, `FILE_DELETE`, `FILE_RESTORE`, `FILE_PURGE`, `FILE_VERSION_RESTORED` **[v0.6, SPEC-210]**, `FOLDER_CREATE`, `FOLDER_DELETE`, `FOLDER_RESTORE`, `FOLDER_PURGE`, `PLAN_ACTIVATED`, `PLAN_RENEWED`. Tipos de recurso: `user`, `membership`, `file`, `folder`, `subscription`.
 - El evento no incluye nombres de archivo ni datos personales. El frontend resuelve `actorId` a nombre con `GET /organizations/members` (misma audiencia: solo administradores).
-- Cada evento guarda `record_hash` y `prev_hash` desde el primer registro. La verificación de cadena y los checkpoints firmados quedan fuera de este corte.
+- Cada evento guarda `record_hash` y `prev_hash` desde el primer registro. **[v0.6]** La verificación de cadena llega con SPEC-404; los checkpoints firmados no se implementan (ADR-008 §10).
 - El registro de auditoría es de mejor esfuerzo y posterior al commit de la operación: si falla, la operación principal no se ve afectada.
 - `recentActivity` del Dashboard sigue siendo `[]` en este corte.
 
@@ -238,7 +240,7 @@ Catálogo común. El filtro emite `VALIDATION_ERROR` para cualquier `400` de val
 | 403 | `EMAIL_NOT_VERIFIED` | Login sin correo verificado (v0.4). |
 | 404 | `NOT_FOUND` | Recurso inexistente o ajeno. |
 | 409 | `FILE_NAME_CONFLICT`, `FOLDER_NAME_CONFLICT`, `PARENT_FOLDER_UNAVAILABLE`, `CONCURRENT_SUBSCRIPTION_CONFLICT` | Conflicto de estado. |
-| 422 | `STORAGE_QUOTA_EXCEEDED`, `MEMBER_ALREADY_EXISTS`, `EMAIL_BELONGS_TO_OTHER_ORGANIZATION`, `USER_LIMIT_EXCEEDED`, `CANNOT_PURGE_ACTIVE_FILE`, `NO_ACTIVE_SUBSCRIPTION`, `PLAN_NOT_RENEWABLE` | Regla de negocio. |
+| 422 | `STORAGE_QUOTA_EXCEEDED`, `VERSION_ALREADY_CURRENT` **[v0.6, SPEC-210]**, `MEMBER_ALREADY_EXISTS`, `EMAIL_BELONGS_TO_OTHER_ORGANIZATION`, `USER_LIMIT_EXCEEDED`, `CANNOT_PURGE_ACTIVE_FILE`, `NO_ACTIVE_SUBSCRIPTION`, `PLAN_NOT_RENEWABLE` | Regla de negocio. |
 
 ## Cambios de forma en Files ya implementados [v0.5]
 
@@ -246,6 +248,13 @@ Documentan lo que el código ya devuelve (arreglo de tamaño de carpetas, SPEC-0
 
 - En `GET /folders` y `GET /folders/:id/items`, cada carpeta (incluida `folder`) añade `createdAt` (ISO-8601) y `sizeBytes` (número): suma del tamaño de la versión actual de los archivos **activos** de la carpeta y sus subcarpetas.
 - `sizeBytes` de archivos (`UploadedFileDto`) es **número**, no cadena.
+
+## Alcance final [v0.6]
+
+Cada spec agrega aquí sus rutas, campos y códigos de error antes de programar.
+
+- **[v0.6, SPEC-210]** `GET /files/:id/versions/:versionId/download` → bytes exactos de esa versión, `Content-Type` del archivo y `Content-Disposition: attachment` con nombre seguro. Solo archivos propios, activos y con carpeta activa. Otro archivo, versión ajena, archivo en papelera o inexistente → `404`. `id` o `versionId` que no son UUID → `400`. Emite `FILE_DOWNLOAD`.
+- **[v0.6, SPEC-210]** `POST /files/:id/versions/:versionId/restore` (sin cuerpo) → `200 { "fileId", "versionId", "versionNumber", "sizeBytes", "uploadedAt" }`. Crea una versión nueva con el contenido de la indicada, que pasa a ser la vigente; las anteriores se conservan. Reutiliza la carga multiparte (cuota, cifrado y compensación). Errores: `404` como arriba, también si el archivo entra en papelera mientras se restaura (no crea nada); `400` si `id` o `versionId` no son UUID; `422 VERSION_ALREADY_CURRENT` si la versión indicada ya es la vigente o su contenido es igual al de la vigente (comparación por SHA-256); `422 STORAGE_QUOTA_EXCEEDED` si no cabe en la cuota (no crea nada). Emite `FILE_UPLOAD` y `FILE_VERSION_RESTORED`, ambos con el mismo `correlationId`.
 
 ## Implementación y cambios futuros
 

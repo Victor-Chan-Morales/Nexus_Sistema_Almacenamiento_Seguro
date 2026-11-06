@@ -12,7 +12,7 @@
 | **Dependencias** | SPEC-402 (API) y SPEC-106 (`getMembers`, para nombres). Puede avanzar con un mock. |
 | **Hito Objetivo** | Corte 80% (30-Oct-2026) |
 | **Estimación** | 1.5 h |
-| **Estado** | Implementada (pendiente de merge) |
+| **Estado** | Hecho |
 
 ---
 
