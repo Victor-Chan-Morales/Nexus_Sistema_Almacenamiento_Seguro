@@ -333,7 +333,11 @@ export class FilesService {
     return { id: drive.id, name: drive.name, rootFolderId: rootFolder.id };
   }
 
-  private async ensureTenantResources(
+  /**
+   * SPEC-220: Equipos la usa para obtener el destino predeterminado y la referencia de cifrado al crear
+   * la raíz de un Drive de equipo, dentro de la misma transacción. No cambia su comportamiento.
+   */
+  async ensureTenantResources(
     manager: EntityManager,
     organizationId: string,
   ): Promise<{ destination: Destination; key: TenantEncryptionKey }> {

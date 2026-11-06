@@ -23,6 +23,10 @@ import { FilesCryptoService } from './files-crypto.service';
 import { DriveAccessService } from './drive-access.service';
 import { DestinationsService } from './destinations.service';
 import { DestinationsController } from './destinations.controller';
+import { Team } from './entities/team.entity';
+import { TeamMember } from './entities/team-member.entity';
+import { TeamsController } from './teams.controller';
+import { TeamsService } from './teams.service';
 
 /**
  * Módulo FILES
@@ -45,12 +49,20 @@ import { DestinationsController } from './destinations.controller';
       TenantQuota,
       Upload,
       ShareLink,
+      Team,
+      TeamMember,
     ]),
     IamModule,     // Guard JWT y RegistrationHooks
     StorageModule, // StorageRouter: guardar/recuperar bytes en el destino de cada versión
     BillingModule, // Para verificar cuota de almacenamiento
   ],
-  controllers: [FoldersController, FilesController, ShareLinksController, DestinationsController],
+  controllers: [
+    FoldersController,
+    FilesController,
+    ShareLinksController,
+    DestinationsController,
+    TeamsController,
+  ],
   providers: [
     FilesService,
     FileVersionsService,
@@ -59,6 +71,7 @@ import { DestinationsController } from './destinations.controller';
     PersonalDriveHook,
     ShareLinksService,
     DestinationsService,
+    TeamsService,
   ],
   exports: [FilesService],
 })
