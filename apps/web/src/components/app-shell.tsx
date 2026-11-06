@@ -11,7 +11,7 @@ import { initialsOf, RequireSession, useSession } from "@/lib/session";
 const navigation = [
   ["dashboard", "Resumen", "/dashboard"], ["files", "Mis archivos", "/archivos"],
   ["plans", "Planes", "/planes"], ["trash", "Papelera", "/papelera"],
-  ["audit", "Auditoría", "/auditoria"], ["subscription", "Suscripción", "/suscripcion"], ["user", "Mi perfil", "/perfil"], ["settings", "Configuración", "/configuracion"],
+  ["audit", "Auditoría", "/auditoria"], ["subscription", "Suscripción", "/suscripcion"], ["user", "Mi perfil", "/perfil"], ["storage", "Almacenamiento", "/almacenamiento"], ["settings", "Configuración", "/configuracion"],
 ] as const;
 
 const adminNavigation = [
