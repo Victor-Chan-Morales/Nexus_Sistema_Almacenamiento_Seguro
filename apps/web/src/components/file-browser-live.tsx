@@ -133,10 +133,12 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
     if (file.size > MAX_FILE_BYTES) return "El archivo supera el límite de 100 MB.";
     if (!extension || !ALLOWED_EXTENSIONS.has(extension)) return "Tipo no permitido. Se admiten PDF, DOCX, XLSX, PPTX, JPG, PNG, TXT y ZIP.";
 
-    if (file.size > availableBytes) return "La cuota disponible no alcanza para este archivo. Las versiones anteriores y la papelera también ocupan espacio.";
-
     const fingerprint = JSON.stringify([targetId, file.name, file.size, file.lastModified]);
-    const idempotencyKey = pendingUploads.current.get(fingerprint) ?? crypto.randomUUID();
+    const pendingKey = pendingUploads.current.get(fingerprint);
+    // La API puede haber guardado el archivo aunque se haya perdido la respuesta.
+    if (!pendingKey && file.size > availableBytes) return "La cuota disponible no alcanza para este archivo. Las versiones anteriores y la papelera también ocupan espacio.";
+
+    const idempotencyKey = pendingKey ?? crypto.randomUUID();
     pendingUploads.current.set(fingerprint, idempotencyKey);
     await uploadFile(targetId, file, token, idempotencyKey);
     pendingUploads.current.delete(fingerprint);

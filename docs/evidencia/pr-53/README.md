@@ -11,3 +11,9 @@ Capturas de Chrome contra la web y la API locales con datos de demostración.
 | 605 | [Login](605-login.png), [registro](605-registro.png) y [menú al navegar a una sección](605-menu-fijo.png). Con movimiento reducido, la animación de entrada de la portada se desactiva. |
 
 Se interceptaron por separado `GET /dashboard` y `GET /plans` con HTTP 503 para reproducir los fallos. Tras retirar el fallo de catálogo, el botón Reintentar volvió a cargar los cuatro planes.
+
+## Pruebas adicionales
+
+- **SPEC-214.** En el [lote de cinco archivos](214-lote-cinco.png), el tercero se rechazó por su extensión. Se verificó que solo salieron cuatro solicitudes y que los archivos cuarto y quinto aparecieron en el explorador.
+- **SPEC-214.** La API guardó el archivo de prueba y el navegador recibió un fallo de red simulado. Después se simuló una cuota llena en el dashboard. El navegador bloqueó una subida nueva sin enviar una solicitud y [reintentó la subida anterior](214-reintento-cuota.png) con la misma clave de idempotencia. La API respondió correctamente.
+- **SPEC-602.** Se retrasaron temporalmente las respuestas para capturar el indicador compartido en [Archivos](602-carga-archivos.png), [Papelera](602-carga-papelera.png), [Auditoría](602-carga-auditoria.png) y [Suscripción](602-carga-suscripcion.png).
