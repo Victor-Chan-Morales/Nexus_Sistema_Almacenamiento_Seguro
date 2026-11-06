@@ -229,6 +229,7 @@ export type RenewSubscriptionResponse = ActivateSubscriptionResponse;
 
 // SPEC-106: Gestión de miembros
 export type MemberRole = "tenant_admin" | "colaborador";
+export type MemberStatus = "active" | "suspended";
 
 export type OrganizationMember = {
   id: UUID;
@@ -236,7 +237,7 @@ export type OrganizationMember = {
   fullName: string;
   email: string;
   role: MemberRole;
-  status: string;
+  status: MemberStatus;
   joinedAt?: ISODateTime;
   createdAt?: ISODateTime;
 };
@@ -245,6 +246,11 @@ export type OrganizationMembersResponse = {
   members: OrganizationMember[];
   totalMembers: number;
   userLimit: number | null;
+};
+
+export type UpdateMemberInput = {
+  role?: MemberRole;
+  status?: MemberStatus;
 };
 
 export type AddMemberInput = {
@@ -259,7 +265,7 @@ export type AddMemberResponse = {
   email: string;
   fullName: string;
   role: MemberRole;
-  status: string;
+  status: MemberStatus;
   createdAt: ISODateTime;
 };
 
