@@ -12,7 +12,7 @@
 | **Dependencias** | SPEC-801 |
 | **Prioridad** | P1 |
 | **Estimación** | 3 h |
-| **Estado** | Aprobada (2026-11-04, Víctor Chán Morales) |
+| **Estado** | Implementada (2026-11-06). Aprobada el 2026-11-04 por Víctor Chán Morales |
 
 ## 2. Objetivo
 
@@ -110,10 +110,10 @@ ALTER TABLE files.destination
 
 ## 9. Plan de Tareas
 
-- [ ] **T1 (30 min)**: Migración, entidad y descifrado.
-- [ ] **T2 (50 min)**: CRUD con validación del endpoint.
-- [ ] **T3 (50 min)**: Prueba de conexión y `StorageRouter` real.
-- [ ] **T4 (50 min)**: Pruebas y prueba manual con un segundo contenedor S3.
+- [x] **T1 (30 min)**: Migración, entidad y descifrado. (`75aa411`)
+- [x] **T2 (50 min)**: CRUD con validación del endpoint. (`0d4d175`)
+- [x] **T3 (50 min)**: Prueba de conexión y `StorageRouter` real. (`5c54dd4`)
+- [x] **T4 (50 min)**: Pruebas y prueba manual con un segundo contenedor S3. Evidencia en `docs/evidencia/spec-802/RESUMEN.md`.
 
 **Archivos permitidos:** la migración, `files/destinations.service.ts`, `files/destinations.controller.ts`, `files/dto/destination.dto.ts`, sus specs (nuevos), `files/entities/destination.entity.ts`, `files/files-crypto.service.ts` y su spec, `files/files.module.ts`, `storage/storage-router.service.ts`, `audit/audit.types.ts`, `.env.example`.
 
@@ -139,4 +139,5 @@ Ninguna.
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
-| 2026-11-06 | Claude Code | Implementada en `feat/802-administrar-destinos` (T1 a T3): migración de `name` y `location`, descifrado, CRUD con validación de endpoint, prueba de conexión y `StorageRouter` con credenciales propias. Pendiente T4 (prueba manual con dos contenedores S3). Documentación actualizada: `CONTRACTS.md` v0.6, `ADR-006` §2.5, `ENTS_REGISTRY.md`, `ARCHITECTURE.md` y READMEs de Files y Storage. |
+| 2026-11-06 | Claude Code | Implementada en `feat/802-administrar-destinos` (T1 a T3): migración de `name` y `location`, descifrado, CRUD con validación de endpoint, prueba de conexión y `StorageRouter` con credenciales propias. Documentación actualizada: `CONTRACTS.md` v0.6, `ADR-006` §2.5, `ENTS_REGISTRY.md`, `ARCHITECTURE.md` y READMEs de Files y Storage. |
+| 2026-11-06 | Claude Code | T4 ejecutada con dos S3 (SeaweedFS). Corregidos: bucket inexistente que aparecía como conectado (`HeadBucket` antes de probar, `be39ac3`); mensaje del 409 (`CONFLICT` con texto propio, `be39ac3`); `DESTINATION_TESTED` registra `failure` y la causa segura (`87bba85`, `8d81af6`). Esto añadió `result` y `safe_reason` al outbox de auditoría (migración `20261106100000`). Desviaciones de archivos permitidos: `storage/storage.module.ts` (registra `FilesCryptoService`) y el módulo de auditoría (cambio de formato del evento, pendiente de revisión por su dueño). |

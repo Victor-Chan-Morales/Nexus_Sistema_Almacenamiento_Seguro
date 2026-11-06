@@ -1,0 +1,1 @@
+{"id":"b12d1b0e-99b0-452c-b011-4a2d0b7f377d","name":"Cliente A","location":"cloud","providerType":"s3","endpoint":"http://10.53.103.144:8334","bucket":"no-existe","region":"us-east-1","connectionStatus":"Sin comprobar","isEnabled":true,"isDefault":false,"createdAt":"2026-11-06T14:55:39.976Z"}
