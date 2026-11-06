@@ -127,7 +127,7 @@ ALTER TABLE files.destination
 
 ## 11. Impacto en Documentación
 
-- [ ] `CONTRACTS.md` v0.6, `ADR-006` §2.5, `ENTS_REGISTRY.md`.
+- [x] `CONTRACTS.md` v0.6, `ADR-006` §2.5, `ENTS_REGISTRY.md`.
 
 ## 12. Preguntas Abiertas
 
@@ -139,3 +139,4 @@ Ninguna.
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
+| 2026-11-06 | Claude Code | Implementada en `feat/802-administrar-destinos` (T1 a T3): migración de `name` y `location`, descifrado, CRUD con validación de endpoint, prueba de conexión y `StorageRouter` con credenciales propias. Pendiente T4 (prueba manual con dos contenedores S3). Documentación actualizada: `CONTRACTS.md` v0.6, `ADR-006` §2.5, `ENTS_REGISTRY.md`, `ARCHITECTURE.md` y READMEs de Files y Storage. |

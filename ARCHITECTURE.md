@@ -33,7 +33,7 @@ La figura expresa límites lógicos. No afirma que todos los módulos ya existan
 - **IAM**: usuario, organización, membresía, rol y sesión. Determina el contexto organizacional autorizado.
 - **Billing**: plan, suscripción y operaciones marcadas como simuladas. No procesa dinero real.
 - **Files**: carpetas, archivos, versiones, límites y autorización de recursos.
-- **Storage**: `StorageRouter` entrega, para cada destino, un `ObjectStorage` con `put`, `get` y `delete` (SPEC-801). Hoy todo destino usa `StorageService`, que habla S3 con SeaweedFS. Files no usa el SDK directamente ni inyecta `StorageService`.
+- **Storage**: `StorageRouter` entrega, para cada destino, un `ObjectStorage` con `put`, `get` y `delete` (SPEC-801). Los destinos de entorno usan `StorageService`, que habla S3 con SeaweedFS; los destinos propios (SPEC-802) usan un `S3ObjectStorage` con su propio cliente, cacheado por destino. Files no usa el SDK directamente ni inyecta `StorageService`.
 - **PostgreSQL**: fuente de verdad de identidad, permisos, plan, relaciones y metadatos.
 - **SeaweedFS (S3)**: bytes de objetos. PostgreSQL registra la clave de objeto y datos de la versión, no el contenido.
 

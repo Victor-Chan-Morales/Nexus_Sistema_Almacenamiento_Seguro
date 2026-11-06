@@ -9,7 +9,9 @@
   - Lectura y borrado (`forRead`) admiten destinos deshabilitados.
   - Escritura (`forWrite`) exige un destino habilitado; si no, responde 409.
   - Un destino de otra organización o inexistente responde 404 sin tocar el almacén.
-- `StorageService`: destino de entorno (`S3_*`). Hoy es el único almacén que devuelve el router. SPEC-802 añadirá los destinos con credenciales propias.
+  - Un destino con credenciales propias (SPEC-802) usa un `S3ObjectStorage` sobre su propio cliente S3. El cliente se cachea por destino y se reconstruye si cambia su configuración cifrada; `invalidate` lo descarta al editarlo.
+  - `probe` (SPEC-802): escribe, lee, compara y borra un objeto `.nexus-connection-test/<uuid>` con límite de 10 s. Devuelve solo una causa segura: `AUTH`, `NETWORK`, `BUCKET_NOT_FOUND` o `DATA_MISMATCH`. Un destino de entorno se prueba con el cliente `S3_CLIENT`.
+- `StorageService`: destino de entorno (`S3_*`). Es el almacén de los destinos cuyas credenciales son referencias `environment:*`.
 - Aislamiento multi-tenant a nivel de object-key (`<organizationId>/<fileId>/v<version>/<uuid>`).
 
 ## Comunicación en el Monolito Modular
