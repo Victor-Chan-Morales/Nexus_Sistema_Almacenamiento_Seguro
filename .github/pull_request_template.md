@@ -57,6 +57,8 @@
 
 <!-- Si cambia la interfaz: captura comparada con Figma. -->
 
+- [ ] Revisé la sección de pruebas de cada spec y enlacé sus capturas, tamaños de pantalla, roles y comparaciones con la API cuando se solicitan. Si falta evidencia, indiqué qué escenario queda pendiente.
+
 ---
 
 ## ⚠️ Alcance y limitaciones
