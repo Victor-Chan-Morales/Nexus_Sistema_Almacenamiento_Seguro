@@ -513,6 +513,7 @@ describe('SPEC-802 escenario 3: probar conexión', () => {
     const error = await failure(service.testConnection(created.id, ACTOR));
 
     expect(error?.getStatus()).toBe(409);
+    expect(error?.getResponse()).toMatchObject({ code: 'CONFLICT' });
     expect(router.probe).not.toHaveBeenCalled();
   });
 

@@ -277,7 +277,9 @@ export class DestinationsService {
   async testConnection(id: string, actor: DestinationActor): Promise<DestinationTestResultDto> {
     const row = await this.destinations.findOne({ where: { id, organizationId: actor.organizationId } });
     if (!row) throw destinationNotFoundError();
-    if (!row.isEnabled) throw new ConflictException('El destino está deshabilitado');
+    if (!row.isEnabled) {
+      throw new ConflictException({ code: 'CONFLICT', message: 'El destino está deshabilitado; habilítalo para probarlo' });
+    }
 
     const details = this.readDetails(row);
     if (details) await assertEndpointAllowed(details.endpoint, this.allowPrivate());

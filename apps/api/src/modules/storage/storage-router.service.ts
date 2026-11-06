@@ -1,6 +1,6 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { randomBytes, randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
 import { Destination } from '../files/entities/destination.entity';
@@ -76,6 +76,8 @@ export async function runConnectionProbe(
   try {
     return await withTimeout(
       (async (): Promise<ConnectionProbeResult> => {
+        // Antes de escribir: SeaweedFS crea el bucket al recibir un PUT, así que sin esta comprobación un bucket inexistente pasaría.
+        await client.send(new HeadBucketCommand({ Bucket: bucket }));
         await client.send(
           new PutObjectCommand({
             Bucket: bucket,
@@ -145,7 +147,8 @@ export class StorageRouter {
   async forWrite(organizationId: string, destinationId: string): Promise<ObjectStorage> {
     const destination = await this.findDestination(organizationId, destinationId);
     if (!destination.isEnabled) {
-      throw new ConflictException('El destino de almacenamiento está deshabilitado');
+      // Con { code, message } el filtro de errores reenvía el texto; un string suelto se cambiaría por el genérico.
+      throw new ConflictException({ code: 'CONFLICT', message: 'El destino de almacenamiento está deshabilitado' });
     }
     return this.providerFor(destination);
   }

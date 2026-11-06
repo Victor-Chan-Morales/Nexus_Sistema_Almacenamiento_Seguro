@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { Readable } from 'stream';
 import { Destination } from '../files/entities/destination.entity';
 import { FilesCryptoService } from '../files/files-crypto.service';
@@ -117,6 +117,9 @@ describe('SPEC-801: StorageRouter', () => {
     expect(environment.delete).toHaveBeenCalledWith('org-1/file-1/v1/uuid');
 
     await expect(router.forWrite(ORG, 'dest-a')).rejects.toBeInstanceOf(ConflictException);
+    await expect(router.forWrite(ORG, 'dest-a')).rejects.toMatchObject({
+      response: { code: 'CONFLICT', message: 'El destino de almacenamiento está deshabilitado' },
+    });
     expect(environment.put).not.toHaveBeenCalled();
   });
 
@@ -141,6 +144,7 @@ const memoryS3 = () => {
   const objects = new Map<string, Buffer>();
   const putKeys: string[] = [];
   const send = jest.fn(async (command: unknown) => {
+    if (command instanceof HeadBucketCommand) return {};
     if (command instanceof PutObjectCommand) {
       const key = command.input.Key as string;
       putKeys.push(key);
@@ -314,6 +318,21 @@ describe('SPEC-802: prueba de conexión (escenario 3)', () => {
 
     await expect(runConnectionProbe(client, 'bucket', 20)).resolves.toEqual({ ok: false, reason: 'NETWORK' });
     expect(memory.objects.size).toBe(0);
+  });
+
+  it('un bucket inexistente responde BUCKET_NOT_FOUND antes de escribir, aunque el servidor crearía el bucket con un PUT', async () => {
+    const memory = memoryS3();
+    const client = {
+      send: jest.fn(async (command: unknown) => {
+        if (command instanceof HeadBucketCommand) {
+          throw Object.assign(new Error('Not Found'), { name: 'NotFound', $metadata: { httpStatusCode: 404 } });
+        }
+        return memory.send(command);
+      }),
+    };
+
+    await expect(runConnectionProbe(client, 'no-existe')).resolves.toEqual({ ok: false, reason: 'BUCKET_NOT_FOUND' });
+    expect(memory.putKeys).toHaveLength(0);
   });
 
   it('classifyProbeError trata un error sin forma conocida como red', () => {
