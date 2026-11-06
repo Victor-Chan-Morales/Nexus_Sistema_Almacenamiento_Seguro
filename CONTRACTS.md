@@ -221,7 +221,7 @@ Todas estas rutas se acotan al **Drive personal del solicitante** y tratan un re
 }
 ```
 
-- Acciones del corte: `AUTH_LOGIN`, `AUTH_PASSWORD_RESET`, `MEMBER_ADDED`, `FILE_UPLOAD`, `FILE_DOWNLOAD`, `FILE_DELETE`, `FILE_RESTORE`, `FILE_PURGE`, `FOLDER_CREATE`, `FOLDER_DELETE`, `FOLDER_RESTORE`, `FOLDER_PURGE`, `PLAN_ACTIVATED`, `PLAN_RENEWED`. Tipos de recurso: `user`, `membership`, `file`, `folder`, `subscription`.
+- Acciones del corte: `AUTH_LOGIN`, `AUTH_PASSWORD_RESET`, `MEMBER_ADDED`, `FILE_UPLOAD`, `FILE_DOWNLOAD`, `FILE_DELETE`, `FILE_RESTORE`, `FILE_PURGE`, `FILE_VERSION_RESTORED` **[v0.6, SPEC-210]**, `FOLDER_CREATE`, `FOLDER_DELETE`, `FOLDER_RESTORE`, `FOLDER_PURGE`, `PLAN_ACTIVATED`, `PLAN_RENEWED`. Tipos de recurso: `user`, `membership`, `file`, `folder`, `subscription`.
 - El evento no incluye nombres de archivo ni datos personales. El frontend resuelve `actorId` a nombre con `GET /organizations/members` (misma audiencia: solo administradores).
 - Cada evento guarda `record_hash` y `prev_hash` desde el primer registro. **[v0.6]** La verificación de cadena llega con SPEC-404; los checkpoints firmados no se implementan (ADR-008 §10).
 - El registro de auditoría es de mejor esfuerzo y posterior al commit de la operación: si falla, la operación principal no se ve afectada.
@@ -240,7 +240,7 @@ Catálogo común. El filtro emite `VALIDATION_ERROR` para cualquier `400` de val
 | 403 | `EMAIL_NOT_VERIFIED` | Login sin correo verificado (v0.4). |
 | 404 | `NOT_FOUND` | Recurso inexistente o ajeno. |
 | 409 | `FILE_NAME_CONFLICT`, `FOLDER_NAME_CONFLICT`, `PARENT_FOLDER_UNAVAILABLE`, `CONCURRENT_SUBSCRIPTION_CONFLICT` | Conflicto de estado. |
-| 422 | `STORAGE_QUOTA_EXCEEDED`, `MEMBER_ALREADY_EXISTS`, `EMAIL_BELONGS_TO_OTHER_ORGANIZATION`, `USER_LIMIT_EXCEEDED`, `CANNOT_PURGE_ACTIVE_FILE`, `NO_ACTIVE_SUBSCRIPTION`, `PLAN_NOT_RENEWABLE` | Regla de negocio. |
+| 422 | `STORAGE_QUOTA_EXCEEDED`, `VERSION_ALREADY_CURRENT` **[v0.6, SPEC-210]**, `MEMBER_ALREADY_EXISTS`, `EMAIL_BELONGS_TO_OTHER_ORGANIZATION`, `USER_LIMIT_EXCEEDED`, `CANNOT_PURGE_ACTIVE_FILE`, `NO_ACTIVE_SUBSCRIPTION`, `PLAN_NOT_RENEWABLE` | Regla de negocio. |
 
 ## Cambios de forma en Files ya implementados [v0.5]
 
@@ -251,7 +251,10 @@ Documentan lo que el código ya devuelve (arreglo de tamaño de carpetas, SPEC-0
 
 ## Alcance final [v0.6]
 
-Cada spec agrega aquí sus rutas, campos y códigos de error antes de programar. Por ahora no hay rutas nuevas.
+Cada spec agrega aquí sus rutas, campos y códigos de error antes de programar.
+
+- **[v0.6, SPEC-210]** `GET /files/:id/versions/:versionId/download` → bytes exactos de esa versión, `Content-Type` del archivo y `Content-Disposition: attachment` con nombre seguro. Solo archivos propios, activos y con carpeta activa. Otro archivo, versión ajena, archivo en papelera o inexistente → `404`. `id` o `versionId` que no son UUID → `400`. Emite `FILE_DOWNLOAD`.
+- **[v0.6, SPEC-210]** `POST /files/:id/versions/:versionId/restore` (sin cuerpo) → `200 { "fileId", "versionId", "versionNumber", "sizeBytes", "uploadedAt" }`. Crea una versión nueva con el contenido de la indicada, que pasa a ser la vigente; las anteriores se conservan. Reutiliza la carga multiparte (cuota, cifrado y compensación). Errores: `404` como arriba, también si el archivo entra en papelera mientras se restaura (no crea nada); `400` si `id` o `versionId` no son UUID; `422 VERSION_ALREADY_CURRENT` si la versión indicada ya es la vigente o su contenido es igual al de la vigente (comparación por SHA-256); `422 STORAGE_QUOTA_EXCEEDED` si no cabe en la cuota (no crea nada). Emite `FILE_UPLOAD` y `FILE_VERSION_RESTORED`, ambos con el mismo `correlationId`.
 
 ## Implementación y cambios futuros
 

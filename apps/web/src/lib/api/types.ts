@@ -201,6 +201,14 @@ export type FileVersionsResponse = {
   currentVersion: number;
   versions: FileVersionItem[];
 };
+/** SPEC-210: respuesta de `POST /files/:id/versions/:versionId/restore`. `versionId` y `versionNumber` son de la versión nueva. */
+export type RestoredFileVersionResponse = {
+  fileId: UUID;
+  versionId: UUID;
+  versionNumber: number;
+  sizeBytes: number;
+  uploadedAt: ISODateTime;
+};
 
 export type BillingOperationType = "charge" | "renewal";
 
