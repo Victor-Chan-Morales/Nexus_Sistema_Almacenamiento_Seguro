@@ -62,6 +62,7 @@ La clase del diagrama no cambia la propiedad del módulo ni amplía automáticam
 |---|---|---|
 | AuthService | Sebastián | IAM; entrega contrato de sesión y errores a Víctor. |
 | BillingService | Anthony | Billing; publica plan vigente y límite para Dashboard/Files. |
+| ShareLinksService | Miguel | Files; crea, lista y revoca enlaces a una versión fija (SPEC-209). El acceso público por token es de SPEC-216. |
 | InstallationService | Por asignar | No se crea con ese nombre: lo cubren `StoragePolicyService` (SPEC-803) y `PlatformActionsService` (SPEC-503). |
 | DatabaseServiceClient | No aprobado como servicio compartido | Mantener repositorios/puertos por dominio; Víctor coordina solo la composición y conexión común. |
 
@@ -75,6 +76,7 @@ Las relaciones Usuario–Membresía–Sesión, tenant–recursos, recurso–dest
 | Billing | Web y Dashboard | Planes visibles, suscripción vigente y límites de plan |
 | Files | Web y Dashboard | Carpetas/archivos autorizados; uso de espacio derivado de versiones |
 | StorageRouter (ObjectStorage) | Files | Guardar, recuperar o eliminar objeto en el destino de la versión; errores previsibles, sin filtrar secreto |
+| IAM | Files | `OpaqueTokens` y `PasswordHasher`, exportados por `IamModule` para generar y hashear tokens y contraseñas de enlaces compartidos (SPEC-209) |
 | Web | IAM/Billing/Files | Solicitudes HTTP según `CONTRACTS.md`; no se comunica directamente con DB ni object storage |
 
 ## Ciclo de cambio
