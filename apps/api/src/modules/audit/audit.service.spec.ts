@@ -509,6 +509,7 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
           resourceType: 'file',
           resourceId: 'file-1',
           actorId: 'usr-1',
+          actorType: 'user',
           result: 'success',
           occurredAt: new Date('2026-10-29T10:00:00.000Z'),
           chainSeq: '7',
@@ -535,7 +536,7 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
       const res = await service.listEvents(orgId, { limit: 50 });
 
       expect(Object.keys(res.events[0]).sort()).toEqual(
-        ['action', 'actorId', 'id', 'occurredAt', 'resourceId', 'resourceType', 'result'],
+        ['action', 'actorId', 'actorType', 'id', 'occurredAt', 'resourceId', 'resourceType', 'result'],
       );
       expect(JSON.stringify(res)).not.toMatch(/secret-|chainSeq/);
     });
@@ -593,5 +594,114 @@ describe('computeRecordHash', () => {
   it('trata prevHash nulo y vacío igual y distinto de un hash real', () => {
     expect(computeRecordHash({ ...base, prevHash: null })).toBe(computeRecordHash({ ...base, prevHash: '' }));
     expect(computeRecordHash({ ...base, prevHash: 'abc' })).not.toBe(computeRecordHash(base));
+  });
+});
+
+describe('SPEC-407: actores y resultados de auditoría', () => {
+  let service: AuditService;
+  let manager: { query: jest.Mock; findOne: jest.Mock; insert: jest.Mock };
+  let outbox: { enqueue: jest.Mock };
+  let loggerError: jest.SpyInstance;
+
+  beforeEach(() => {
+    manager = {
+      query: jest.fn().mockResolvedValue(undefined),
+      findOne: jest.fn().mockResolvedValue(null),
+      insert: jest.fn().mockResolvedValue(undefined),
+    };
+    const dataSource = {
+      transaction: jest.fn(async (callback: (m: typeof manager) => Promise<void>) => callback(manager)),
+      getRepository: jest.fn(),
+    };
+    outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    service = new AuditService(
+      dataSource as unknown as DataSource,
+      new AuditChainWriter(),
+      outbox as unknown as AuditOutboxService,
+    );
+    loggerError = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  const row = () => manager.insert.mock.calls[0][1] as AuditHashFields & { recordHash: string };
+  /** ck_audit_event_actor: (actor_type = 'user') = (actor_id IS NOT NULL) */
+  const satisfiesActorCheck = (r: { actorType: AuditActorType; actorId: string | null }) =>
+    (r.actorType === AuditActorType.USER) === (r.actorId !== null);
+
+  it('Escenario 1: una llamada actual, solo con actorId, registra user y success como hoy', async () => {
+    await service.logEvent({ organizationId: ORG_ID, actorId: ACTOR_ID, action: AuditAction.FILE_UPLOAD });
+    expect(row()).toMatchObject({ actorType: AuditActorType.USER, actorId: ACTOR_ID, result: AuditResult.SUCCESS });
+  });
+
+  it.each([AuditActorType.SYSTEM, AuditActorType.VISITOR])(
+    'Escenario 2: actor %s sin actorId guarda actor_id NULL y cumple ck_audit_event_actor',
+    async (actorType) => {
+      await service.logEvent({ organizationId: ORG_ID, actorType, action: AuditAction.FILE_PURGE });
+      expect(manager.insert).toHaveBeenCalledTimes(1);
+      expect(row()).toMatchObject({ actorType, actorId: null, result: AuditResult.SUCCESS });
+      expect(satisfiesActorCheck(row())).toBe(true);
+    },
+  );
+
+  it.each([
+    ['user sin actorId', { actorType: AuditActorType.USER }],
+    ['user (por defecto) sin actorId', {}],
+    ['visitor con actorId', { actorType: AuditActorType.VISITOR, actorId: ACTOR_ID }],
+    ['system con actorId', { actorType: AuditActorType.SYSTEM, actorId: ACTOR_ID }],
+  ])('Escenario 3: %s → no escribe, no encola, registra el error y no lanza', async (_name, extra) => {
+    await expect(
+      service.logEvent({ organizationId: ORG_ID, action: AuditAction.FILE_PURGE, ...extra }),
+    ).resolves.toBeUndefined();
+
+    expect(manager.insert).not.toHaveBeenCalled();
+    expect(outbox.enqueue).not.toHaveBeenCalled(); // reintentar una combinación inválida fallaría siempre
+    const messages = loggerError.mock.calls.map((call) => call[0] as string);
+    expect(messages.some((m) => m.startsWith('[AUDIT_INVALID_ACTOR]'))).toBe(true);
+    expect(messages.join(' ')).not.toContain(ACTOR_ID); // el log no lleva datos del actor
+  });
+
+  it('Escenario 4: result = failure se guarda y el hash lo incluye', async () => {
+    await service.logEvent({
+      organizationId: ORG_ID, actorType: AuditActorType.VISITOR, result: AuditResult.FAILURE,
+      action: AuditAction.FILE_DOWNLOAD, resourceType: AuditResource.FILE, resourceId: RESOURCE_ID,
+    });
+    const saved = row();
+    expect(saved.result).toBe(AuditResult.FAILURE);
+
+    const { recordHash, ...fields } = saved;
+    expect(computeRecordHash(fields)).toBe(recordHash);
+    expect(computeRecordHash({ ...fields, result: AuditResult.SUCCESS })).not.toBe(recordHash);
+    expect(computeRecordHash({ ...fields, actorType: AuditActorType.SYSTEM })).not.toBe(recordHash);
+  });
+
+  it('un fallo del INSERT encola el evento con el mismo actor y resultado, sin actorId para un visitante', async () => {
+    manager.insert.mockRejectedValueOnce(Object.assign(new Error('conexión caída'), { code: '40P01' }));
+    await service.logEvent({
+      organizationId: ORG_ID, actorType: AuditActorType.VISITOR, result: AuditResult.FAILURE, action: AuditAction.FILE_DOWNLOAD,
+    });
+    const [queued] = outbox.enqueue.mock.calls[0];
+    expect(queued).toMatchObject({ actorType: AuditActorType.VISITOR, result: AuditResult.FAILURE });
+    expect(queued.actorId).toBeUndefined();
+  });
+
+  it('Escenario 6: sin actorType ni result el escritor produce el hash de siempre (valor fijo y igual al explícito)', async () => {
+    const fixed = {
+      eventId: '66666666-6666-4666-8666-666666666666', organizationId: ORG_ID, actorId: ACTOR_ID,
+      action: AuditAction.FILE_DELETE, resourceType: AuditResource.FILE, resourceId: RESOURCE_ID,
+      correlationId: '77777777-7777-4777-8777-777777777777', occurredAt: new Date('2026-10-29T12:00:00.000Z'),
+    };
+    const writer = new AuditChainWriter();
+
+    await writer.append(manager as never, fixed, { dedupe: false });
+    await writer.append(manager as never, { ...fixed, actorType: AuditActorType.USER, result: AuditResult.SUCCESS }, { dedupe: false });
+
+    const implicit = manager.insert.mock.calls[0][1].recordHash as string;
+    const explicit = manager.insert.mock.calls[1][1].recordHash as string;
+    expect(implicit).toBe(explicit);
+    // Valor calculado con computeRecordHash antes de este cambio: si cambia, la cadena de eventos antiguos se rompería.
+    expect(implicit).toBe('b35cb7b67361fa3091d2b36d7adeacf55cb19c4fd42049a0dea625fd44fd22c4');
   });
 });

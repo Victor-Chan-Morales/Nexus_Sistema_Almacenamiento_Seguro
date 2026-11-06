@@ -15,4 +15,6 @@ export interface AuthResult {
   user: { id: string; fullName: string; email: string };
   organization: { id: string; name: string };
   role: Role;
+  /** SPEC-501: solo para la respuesta; el access token no lo lleva. */
+  isSuperAdmin: boolean;
 }

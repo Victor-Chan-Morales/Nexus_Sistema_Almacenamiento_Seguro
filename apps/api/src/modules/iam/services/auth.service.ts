@@ -17,7 +17,7 @@ import { SessionService } from './session.service';
  * AuthService del diagrama de clases.
  *   authenticate(email, password) → Session    ✔ implementado
  *   verifyEmail(token)                         ✔ implementado (CONTRACTS.md v0.4)
- *   requestPasswordReset(email)                ⏳ pendiente: sin contrato aprobado
+ *   requestPasswordReset(email)                ✔ en PasswordResetService (SPEC-103)
  *   verifyTotp(userId, code)                   ⛔ fuera de alcance (MFA/TOTP); authenticate falla cerrado si mfaEnabled
  */
 @Injectable()
@@ -42,12 +42,22 @@ export class AuthService implements OnModuleInit {
 
   async authenticate(email: string, password: string): Promise<AuthResult> {
     const user = await this.users.findByEmail(normalizeEmail(email));
+    const now = new Date();
 
     if (!user) {
       await this.hasher.verify(this.dummyHash, password);
       throw IamErrors.invalidCredentials();
     }
-    if (!(await this.hasher.verify(user.passwordHash, password))) {
+    // SPEC-112: el hash se verifica SIEMPRE (también con la cuenta bloqueada) para que los tres casos tarden igual.
+    const passwordMatches = await this.hasher.verify(user.passwordHash, password);
+
+    // Bloqueo temporal: ni siquiera la contraseña correcta entra, la respuesta es la de una incorrecta y el
+    // intento no cuenta (no alarga el bloqueo).
+    if (user.lockedUntil && user.lockedUntil.getTime() > now.getTime()) throw IamErrors.invalidCredentials();
+
+    if (!passwordMatches) {
+      // Fuera de toda transacción que se revierta al lanzar el error: el fallo debe quedar guardado.
+      await this.users.registerFailedLogin(user.id, now);
       throw IamErrors.invalidCredentials();
     }
     // Cuenta inactiva o bloqueada: misma respuesta que una contraseña incorrecta (no revela el estado).
@@ -60,7 +70,11 @@ export class AuthService implements OnModuleInit {
     const membership = await this.memberships.findActive(user.id);
     if (!membership) throw IamErrors.noActiveMembership();
 
-    const result = await this.uow.run((tx) => this.sessions.open(tx, user, membership));
+    const result = await this.uow.run(async (tx) => {
+      const opened = await this.sessions.open(tx, user, membership);
+      await this.users.clearFailedLogins(user.id, tx); // login completo: contador a 0 y sin bloqueo
+      return opened;
+    });
 
     // SPEC-405: AUTH_LOGIN tras abrir la sesión, fuera de la transacción
     void this.audit.logEvent({

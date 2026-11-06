@@ -1,4 +1,4 @@
-import { DeploymentModel, Role, TokenPurpose } from '../domain/enums';
+import { DeploymentModel, MembershipStatus, Role, TokenPurpose, UserStatus } from '../domain/enums';
 import { Membership } from '../entities/membership.entity';
 import { OneTimeToken } from '../entities/one-time-token.entity';
 import { Organization } from '../entities/organization.entity';
@@ -23,6 +23,16 @@ export abstract class UserRepository {
   abstract markEmailVerified(tx: TransactionContext, userId: string): Promise<void>;
   /** Restablecimiento: reemplaza el hash y deja email_verified = true (el enlace prueba que controla el buzón). */
   abstract setPasswordAndVerifyEmail(tx: TransactionContext, userId: string, passwordHash: string): Promise<void>;
+  /**
+   * Cuenta un fallo de contraseña con un único UPDATE atómico en SQL (sin leer y escribir: diez fallos simultáneos
+   * suman exactamente diez) y fija `locked_until` según el nuevo total (SPEC-112). Se confirma por sí solo, fuera de
+   * cualquier transacción que se revierta al lanzar el error de credenciales.
+   */
+  abstract registerFailedLogin(userId: string, now: Date): Promise<void>;
+  /** Contador a 0 y `locked_until` a NULL (login correcto o contraseña restablecida). */
+  abstract clearFailedLogins(userId: string, tx?: TransactionContext): Promise<void>;
+  /** Estado de la cuenta (SPEC-108: eliminar a un miembro la deja `inactive`; sus archivos no se tocan). */
+  abstract setStatus(tx: TransactionContext, userId: string, status: UserStatus): Promise<void>;
 }
 
 export abstract class OrganizationRepository {
@@ -70,6 +80,23 @@ export abstract class MembershipRepository {
    * del más antiguo al más nuevo. Solo carga las columnas necesarias: nunca el hash de la contraseña.
    */
   abstract listByOrganization(organizationId: string): Promise<Membership[]>;
+
+  /**
+   * Una membresía de ESTA organización, con `user` y `roleRef` cargados, o null si no existe o es de otra organización
+   * (SPEC-108: ambos casos son 404, sin distinguirlos). No bloquea la fila: el bloqueo de la organización ya serializa.
+   */
+  abstract findInOrganization(
+    tx: TransactionContext,
+    membershipId: string,
+    organizationId: string,
+  ): Promise<Membership | null>;
+
+  abstract updateRole(tx: TransactionContext, membershipId: string, role: Role): Promise<void>;
+  abstract updateStatus(tx: TransactionContext, membershipId: string, status: MembershipStatus): Promise<void>;
+  /** Borra la fila de la membresía. No toca al usuario ni sus archivos. */
+  abstract remove(tx: TransactionContext, membershipId: string): Promise<void>;
+  /** Administradores (rol tenant_admin) con membresía y cuenta activas: base de la regla del último administrador. */
+  abstract countActiveAdmins(tx: TransactionContext, organizationId: string): Promise<number>;
 
   /** Ids de TODAS las organizaciones donde el usuario tiene membresía (cualquier estado). */
   abstract organizationIdsOfUser(tx: TransactionContext, userId: string): Promise<string[]>;

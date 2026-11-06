@@ -36,6 +36,7 @@ describe('SubscriptionsController — Pruebas de contratos HTTP y RBAC (SPEC-302
     email: 'admin@nexus.local',
     fullName: 'Admin Nexus',
     organizationName: 'Nexus Corp',
+    isSuperAdmin: false,
   };
 
   beforeEach(async () => {

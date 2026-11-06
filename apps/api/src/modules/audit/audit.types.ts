@@ -1,10 +1,16 @@
-import type { AuditResult } from './entities/audit-event.entity';
+import { AuditActorType, AuditResult } from './entities/audit-event.entity';
+
+export { AuditActorType, AuditResult };
 
 /** Acciones auditables del corte SPEC-401. Enum cerrado: no admite texto libre. */
 export enum AuditAction {
   AUTH_LOGIN = 'AUTH_LOGIN',
   AUTH_PASSWORD_RESET = 'AUTH_PASSWORD_RESET',
   MEMBER_ADDED = 'MEMBER_ADDED',
+  MEMBER_ROLE_CHANGED = 'MEMBER_ROLE_CHANGED',
+  MEMBER_SUSPENDED = 'MEMBER_SUSPENDED',
+  MEMBER_REACTIVATED = 'MEMBER_REACTIVATED',
+  MEMBER_REMOVED = 'MEMBER_REMOVED',
   FILE_UPLOAD = 'FILE_UPLOAD',
   FILE_DOWNLOAD = 'FILE_DOWNLOAD',
   FILE_DELETE = 'FILE_DELETE',
@@ -44,10 +50,16 @@ export enum AuditResource {
   INSTALLATION_REQUEST = 'installation_request',
 }
 
-/** Entrada de `logEvent`. Sin campos libres: no puede transportar contraseñas, tokens ni nombres de archivo. */
+/**
+ * Entrada de `logEvent`. Sin campos libres: no puede transportar contraseñas, tokens ni nombres de archivo.
+ * `actorId` es obligatorio si y solo si `actorType` es `user` (restricción ck_audit_event_actor): la purga automática
+ * (`system`) y el acceso público por enlace (`visitor`) no tienen persona que registrar.
+ */
 export interface AuditEventInput {
   organizationId: string;
-  actorId: string;
+  actorId?: string;
+  /** Por defecto `USER`. */
+  actorType?: AuditActorType;
   action: AuditAction;
   resourceType?: AuditResource;
   resourceId?: string;

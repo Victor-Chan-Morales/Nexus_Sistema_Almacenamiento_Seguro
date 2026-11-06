@@ -234,7 +234,7 @@ describe('IAM (e2e) — contrato CONTRACTS.md v0.4', () => {
     const res = await login(email).expect(200);
 
     expect(Object.keys(res.body).sort()).toEqual(
-      ['accessToken', 'expiresAt', 'organization', 'role', 'user'].sort(),
+      ['accessToken', 'expiresAt', 'isSuperAdmin', 'organization', 'role', 'user'].sort(),
     );
     expect(Object.keys(res.body.user).sort()).toEqual(['email', 'fullName', 'id']);
     expect(res.body.organization.id).toBe(organizationId);
@@ -284,7 +284,7 @@ describe('IAM (e2e) — contrato CONTRACTS.md v0.4', () => {
       .set('x-organization-id', forged)
       .expect(200);
 
-    expect(Object.keys(me.body).sort()).toEqual(['organization', 'role', 'user']);
+    expect(Object.keys(me.body).sort()).toEqual(['isSuperAdmin', 'organization', 'role', 'user']);
     expect(me.body.organization.id).toBe(organizationId);
     expect(me.body.user.email).toBe(email);
     expect(me.body.role).toBe('tenant_admin');
