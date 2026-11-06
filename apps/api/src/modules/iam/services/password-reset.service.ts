@@ -89,6 +89,7 @@ export class PasswordResetService {
       const record = await this.findUsableToken(tx, tokenHash);
       await this.tokensRepo.markUsed(tx, record);
       await this.users.setPasswordAndVerifyEmail(tx, record.userId, passwordHash);
+      await this.users.clearFailedLogins(record.userId, tx); // SPEC-112: restablecer también desbloquea
       await this.sessions.revokeAllActiveOf(tx, record.userId);
       const membership = await this.memberships.findActive(record.userId, undefined, tx);
       return { userId: record.userId, organizationId: membership?.organizationId };

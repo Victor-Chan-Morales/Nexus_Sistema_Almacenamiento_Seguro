@@ -100,6 +100,7 @@ export class IamController {
       user: { id: user.userId, fullName: user.fullName, email: user.email },
       organization: { id: user.organizationId, name: user.organizationName },
       role: user.role,
+      isSuperAdmin: user.isSuperAdmin,
     };
   }
 
@@ -113,6 +114,7 @@ export class IamController {
       user: result.user,
       organization: result.organization,
       role: result.role,
+      isSuperAdmin: result.isSuperAdmin,
     };
   }
 

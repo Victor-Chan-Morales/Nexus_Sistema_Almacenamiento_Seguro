@@ -2,7 +2,7 @@ import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 /**
  * Tabla iam.user. No se mapean (tienen valor por defecto en la BD o no se usan aún):
- * mfa_secret_encrypted, failed_login_attempts, last_login_at, created_at, updated_at.
+ * mfa_secret_encrypted, last_login_at, created_at, updated_at.
  */
 @Entity({ schema: 'iam', name: 'user' })
 export class User {
@@ -29,6 +29,14 @@ export class User {
 
   @Column({ name: 'is_super_admin', type: 'boolean', default: false })
   isSuperAdmin!: boolean;
+
+  /** Fallos de contraseña seguidos (smallint). Solo se modifica con UPDATE atómico en SQL (SPEC-112). */
+  @Column({ name: 'failed_login_attempts', type: 'smallint', default: 0 })
+  failedLoginAttempts!: number;
+
+  /** Mientras sea futuro no se aceptan intentos de login (SPEC-112). NULL = sin bloqueo temporal. */
+  @Column({ name: 'locked_until', type: 'timestamptz', nullable: true })
+  lockedUntil!: Date | null;
 
   /** ENUM iam.user_status (active | inactive | locked). */
   @Column({ type: 'varchar' })

@@ -25,6 +25,7 @@
     "infra:logs": "docker compose logs -f",
 
     "seed:demo": "cd apps/api && npm run seed:demo",
+    "seed:super-admin": "cd apps/api && npm run seed:super-admin",
 
     "migration:run": "docker compose run --rm migrate",
     "migration:revert": "docker compose run --rm migrate rollback"

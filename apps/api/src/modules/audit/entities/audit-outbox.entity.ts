@@ -1,4 +1,5 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
+import { AuditActorType } from './audit-event.entity';
 
 export enum AuditOutboxStatus {
   PENDING = 'pending',
@@ -18,8 +19,12 @@ export class AuditOutbox {
   @Column({ name: 'organization_id', type: 'uuid' })
   organizationId!: string;
 
-  @Column({ name: 'actor_id', type: 'uuid' })
-  actorId!: string;
+  /** NULL para `system` y `visitor` (SPEC-407). */
+  @Column({ name: 'actor_id', type: 'uuid', nullable: true })
+  actorId!: string | null;
+
+  @Column({ name: 'actor_type', type: 'enum', enum: AuditActorType, enumName: 'actor_type', default: AuditActorType.USER })
+  actorType!: AuditActorType;
 
   @Column({ name: 'action_type', type: 'varchar', length: 50 })
   actionType!: string;
