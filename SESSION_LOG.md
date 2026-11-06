@@ -171,3 +171,11 @@ Se aprobaron las propuestas 1 a 12: correo mediante EmailService, sesiones con a
 - El módulo Storage usa AWS SDK for JavaScript v3 y variables S3_*; PostgreSQL sigue almacenando metadatos y SeaweedFS los bytes.
 - Las URLs prefirmadas usan S3_PUBLIC_ENDPOINT para que el navegador alcance el gateway publicado.
 - Ver decisión vigente en docs/decisions/ADR-004-almacenamiento-seaweedfs.md. Los volúmenes antiguos de MinIO no son compatibles ni se copian automáticamente.
+
+## 2026-11-06 — SPEC-802: administrar destinos (T1 a T3)
+
+- Se implementó SPEC-802 en `feat/802-administrar-destinos`: migración de `files.destination.name` y `location`, CRUD de destinos propios (`/destinations`), validación del endpoint contra loopback, link-local, metadatos y, con `DESTINATION_ALLOW_PRIVATE`, rangos privados, y prueba de conexión `POST /destinations/:id/test`.
+- Cambio de interfaz: `StorageRouter` ahora entrega clientes S3 propios por destino (cacheados e invalidados al editar) y expone `probe`. Los destinos de entorno siguen usando `StorageService`.
+- Contrato: `CONTRACTS.md` v0.6 agrega las rutas, los códigos `DESTINATION_IN_USE` y `DESTINATION_ENDPOINT_NOT_ALLOWED`, los eventos `DESTINATION_*` y el tipo de recurso `destination`.
+- `ADR-006` §2.5 cambia: los destinos propios guardan credenciales cifradas con la llave maestra. La rotación de SPEC-005 debe re-cifrarlas.
+- Pendiente: T4, prueba manual con dos contenedores S3 (escenarios 3 y 10). La spec sigue en estado Aprobada hasta cerrarla.

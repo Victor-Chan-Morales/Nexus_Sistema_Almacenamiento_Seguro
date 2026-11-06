@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { AppShell } from "@/components/app-shell";
+import { LoadingIndicator } from "@/components/toast";
 import { Notice } from "@/components/notice";
 import { getAuditEvents } from "@/lib/api/audit";
 import { getMembers } from "@/lib/api/members";
@@ -79,7 +80,7 @@ function AuditLogContent({ token }: { token: string }) {
   const { state, reload, loadMore, loadingMore, loadMoreFailed } = useAuditLog(token);
   const [actionFilter, setActionFilter] = useState("");
 
-  if (state.status === "loading") return <section className="panel"><p className="muted" role="status">Cargando actividad…</p></section>;
+  if (state.status === "loading") return <section className="panel"><LoadingIndicator>Cargando actividad…</LoadingIndicator></section>;
   if (state.status === "error") return <Notice title="No se pudo cargar la auditoría" message={state.message} onRetry={reload} />;
 
   const { events, nextBefore, actorNames } = state.data;

@@ -105,6 +105,16 @@ function resolveJwtSecret(config: ConfigService): string {
     { provide: OpaqueTokens, useClass: CryptoOpaqueTokens },
     { provide: VerificationMailer, useClass: EmailService },
   ],
-  exports: [AuthService, JwtModule, PassportModule, JwtAuthGuard, RegistrationHooks, MemberAdmission],
+  exports: [
+    AuthService,
+    JwtModule,
+    PassportModule,
+    JwtAuthGuard,
+    RegistrationHooks,
+    MemberAdmission,
+    // SPEC-209: tokens opacos y hash de contraseña para los enlaces compartidos
+    OpaqueTokens,
+    PasswordHasher,
+  ],
 })
 export class IamModule {}

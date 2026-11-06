@@ -55,6 +55,8 @@ export class AuditService {
       resourceType: input.resourceType,
       resourceId: input.resourceId,
       correlationId,
+      result: input.result,
+      safeReason: input.safeReason ?? null,
     };
 
     try {

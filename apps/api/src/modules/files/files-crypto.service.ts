@@ -14,12 +14,23 @@ const OBJECT_MAGIC = Buffer.from('NXF1', 'ascii');
 const NONCE_BYTES = 12;
 const TAG_BYTES = 16;
 const DEK_BYTES = 32;
+const INVALID_CONNECTION_DETAILS = 'No se pudieron descifrar los datos de conexión';
 
 export interface EncryptedFile {
   bytes: Buffer;
   checksum: string;
   encryptedDek: string;
   formatVersion: number;
+}
+
+/** SPEC-802: datos de conexión propios de un destino. Solo existen dentro del servidor, cifrados en la base. */
+export interface DestinationConnectionDetails {
+  endpoint: string;
+  bucket: string;
+  region: string;
+  accessKey: string;
+  secretKey: string;
+  useSsl: boolean;
 }
 
 @Injectable()
@@ -32,6 +43,20 @@ export class FilesCryptoService {
 
   encryptConnectionDetails(organizationId: string, value: string): string {
     return this.encryptText(value, `destination:${organizationId}:v1`);
+  }
+
+  decryptConnectionDetails(organizationId: string, value: string): string {
+    return this.decryptText(value, `destination:${organizationId}:v1`);
+  }
+
+  /**
+   * Datos de conexión propios de un destino, o null si usa la configuración de entorno (`environment:*`).
+   * Quien lo llame debe tratar el resultado como secreto: nunca lo devuelve una respuesta HTTP.
+   */
+  readDestinationDetails(organizationId: string, ciphertext: string): DestinationConnectionDetails | null {
+    const parsed = JSON.parse(this.decryptConnectionDetails(organizationId, ciphertext)) as DestinationConnectionDetails;
+    if (typeof parsed.endpoint === 'string' && parsed.endpoint.startsWith('environment:')) return null;
+    return parsed;
   }
 
   encryptFile(
@@ -95,6 +120,29 @@ export class FilesCryptoService {
     cipher.setAAD(Buffer.from(context));
     const ciphertext = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
     return `v1.${nonce.toString('base64url')}.${cipher.getAuthTag().toString('base64url')}.${ciphertext.toString('base64url')}`;
+  }
+
+  private decryptText(value: string, context: string): string {
+    const [version, nonceText, tagText, ciphertextText] = value.split('.');
+    if (version !== 'v1' || !nonceText || !tagText || !ciphertextText) {
+      throw new InternalServerErrorException(INVALID_CONNECTION_DETAILS);
+    }
+    try {
+      const decipher = createDecipheriv(
+        'aes-256-gcm',
+        this.masterKey(),
+        Buffer.from(nonceText, 'base64url'),
+      );
+      decipher.setAAD(Buffer.from(context));
+      decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
+      return Buffer.concat([
+        decipher.update(Buffer.from(ciphertextText, 'base64url')),
+        decipher.final(),
+      ]).toString('utf8');
+    } catch {
+      // Mensaje propio: el error crudo de crypto no debe filtrarse.
+      throw new InternalServerErrorException(INVALID_CONNECTION_DETAILS);
+    }
   }
 
   private wrapDek(dek: Buffer, organizationId: string, fileId: string, versionNumber: number): string {

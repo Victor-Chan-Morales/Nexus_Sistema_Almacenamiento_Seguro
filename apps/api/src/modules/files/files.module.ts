@@ -2,6 +2,10 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { FilesController, FoldersController } from './files.controller';
 import { FilesService } from './files.service';
+import { FileVersionsService } from './file-versions.service';
+import { ShareLinksService } from './share-links.service';
+import { ShareLinksController } from './share-links.controller';
+import { ShareLink } from './entities/share-link.entity';
 import { FileRecord } from './entities/file-record.entity';
 import { Folder } from './entities/folder.entity';
 import { FileVersion } from './entities/file-version.entity';
@@ -17,6 +21,12 @@ import { TenantQuota } from './entities/tenant-quota.entity';
 import { Upload } from './entities/upload.entity';
 import { FilesCryptoService } from './files-crypto.service';
 import { DriveAccessService } from './drive-access.service';
+import { DestinationsService } from './destinations.service';
+import { DestinationsController } from './destinations.controller';
+import { Team } from './entities/team.entity';
+import { TeamMember } from './entities/team-member.entity';
+import { TeamsController } from './teams.controller';
+import { TeamsService } from './teams.service';
 
 /**
  * Módulo FILES
@@ -38,13 +48,31 @@ import { DriveAccessService } from './drive-access.service';
       Reservation,
       TenantQuota,
       Upload,
+      ShareLink,
+      Team,
+      TeamMember,
     ]),
     IamModule,     // Guard JWT y RegistrationHooks
     StorageModule, // StorageRouter: guardar/recuperar bytes en el destino de cada versión
     BillingModule, // Para verificar cuota de almacenamiento
   ],
-  controllers: [FoldersController, FilesController],
-  providers: [FilesService, FilesCryptoService, DriveAccessService, PersonalDriveHook],
+  controllers: [
+    FoldersController,
+    FilesController,
+    ShareLinksController,
+    DestinationsController,
+    TeamsController,
+  ],
+  providers: [
+    FilesService,
+    FileVersionsService,
+    FilesCryptoService,
+    DriveAccessService,
+    PersonalDriveHook,
+    ShareLinksService,
+    DestinationsService,
+    TeamsService,
+  ],
   exports: [FilesService],
 })
 export class FilesModule {}

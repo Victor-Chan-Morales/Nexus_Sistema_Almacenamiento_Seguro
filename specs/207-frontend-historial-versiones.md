@@ -12,7 +12,7 @@
 | **Dependencias** | SPEC-206 (API). Puede avanzar con un mock. |
 | **Prioridad** | P1 |
 | **Estimación** | 1.5 h |
-| **Estado** | Aprobada (2026-10-31, Víctor Chán Morales) |
+| **Estado** | Implementada (2026-11-05). Aprobada el 2026-10-31 por Víctor Chán Morales |
 
 ---
 
@@ -74,9 +74,9 @@ No aplica.
 
 ## 9. Plan de Tareas
 
-- [ ] **T1 (15 min)**: `getFileVersions` y tipos.
-- [ ] **T2 (45 min)**: `FileVersionsModal` con estados y accesibilidad.
-- [ ] **T3 (30 min)**: botón "Versiones" en fila y panel de detalle de `FileBrowserLive`.
+- [x] **T1 (15 min)**: `getFileVersions` y tipos.
+- [x] **T2 (45 min)**: `FileVersionsModal` con estados y accesibilidad.
+- [x] **T3 (30 min)**: botón "Versiones" en fila y panel de detalle de `FileBrowserLive`.
 
 ---
 
@@ -85,6 +85,8 @@ No aplica.
 | Criterio | Tipo | Verificación |
 |---|---|---|
 | Escenarios 1–3 | Manual | Subir el mismo archivo 3 veces y comprobar v3, v2, v1 |
+
+Verificación del 2026-11-05 contra la web y la API locales: 23 comprobaciones de los escenarios 1–3, del foco y cierre del modal, y del diseño en móvil. Se ejecutó con un navegador automatizado (Playwright), porque la extensión de Chrome no estaba conectada.
 
 ---
 
@@ -107,3 +109,4 @@ Ninguna.
 | 2026-10-27 | Víctor Chán | Versión inicial. |
 | 2026-10-27 | Revisión | Sin menú "..." (no existe): botón en fila y panel; solo lectura; prioridad P2. |
 | 2026-11-04 | Víctor Chán Morales | Se actualiza la prioridad al alcance final (ADR-008); aprobación vigente desde 2026-10-31. |
+| 2026-11-05 | Claude Code | Implementada. Acciones "Versiones" en la fila y el panel de detalle; en tabletas y móvil se apilan las acciones de la fila. Corrección de la restauración de sesión en `lib/session.tsx` (un solo refresh por carga): antes cada carga en dev rotaba el token dos veces y revocaba la sesión. |

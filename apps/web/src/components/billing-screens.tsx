@@ -12,6 +12,7 @@ import { formatBytes, formatIsoDate, formatUsd, usagePercent } from "@/lib/forma
 import { RequireSession, useSession } from "@/lib/session";
 import { useLoad } from "@/lib/use-load";
 import { Brand } from "@/components/brand";
+import { LoadingIndicator } from "@/components/toast";
 import { Notice } from "@/components/notice";
 import { UiIcon } from "@/components/ui-icon";
 
@@ -49,7 +50,7 @@ function useSelectedPlan(planId: string | null) {
 }
 
 function PlanState({ status, message, onRetry }: { status: "loading" | "error" | "missing"; message?: string; onRetry?: () => void }) {
-  if (status === "loading") return <p className="billing-reference-note" role="status">Cargando plan…</p>;
+  if (status === "loading") return <LoadingIndicator>Cargando plan…</LoadingIndicator>;
   if (status === "error") return <Notice title="No se pudo cargar el plan" message={message ?? catalogError} onRetry={onRetry} />;
   return <><Notice title="Plan no disponible" message="El plan solicitado no existe en el catálogo." /><Link className="billing-secondary-link" href="/planes"><UiIcon name="arrowLeft" size={15} /> Volver al catálogo</Link></>;
 }
@@ -145,7 +146,7 @@ export function BillingHistoryTable({ token }: { token?: string }) {
 
   return <section className="billing-history" aria-labelledby="billing-history-title">
     <h2 id="billing-history-title">Historial de operaciones</h2>
-    {state.status === "loading" && <p className="billing-reference-note" role="status">Cargando historial…</p>}
+    {state.status === "loading" && <LoadingIndicator>Cargando historial…</LoadingIndicator>}
     {state.status === "error" && <Notice title="No se pudo cargar el historial" message={state.message} onRetry={reload} />}
     {state.status === "ready" && (state.data.items.length === 0 ? <p className="billing-reference-note">Aún no hay movimientos</p> : <div className="billing-table-wrapper"><table className="billing-table"><thead><tr><th>Fecha</th><th>Plan</th><th>Tipo</th><th>Importe</th><th>Estado</th></tr></thead><tbody>{state.data.items.map((op) => <tr key={op.id}><td>{formatIsoDate(op.occurredAt)}</td><td>{op.planName}</td><td>{op.type === "renewal" ? "Renovación" : "Cobro"}</td><td>{formatUsd(op.amount)}</td><td><span className="billing-badge">Simulado</span></td></tr>)}</tbody></table></div>)}
   </section>;
@@ -165,7 +166,7 @@ function CurrentSubscriptionContent() {
   }
 
   return <BillingFrame wide title="Tu suscripción" subtitle="Consulta los detalles de tu plan actual.">
-    {state.status === "loading" && <p className="billing-reference-note" role="status">Cargando suscripción…</p>}
+    {state.status === "loading" && <LoadingIndicator>Cargando suscripción…</LoadingIndicator>}
     {state.status === "error" && <Notice title="No se pudo cargar la suscripción" message={state.message} onRetry={reload} />}
     {state.status === "ready" && (state.data.plan ? <ActiveSubscription data={state.data} plan={state.data.plan} isAdmin={isAdmin} token={token} onRenewed={handleRenewed} historyKey={historyKey} /> : <>
       <div className="billing-error-box"><b>No hay un plan activo</b><p>Contrata un plan para definir el límite de almacenamiento de tu organización.</p></div>
@@ -255,7 +256,7 @@ function ChangePlanContent() {
   }
 
   return <BillingFrame title="Solicitar cambio de plan" subtitle="Elige el plan al que deseas cambiar.">
-    {state.status === "loading" && <p className="billing-reference-note" role="status">Cargando planes…</p>}
+    {state.status === "loading" && <LoadingIndicator>Cargando planes…</LoadingIndicator>}
     {state.status === "error" && <Notice title="No se pudo cargar el catálogo" message={state.message} onRetry={reload} />}
     {state.status === "ready" && (plans.length === 0 ? <Notice title="Catálogo vacío" message="Todavía no hay planes disponibles para contratar." /> : <>
       <label className="billing-select-label" htmlFor="target-plan">Nuevo plan</label>

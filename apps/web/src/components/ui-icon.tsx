@@ -1,6 +1,14 @@
 import type { ReactNode } from "react";
 
 const artwork: Record<string, ReactNode> = {
+  fileGeneric: <path d="M5 3h9l5 5v13H5z "/>,
+  filePdf: <path d="M5 3h9l5 5v13H5z M8 16c3-2 5-6 4-7-2-1-1 5 4 5-2-2-7 0-8 2Z"/>,
+  fileWord: <path d="M5 3h9l5 5v13H5z m7 10 2 6 3-5 3 5 2-6"/>,
+  fileSpreadsheet: <path d="M5 3h9l5 5v13H5z M7 10h10v7H7zM7 13.5h10M12 10v7"/>,
+  fileSlides: <path d="M5 3h9l5 5v13H5z M7 9h10v6H7zM12 15v3m-2 0h4"/>,
+  fileImage: <path d="M5 3h9l5 5v13H5z M7 16l3-4 3 3 2-2 2 3M14 10h.01"/>,
+  fileText: <path d="M5 3h9l5 5v13H5z M8 10h8m-8 3h8m-8 3h5"/>,
+  fileZip: <path d="M5 3h9l5 5v13H5z M11 7h2m-2 3h2m-2 3h2m-2 3h2"/>,
   dashboard: <><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="11" width="7" height="10" rx="1.5"/><rect x="3" y="14" width="8" height="7" rx="1.5"/></>,
   files: <><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h4l2 2h7A2.5 2.5 0 0 1 21 9.5v8a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><path d="M3 10h18"/></>,
   plans: <><path d="M12 3v18M17 7.5c0-1.4-1.7-2.5-4.5-2.5S8 6.1 8 7.5 9.5 10 12.5 10s4.5 1.1 4.5 2.5-1.7 2.5-4.5 2.5S8 13.9 8 12.5"/><path d="M7 19h10"/></>,

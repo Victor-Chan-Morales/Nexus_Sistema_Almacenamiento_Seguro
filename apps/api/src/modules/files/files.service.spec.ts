@@ -77,14 +77,14 @@ describe('FilesService — cuota y reservas de carga', () => {
       rootFolderId: 'folder-root',
     });
     jest.spyOn(driveAccess, 'requireFolder')
-      .mockResolvedValue({ folder: { id: 'folder-1' } as never, access: { drive: { id: 'drive-1' } as never, level: 'owner' } });
+      .mockResolvedValue({ folder: { id: '11111111-1111-4111-8111-111111111111' } as never, access: { drive: { id: 'drive-1' } as never, level: 'owner' } });
 
     const buffer = Buffer.from('%PDF-1.4 contenido de prueba'); // 28 bytes: 90 + 28 > 100
     const error = await service
       .uploadMultipartFile({
         organizationId: 'org-1',
         ownerId: 'user-1',
-        folderId: 'folder-1',
+        folderId: '11111111-1111-4111-8111-111111111111',
         file: { originalname: 'informe.pdf', mimetype: 'application/pdf', buffer },
       })
       .catch((err: unknown) => err);
@@ -158,7 +158,7 @@ describe('SPEC-801: compensación de una carga en el destino donde se escribió'
       rootFolderId: 'folder-root',
     });
     jest.spyOn(driveAccess, 'requireFolder').mockResolvedValue({
-      folder: { id: 'folder-1', destinationId: FOLDER_DESTINATION } as never,
+      folder: { id: '11111111-1111-4111-8111-111111111111', destinationId: FOLDER_DESTINATION } as never,
       access: { drive: { id: 'drive-1' } as never, level: 'owner' },
     });
     return { service, storageRouter, storage, cleanup, repos };
@@ -170,7 +170,7 @@ describe('SPEC-801: compensación de una carga en el destino donde se escribió'
     await expect(service.uploadMultipartFile({
       organizationId: 'org-1',
       ownerId: 'user-1',
-      folderId: 'folder-1',
+      folderId: '11111111-1111-4111-8111-111111111111',
       file: { originalname: 'informe.pdf', mimetype: 'application/pdf', buffer: Buffer.from('%PDF-1.4') },
     })).rejects.toThrow('No se pudo completar la carga del archivo');
 
@@ -348,11 +348,11 @@ const buildForeignDriveService = () => {
     type: 'personal', name: 'Mi espacio', createdAt: new Date(0),
   };
   const foreignFolder = {
-    id: 'folder-ajena', organizationId: SPEC221_ORG, driveId: 'drive-2', parentId: 'root-2',
+    id: '22222222-2222-4222-8222-222222222222', organizationId: SPEC221_ORG, driveId: 'drive-2', parentId: 'root-2',
     name: 'Ajena', isDeleted: false, destinationId: 'dest-1', createdAt: new Date(0),
   };
   const foreignFile = {
-    id: 'file-ajeno', organizationId: SPEC221_ORG, folderId: 'folder-ajena', name: 'secreto.pdf',
+    id: 'file-ajeno', organizationId: SPEC221_ORG, folderId: '22222222-2222-4222-8222-222222222222', name: 'secreto.pdf',
     mimeType: 'application/pdf', isDeleted: false, currentVersionId: 'v-1',
   };
   const driveRepo = fakeRepo([ownDrive]);
@@ -391,14 +391,14 @@ describe('SPEC-221: un Drive ajeno responde 404 en cada operación', () => {
   it('listFolders no lista la carpeta de otro Drive', async () => {
     const { service, folderRepo } = buildForeignDriveService();
 
-    await expect(service.listFolders(SPEC221_ORG, SPEC221_USER, 'folder-ajena')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.listFolders(SPEC221_ORG, SPEC221_USER, '22222222-2222-4222-8222-222222222222')).rejects.toBeInstanceOf(NotFoundException);
     expect(folderRepo.find).not.toHaveBeenCalled();
   });
 
   it('getFolderItems no expone el contenido de la carpeta de otro Drive', async () => {
     const { service, folderRepo, fileRepo } = buildForeignDriveService();
 
-    await expect(service.getFolderItems(SPEC221_ORG, SPEC221_USER, 'folder-ajena')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.getFolderItems(SPEC221_ORG, SPEC221_USER, '22222222-2222-4222-8222-222222222222')).rejects.toBeInstanceOf(NotFoundException);
     expect(folderRepo.find).not.toHaveBeenCalled();
     expect(fileRepo.find).not.toHaveBeenCalled();
   });
@@ -406,7 +406,7 @@ describe('SPEC-221: un Drive ajeno responde 404 en cada operación', () => {
   it('listFiles no lista los archivos de la carpeta de otro Drive', async () => {
     const { service, fileRepo } = buildForeignDriveService();
 
-    await expect(service.listFiles(SPEC221_ORG, SPEC221_USER, 'folder-ajena')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.listFiles(SPEC221_ORG, SPEC221_USER, '22222222-2222-4222-8222-222222222222')).rejects.toBeInstanceOf(NotFoundException);
     expect(fileRepo.find).not.toHaveBeenCalled();
   });
 
@@ -416,7 +416,7 @@ describe('SPEC-221: un Drive ajeno responde 404 en cada operación', () => {
       id: 'drive-1', name: 'Mi espacio', rootFolderId: 'root-1',
     } as never);
 
-    await expect(service.createFolder(SPEC221_ORG, SPEC221_USER, 'Nueva', 'folder-ajena')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.createFolder(SPEC221_ORG, SPEC221_USER, 'Nueva', '22222222-2222-4222-8222-222222222222')).rejects.toBeInstanceOf(NotFoundException);
     expect(folderRepo.save).not.toHaveBeenCalled();
   });
 
@@ -426,7 +426,7 @@ describe('SPEC-221: un Drive ajeno responde 404 en cada operación', () => {
     const error = await service.uploadMultipartFile({
       organizationId: SPEC221_ORG,
       ownerId: SPEC221_USER,
-      folderId: 'folder-ajena',
+      folderId: '22222222-2222-4222-8222-222222222222',
       file: { originalname: 'informe.pdf', mimetype: 'application/pdf', buffer: Buffer.from('%PDF-1.4 contenido') },
     }).catch((err: unknown) => err);
 
@@ -454,9 +454,9 @@ describe('SPEC-221: un Drive ajeno responde 404 en cada operación', () => {
   it('softDeleteFolder no mueve a la papelera la carpeta de otro Drive', async () => {
     const { service, folderRepo, manager } = buildForeignDriveService();
 
-    await expect(service.softDeleteFolder('folder-ajena', SPEC221_ORG, SPEC221_USER)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.softDeleteFolder('22222222-2222-4222-8222-222222222222', SPEC221_ORG, SPEC221_USER)).rejects.toBeInstanceOf(NotFoundException);
     expect(folderRepo.findOne).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ id: 'folder-ajena', driveId: 'drive-1' }),
+      where: expect.objectContaining({ id: '22222222-2222-4222-8222-222222222222', driveId: 'drive-1' }),
     }));
     // El bloqueo de cuota sí se ejecuta dentro de la transacción; lo que no debe ocurrir es escribir en carpetas o archivos.
     const writes = manager.query.mock.calls.filter(([sql]) => /UPDATE files\.(folder|file)\b/.test(String(sql)));

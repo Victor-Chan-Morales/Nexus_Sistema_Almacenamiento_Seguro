@@ -68,6 +68,7 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
         resourceId: event.resourceId ?? null,
         correlationId: event.correlationId,
         occurredAt: event.occurredAt,
+        safeReason: event.safeReason ?? null,
         ...(deadCode ? { status: AuditOutboxStatus.DEAD, lastError: deadCode } : {}),
       });
     } catch (error) {
@@ -171,12 +172,13 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
       organizationId: row.organizationId,
       actorId: row.actorId ?? undefined,
       actorType: row.actorType,
-      result: row.result,
       action: row.actionType as AuditAction,
       resourceType: (row.resourceType ?? undefined) as AuditResource | undefined,
       resourceId: row.resourceId ?? undefined,
       correlationId: row.correlationId,
       occurredAt: row.occurredAt,
+      result: row.result as AuditResult,
+      safeReason: row.safeReason ?? null,
     };
   }
 }

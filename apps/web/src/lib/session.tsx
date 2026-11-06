@@ -22,18 +22,31 @@ type SessionContextValue = {
 
 const SessionContext = createContext<SessionContextValue | null>(null);
 
+/**
+ * Una sola restauración en vuelo. El refresh rota la cookie en el servidor y reutilizar el token
+ * anterior revoca todas las sesiones del usuario (IAM). En dev, StrictMode monta dos veces el
+ * proveedor: si cada montaje llamara a refresh, la segunda llamada usaría el token ya rotado.
+ * La petición no se aborta al limpiar el efecto, porque el servidor ya la habrá procesado.
+ */
+let pendingRestore: ReturnType<typeof refreshSession> | null = null;
+function restoreSessionOnce() {
+  if (!pendingRestore) {
+    pendingRestore = refreshSession().finally(() => {
+      pendingRestore = null;
+    });
+  }
+  return pendingRestore;
+}
+
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<{ session: Session | null; expired: boolean; restoring: boolean }>({ session: null, expired: false, restoring: true });
 
   useEffect(() => {
-    const controller = new AbortController();
-    refreshSession({ signal: controller.signal })
-      .then((session) => setState({ session, expired: false, restoring: false }))
-      .catch((error: unknown) => {
-        if (error instanceof Error && error.name === "AbortError") return;
-        setState({ session: null, expired: false, restoring: false });
-      });
-    return () => controller.abort();
+    let active = true;
+    restoreSessionOnce()
+      .then((session) => { if (active) setState({ session, expired: false, restoring: false }); })
+      .catch(() => { if (active) setState({ session: null, expired: false, restoring: false }); });
+    return () => { active = false; };
   }, []);
 
   const signIn = useCallback((session: Session) => setState({ session, expired: false, restoring: false }), []);

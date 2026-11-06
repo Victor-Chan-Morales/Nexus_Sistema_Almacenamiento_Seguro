@@ -49,7 +49,12 @@ La DEK se cifra con AES-256-GCM bajo la KEK del tenant (nonce de 12 bytes, AAD `
 
 ### 2.5 Datos de conexión de destinos
 
-`files.destination.connection_details_encrypted` se cifra con la **llave maestra directamente** (AES-256-GCM, AAD `destination:<organizationId>:v1`) y contiene solo referencias a variables de entorno, no credenciales.
+`files.destination.connection_details_encrypted` se cifra con la **llave maestra directamente** (AES-256-GCM, AAD `destination:<organizationId>:v1`). Su contenido depende del origen del destino:
+
+- **Destino de entorno** (creado con la configuración `S3_*`): contiene solo referencias `environment:*` a variables de entorno, no credenciales.
+- **Destino propio** (SPEC-802): contiene `{ endpoint, bucket, region, accessKey, secretKey, useSsl }`. Las credenciales se descifran solo en memoria, dentro de `StorageRouter`, para construir el cliente S3 del destino. Ninguna respuesta, log ni evento de auditoría las incluye.
+
+Consecuencias: la rotación de la llave maestra (SPEC-005) debe volver a cifrar también estos valores, y `FilesCryptoService.readDestinationDetails` es el único punto que los descifra y distingue ambos casos.
 
 ---
 

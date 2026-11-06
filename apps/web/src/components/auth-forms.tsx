@@ -14,8 +14,12 @@ function AuthLogo() {
   return <Link className="auth-logo-link" href="/" aria-label="Nexus, página principal"><Brand /></Link>;
 }
 
+function AuthBack({ href }: { href: string }) {
+  return <Link className="auth-back" href={href}><UiIcon name="arrowLeft" size={16} /> Regresar</Link>;
+}
+
 function AuthFrame({ eyebrow, title, lead, children, className = "", simulated = false }: { eyebrow?: string; title: string; lead: string; children: React.ReactNode; className?: string; simulated?: boolean }) {
-  return <main className="auth-layout"><section className={`auth-card auth-form-card ${className}`}><AuthLogo />{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h1 className="title">{title}</h1><p className="lead">{lead}</p>{children}{simulated && <p className="auth-demo-caption">Prototipo de interfaz · Esta pantalla aún no está conectada a la API; la información no se envía a un servidor.</p>}</section></main>;
+  return <main className="auth-layout"><section className={`auth-card auth-form-card ${className}`}><AuthLogo />{className === "register-card" && <AuthBack href="/" />}{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h1 className="title">{title}</h1><p className="lead">{lead}</p>{children}{simulated && <p className="auth-demo-caption">Prototipo de interfaz · Esta pantalla aún no está conectada a la API; la información no se envía a un servidor.</p>}</section></main>;
 }
 
 function passwordIsStrong(password: string) {
@@ -37,7 +41,7 @@ function messageFor(error: unknown, fallback: string) {
 
 export function LoginForm() {
   const router = useRouter();
-  const { signIn } = useSession();
+  const { signIn, session, restoring } = useSession();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   async function submit(e: FormEvent<HTMLFormElement>) {
@@ -64,6 +68,7 @@ export function LoginForm() {
       <div className="login-brand-lockup"><Image className="login-logo-img" src="/logo-nexus-oficial.svg" width={667} height={492} alt="Nexus, Nexo Digital" priority /><div className="brand-pagination" aria-hidden="true"><i /><i /><i /></div></div>
     </section>
     <section className="login-form-pane"><div className="login-card">
+      {restoring ? <span className="auth-back" aria-disabled="true">Regresar</span> : <AuthBack href={session ? "/dashboard" : "/"} />}
       <h1>Bienvenido</h1><p className="login-lead">Conéctate con tu espacio de trabajo digital y lleva tu productividad al siguiente nivel.</p>
       <form onSubmit={submit} noValidate>
         <div className="field login-field"><label htmlFor="login-email">Correo electrónico</label><input id="login-email" name="email" type="email" autoComplete="email" placeholder="Ejemplo@correo.com" required /></div>

@@ -1,0 +1,1 @@
+{"id":"6e4fc2a1-b5fa-4093-96ac-5b9869e585a6","name":"Verificacion auditoria","location":"cloud","providerType":"s3","endpoint":"http://10.53.103.144:9","bucket":"verificacion","region":"us-east-1","connectionStatus":"Sin comprobar","isEnabled":true,"isDefault":false,"createdAt":"2026-11-06T15:39:09.355Z"}

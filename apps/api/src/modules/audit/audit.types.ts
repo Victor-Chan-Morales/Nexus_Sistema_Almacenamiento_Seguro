@@ -16,6 +16,16 @@ export enum AuditAction {
   FILE_DELETE = 'FILE_DELETE',
   FILE_RESTORE = 'FILE_RESTORE',
   FILE_PURGE = 'FILE_PURGE',
+  FILE_VERSION_RESTORED = 'FILE_VERSION_RESTORED',
+  SHARE_LINK_CREATED = 'SHARE_LINK_CREATED',
+  SHARE_LINK_REVOKED = 'SHARE_LINK_REVOKED',
+  DESTINATION_CREATED = 'DESTINATION_CREATED',
+  DESTINATION_UPDATED = 'DESTINATION_UPDATED',
+  DESTINATION_TESTED = 'DESTINATION_TESTED',
+  TEAM_CREATED = 'TEAM_CREATED',
+  TEAM_MEMBER_ADDED = 'TEAM_MEMBER_ADDED',
+  TEAM_MEMBER_LEVEL_CHANGED = 'TEAM_MEMBER_LEVEL_CHANGED',
+  TEAM_MEMBER_REMOVED = 'TEAM_MEMBER_REMOVED',
   FOLDER_CREATE = 'FOLDER_CREATE',
   FOLDER_DELETE = 'FOLDER_DELETE',
   FOLDER_RESTORE = 'FOLDER_RESTORE',
@@ -31,6 +41,9 @@ export enum AuditResource {
   FILE = 'file',
   FOLDER = 'folder',
   SUBSCRIPTION = 'subscription',
+  SHARE_LINK = 'share_link',
+  DESTINATION = 'destination',
+  TEAM = 'team',
 }
 
 /**
@@ -43,11 +56,13 @@ export interface AuditEventInput {
   actorId?: string;
   /** Por defecto `USER`. */
   actorType?: AuditActorType;
-  /** Por defecto `SUCCESS`. */
-  result?: AuditResult;
   action: AuditAction;
   resourceType?: AuditResource;
   resourceId?: string;
   /** Si falta, se genera un UUID por llamada. Las operaciones con varios eventos deben pasar el mismo valor. */
   correlationId?: string;
+  /** Si falta, `success`. SPEC-802: una prueba de conexión fallida registra `failure`. */
+  result?: AuditResult;
+  /** Causa segura de un fallo: una categoría cerrada, nunca el mensaje crudo de un proveedor. */
+  safeReason?: string | null;
 }

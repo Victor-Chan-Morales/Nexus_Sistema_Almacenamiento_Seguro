@@ -29,7 +29,6 @@ import { Upload } from './entities/upload.entity';
 import { EncryptedFile, FilesCryptoService } from './files-crypto.service';
 import { DriveAccessService, DriveActor } from './drive-access.service';
 import { PurgeFileResponseDto, RestoreFileResponseDto, RestoreFolderResponseDto, TrashItemDto, TrashResponseDto } from './dto/trash.dto';
-import { FileVersionsResponseDto } from './dto/versions.dto';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction, AuditResource } from '../audit/audit.types';
 
@@ -80,7 +79,49 @@ function uniqueStoredObjects(refs: StoredObjectRef[]): StoredObjectRef[] {
 interface UploadReservation {
   uploadId: string;
   reservationId: string;
-  existingResponse?: UploadedFileDto;
+  existingResponse?: UploadResult;
+}
+
+/**
+ * SPEC-210: la carga escribe una versión nueva en un archivo concreto (bloqueado por id), no en el que
+ * coincide por nombre. `sourceChecksum` es el SHA-256 del contenido restaurado: si la vigente ya lo tiene, no se crea nada.
+ */
+export interface RestoreTarget {
+  fileId: string;
+  sourceVersionId: string;
+  sourceChecksum: string;
+}
+
+export interface UploadParams {
+  organizationId: string;
+  ownerId: string;
+  folderId: string;
+  file: any;
+  idempotencyKey?: string;
+  /** Permite a la operación llamante (p. ej. restaurar versión) correlacionar sus propios eventos de auditoría. */
+  correlationId?: string;
+  /** SPEC-210: si se indica, la carga añade una versión a ese archivo en lugar de buscarlo por nombre. */
+  restore?: RestoreTarget;
+}
+
+/** Resultado de una carga: incluye el número de versión, que la restauración necesita sin releer. */
+export interface UploadResult extends UploadedFileDto {
+  versionNumber: number;
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** SPEC-210: 422 VERSION_ALREADY_CURRENT. Lo usan la restauración y la carga cuando la vigente ya tiene ese contenido. */
+export function versionAlreadyCurrentError(): HttpException {
+  return new HttpException(
+    {
+      statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+      error: 'Unprocessable Entity',
+      code: 'VERSION_ALREADY_CURRENT',
+      message: 'La versión indicada ya es la vigente',
+    },
+    HttpStatus.UNPROCESSABLE_ENTITY,
+  );
 }
 
 export interface UploadedFileDto {
@@ -292,7 +333,11 @@ export class FilesService {
     return { id: drive.id, name: drive.name, rootFolderId: rootFolder.id };
   }
 
-  private async ensureTenantResources(
+  /**
+   * SPEC-220: Equipos la usa para obtener el destino predeterminado y la referencia de cifrado al crear
+   * la raíz de un Drive de equipo, dentro de la misma transacción. No cambia su comportamiento.
+   */
+  async ensureTenantResources(
     manager: EntityManager,
     organizationId: string,
   ): Promise<{ destination: Destination; key: TenantEncryptionKey }> {
@@ -630,15 +675,26 @@ export class FilesService {
     );
   }
 
-  async uploadMultipartFile(params: {
-    organizationId: string;
-    ownerId: string;
-    folderId: string;
-    file: any;
-    idempotencyKey?: string;
-  }): Promise<UploadedFileDto> {
+  async uploadMultipartFile(params: UploadParams): Promise<UploadedFileDto> {
+    const result = await this.uploadMultipartFileWithVersion(params);
+    return {
+      id: result.id,
+      name: result.name,
+      mimeType: result.mimeType,
+      sizeBytes: result.sizeBytes,
+      versionId: result.versionId,
+      uploadedAt: result.uploadedAt,
+    };
+  }
+
+  /**
+   * Carga con el número de versión. Restaurar (SPEC-210) la usa con `restore`: la versión nueva va al archivo
+   * indicado, bloqueado por id dentro de la transacción; si ya no está activo responde 404 sin crear nada.
+   */
+  async uploadMultipartFileWithVersion(params: UploadParams): Promise<UploadResult> {
     const { organizationId, ownerId, folderId, file } = params;
     if (!folderId) throw new BadRequestException('El parámetro folderId es obligatorio');
+    if (!UUID_PATTERN.test(folderId)) throw new BadRequestException('El parámetro folderId debe ser un UUID');
     if (!file?.buffer || !Buffer.isBuffer(file.buffer)) {
       throw new UnsupportedMediaTypeException('El archivo multipart no contiene datos válidos');
     }
@@ -692,20 +748,37 @@ export class FilesService {
           const uploadRepo = manager.getRepository(Upload);
           const reservationRepo = manager.getRepository(Reservation);
 
-          let fileRecord = await fileRepo.findOne({
-            where: { organizationId, folderId: folder.id, name: originalName, isDeleted: false },
-          });
-          if (!fileRecord) {
-            fileRecord = await fileRepo.save(fileRepo.create({
-              organizationId,
-              folderId: folder.id,
-              name: originalName,
-              mimeType,
-              currentVersionId: null,
-              isDeleted: false,
-              deletedAt: null,
-              createdBy: ownerId,
-            }));
+          let fileRecord: FileRecord | null;
+          if (params.restore) {
+            const target = params.restore;
+            fileRecord = await fileRepo.findOne({
+              where: { id: target.fileId, organizationId, folderId: folder.id, isDeleted: false },
+              lock: { mode: 'pessimistic_write' },
+            });
+            if (!fileRecord) throw new NotFoundException('Archivo ' + target.fileId + ' no encontrado');
+            // Con el archivo bloqueado, dos restauraciones del mismo contenido no pueden crear dos versiones.
+            const current = fileRecord.currentVersionId
+              ? await versionRepo.findOne({ where: { id: fileRecord.currentVersionId, fileId: fileRecord.id } })
+              : null;
+            if (fileRecord.currentVersionId === target.sourceVersionId || current?.checksum === target.sourceChecksum) {
+              throw versionAlreadyCurrentError();
+            }
+          } else {
+            fileRecord = await fileRepo.findOne({
+              where: { organizationId, folderId: folder.id, name: originalName, isDeleted: false },
+            });
+            if (!fileRecord) {
+              fileRecord = await fileRepo.save(fileRepo.create({
+                organizationId,
+                folderId: folder.id,
+                name: originalName,
+                mimeType,
+                currentVersionId: null,
+                isDeleted: false,
+                deletedAt: null,
+                createdBy: ownerId,
+              }));
+            }
           }
 
           const latest = await versionRepo.findOne({
@@ -778,6 +851,7 @@ export class FilesService {
             mimeType: fileRecord.mimeType ?? mimeType,
             sizeBytes: Number(fileSize),
             versionId: savedVersion.id,
+            versionNumber,
             uploadedAt: savedVersion.uploadedAt,
           };
         });
@@ -789,6 +863,7 @@ export class FilesService {
           action: AuditAction.FILE_UPLOAD,
           resourceType: AuditResource.FILE,
           resourceId: uploaded.id,
+          correlationId: params.correlationId,
         }).catch(() => {});
 
         return uploaded;
@@ -849,6 +924,7 @@ export class FilesService {
                 mimeType: savedFile.mimeType ?? 'application/octet-stream',
                 sizeBytes: Number(version.sizeBytes),
                 versionId: version.id,
+                versionNumber: version.versionNumber,
                 uploadedAt: version.uploadedAt,
               },
             };
@@ -1033,44 +1109,6 @@ export class FilesService {
     const current = this.activeUploadsByUser.get(userId) ?? 1;
     if (current <= 1) this.activeUploadsByUser.delete(userId);
     else this.activeUploadsByUser.set(userId, current - 1);
-  }
-
-  /**
-   * SPEC-206: historial de versiones de un archivo propio y activo, de la más reciente a la más antigua.
-   * Solo lectura: sin auditoría ni transacción. El select excluye object_key, DEK, KEK y checksum.
-   */
-  async listVersions(
-    fileId: string,
-    organizationId: string,
-    userId: string,
-  ): Promise<FileVersionsResponseDto> {
-    const located = await this.driveAccess.locateFile({ organizationId, userId }, fileId);
-    if (!located || located.file.isDeleted || located.folder.isDeleted) {
-      throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
-    }
-    const file = located.file;
-    if (!file.currentVersionId) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
-
-    const versions = await this.versionRepository.find({
-      where: { fileId: file.id },
-      order: { versionNumber: 'DESC' },
-      select: { id: true, versionNumber: true, sizeBytes: true, uploadedAt: true },
-    });
-    const current = versions.find((version) => version.id === file.currentVersionId);
-    if (!current) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
-
-    return {
-      fileId: file.id,
-      fileName: file.name,
-      currentVersion: current.versionNumber,
-      versions: versions.map((version) => ({
-        versionId: version.id,
-        versionNumber: version.versionNumber,
-        sizeBytes: Number(version.sizeBytes),
-        uploadedAt: version.uploadedAt.toISOString(),
-        isCurrent: version.id === file.currentVersionId,
-      })),
-    };
   }
 
   async downloadFileStream(

@@ -1,5 +1,5 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
-import { AuditActorType, AuditResult } from './audit-event.entity';
+import { AuditActorType } from './audit-event.entity';
 
 export enum AuditOutboxStatus {
   PENDING = 'pending',
@@ -25,9 +25,6 @@ export class AuditOutbox {
 
   @Column({ name: 'actor_type', type: 'enum', enum: AuditActorType, enumName: 'actor_type', default: AuditActorType.USER })
   actorType!: AuditActorType;
-
-  @Column({ type: 'enum', enum: AuditResult, enumName: 'event_result', default: AuditResult.SUCCESS })
-  result!: AuditResult;
 
   @Column({ name: 'action_type', type: 'varchar', length: 50 })
   actionType!: string;
@@ -61,6 +58,14 @@ export class AuditOutbox {
   /** Solo el código del error, nunca el mensaje del motor ni datos del evento. */
   @Column({ name: 'last_error', type: 'varchar', length: 100, nullable: true })
   lastError!: string | null;
+
+  /** Resultado con el que se intentó registrar el evento (SPEC-802: `failure` si la prueba de conexión falló). */
+  @Column({ type: 'enum', enum: ['success', 'failure'], enumName: 'event_result', default: 'success' })
+  result!: 'success' | 'failure';
+
+  /** Causa segura de un fallo: categoría cerrada, nunca un mensaje crudo. */
+  @Column({ name: 'safe_reason', type: 'varchar', length: 255, nullable: true })
+  safeReason!: string | null;
 
   @Column({ name: 'created_at', type: 'timestamptz', default: () => 'now()' })
   createdAt!: Date;

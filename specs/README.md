@@ -99,10 +99,10 @@ Todas siguen el flujo normal de aprobación y fusión.
 | `SPEC-204` | Purga definitiva | N2 | RF-009, RF-013 | — | — | ✅ Hecho |
 | `SPEC-205` | Frontend: papelera | N1 | RF-009 | — | — | ✅ Hecho |
 | `SPEC-206` | [Listar versiones](206-historial-versiones.md) | N1 | RF-008 | P1 | 221 | ✅ Hecho |
-| `SPEC-207` | [Modal de versiones](207-frontend-historial-versiones.md) | N1 | RF-008 | P1 | 206 | Aprobada |
+| `SPEC-207` | [Modal de versiones](207-frontend-historial-versiones.md) | N1 | RF-008 | P1 | 206 | ✅ Hecho |
 | `SPEC-208` | [Descargar carpeta en ZIP](208-descargar-carpeta-zip.md) | N2 | Usabilidad | P3 | 221 | Aprobada |
-| `SPEC-209` | [Crear, listar y revocar enlaces](209-enlaces-compartidos.md) | N2 | RF-010, RF-011 | P1 | 206 | Aprobada |
-| `SPEC-210` | [Descargar y restaurar una versión](210-descargar-restaurar-version.md) | N2 | RF-008 | P1 | 206, 207 | Aprobada |
+| `SPEC-209` | [Crear, listar y revocar enlaces](209-enlaces-compartidos.md) | N2 | RF-010, RF-011 | P1 | 206 | ✅ Hecho |
+| `SPEC-210` | [Descargar y restaurar una versión](210-descargar-restaurar-version.md) | N2 | RF-008 | P1 | 206, 207 | ✅ Hecho |
 | `SPEC-211` | [Renombrar y mover: backend](211-renombrar-mover.md) | N2 | RF-007 | P2 | 221, 224 | Aprobada |
 | `SPEC-212` | [Renombrar y mover: pantalla](212-frontend-renombrar-mover.md) | N1 | RF-007 | P2 | 211 | Aprobada |
 | `SPEC-213` | [Búsqueda global por nombre](213-busqueda-global.md) | N1 | RF-007 | P2 | 221 | Aprobada |
@@ -111,7 +111,7 @@ Todas siguen el flujo normal de aprobación y fusión.
 | `SPEC-216` | [Acceso público al enlace](216-acceso-publico-enlace.md) | N2 | RF-010, RF-011, RF-012 | P1 | 209, 210, 407 | Aprobada |
 | `SPEC-217` | [Pantallas de compartir](217-frontend-compartir.md) | N1 | RF-010, RF-011 | P1 | 209, 216 | Aprobada |
 | `SPEC-218` | [Nombres de carpeta únicos](218-nombres-carpeta-unicos.md) | N2 | RF-007 | P1 | 221 | Aprobada |
-| `SPEC-220` | [Equipos y sus miembros](220-equipos-miembros.md) | N2 | RF-006, RF-003 | P1 | 221 | Aprobada |
+| `SPEC-220` | [Equipos y sus miembros](220-equipos-miembros.md) | N2 | RF-006, RF-003 | P1 | 221 | ✅ Hecho |
 | `SPEC-221` | [Centralizar el acceso a Drives](221-acceso-drive.md) | N2 | RF-006, RF-007, RF-003 | P1 | 006 | ✅ Hecho |
 | `SPEC-222` | [Drive de equipo: lectura](222-drive-equipo-lectura.md) | N2 | RF-006 | P1 | 220, 209, 210 | Aprobada |
 | `SPEC-223` | [Pantallas de equipos](223-frontend-equipos.md) | N1 | RF-006 | P1 | 224 | Aprobada |
@@ -167,7 +167,7 @@ Todas siguen el flujo normal de aprobación y fusión.
 | ID | Especificación | Nivel | Requisitos | Prioridad | Dependencias | Estado |
 |---|---|:---:|---|:---:|---|:---:|
 | `SPEC-801` | [Almacenamiento intercambiable (Strategy)](801-almacenamiento-strategy.md) | N2 | §12.1.1, RF-014 | P1 | 006, 221 | ✅ Hecho |
-| `SPEC-802` | [Administrar destinos](802-administrar-destinos.md) | N2 | RF-014, RF-015 | P1 | 801 | Aprobada |
+| `SPEC-802` | [Administrar destinos](802-administrar-destinos.md) | N2 | RF-014, RF-015 | P1 | 801 | ✅ Hecho |
 | `SPEC-803` | [Elegir Nube, Local o Híbrido](803-elegir-modelo-despliegue.md) | N2 | RF-014, RF-015 | P1 | 802 | Aprobada |
 | `SPEC-804` | [Pantalla de almacenamiento](804-frontend-almacenamiento.md) | N2 | RF-014 | P1 | 803 | Aprobada |
 | `SPEC-805` | [Instalación on-premises en un comando](805-instalacion-on-premises.md) | N2 | RF-015, RNF-010 | P1 | 801 | Aprobada |

@@ -12,14 +12,15 @@ export interface ResolvedAuditEvent {
   actorId?: string;
   /** Si falta, `USER`. */
   actorType?: AuditActorType;
-  /** Si falta, `SUCCESS`. */
-  result?: AuditResult;
   action: AuditAction;
   resourceType?: AuditResource;
   resourceId?: string;
   correlationId: string;
   /** Si falta, se fija dentro del bloqueo. El outbox lo recibe con el momento de captura. */
   occurredAt?: Date;
+  /** Si falta, `success`. El outbox conserva el valor con el que el evento se intentó registrar. */
+  result?: AuditResult;
+  safeReason?: string | null;
 }
 
 /**
@@ -54,8 +55,8 @@ export class AuditChainWriter {
       actionType: event.action,
       resourceType: event.resourceType ?? null,
       resourceId: event.resourceId ?? null,
-      // Ningún evento de este corte registra motivo; la columna entra en el hash para que no sea manipulable.
-      safeReason: null,
+      // La columna entra en el hash para que no sea manipulable.
+      safeReason: event.safeReason ?? null,
       result: event.result ?? AuditResult.SUCCESS,
       correlationId: event.correlationId,
       occurredAt: event.occurredAt ?? new Date(),

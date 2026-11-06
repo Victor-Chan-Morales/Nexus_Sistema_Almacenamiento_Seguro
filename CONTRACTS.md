@@ -147,6 +147,7 @@ getUsedStorageBytes(organizationId: string): Promise<bigint>
 |---|---|
 | `POST` y `GET /organizations/members` | `tenant_admin` |
 | `GET /audit/events` | `tenant_admin` |
+| `POST /teams`, `GET` y `POST /teams/:id/members`, `PATCH` y `DELETE /teams/:id/members/:userId` **[v0.6, SPEC-220]** | `tenant_admin` |
 | `POST /subscriptions/activate`, `POST /subscriptions/renew`, `GET /billing/operations` | `tenant_admin` |
 | Resto de rutas autenticadas | cualquier miembro |
 
@@ -221,7 +222,7 @@ Todas estas rutas se acotan al **Drive personal del solicitante** y tratan un re
 }
 ```
 
-- Acciones del corte: `AUTH_LOGIN`, `AUTH_PASSWORD_RESET`, `MEMBER_ADDED`, `FILE_UPLOAD`, `FILE_DOWNLOAD`, `FILE_DELETE`, `FILE_RESTORE`, `FILE_PURGE`, `FOLDER_CREATE`, `FOLDER_DELETE`, `FOLDER_RESTORE`, `FOLDER_PURGE`, `PLAN_ACTIVATED`, `PLAN_RENEWED`. Tipos de recurso: `user`, `membership`, `file`, `folder`, `subscription`.
+- Acciones del corte: `AUTH_LOGIN`, `AUTH_PASSWORD_RESET`, `MEMBER_ADDED`, `FILE_UPLOAD`, `FILE_DOWNLOAD`, `FILE_DELETE`, `FILE_RESTORE`, `FILE_PURGE`, `FILE_VERSION_RESTORED` **[v0.6, SPEC-210]**, `SHARE_LINK_CREATED` **[v0.6, SPEC-209]**, `SHARE_LINK_REVOKED` **[v0.6, SPEC-209]**, `DESTINATION_CREATED` **[v0.6, SPEC-802]**, `DESTINATION_UPDATED` **[v0.6, SPEC-802]**, `DESTINATION_TESTED` **[v0.6, SPEC-802]** (con `result: failure` y `safe_reason` = `AUTH`, `NETWORK`, `BUCKET_NOT_FOUND` o `DATA_MISMATCH` cuando la conexión falla; `success` cuando conecta), `TEAM_CREATED`, `TEAM_MEMBER_ADDED`, `TEAM_MEMBER_LEVEL_CHANGED`, `TEAM_MEMBER_REMOVED` **[v0.6, SPEC-220]**, `FOLDER_CREATE`, `FOLDER_DELETE`, `FOLDER_RESTORE`, `FOLDER_PURGE`, `PLAN_ACTIVATED`, `PLAN_RENEWED`. Tipos de recurso: `user`, `membership`, `file`, `folder`, `subscription`, `share_link` **[v0.6, SPEC-209]**, `destination` **[v0.6, SPEC-802]**, `team` **[v0.6, SPEC-220]**.
 - El evento no incluye nombres de archivo ni datos personales. El frontend resuelve `actorId` a nombre con `GET /organizations/members` (misma audiencia: solo administradores).
 - Cada evento guarda `record_hash` y `prev_hash` desde el primer registro. **[v0.6]** La verificación de cadena llega con SPEC-404; los checkpoints firmados no se implementan (ADR-008 §10).
 - El registro de auditoría es de mejor esfuerzo y posterior al commit de la operación: si falla, la operación principal no se ve afectada.
@@ -239,8 +240,8 @@ Catálogo común. El filtro emite `VALIDATION_ERROR` para cualquier `400` de val
 | 403 | `FORBIDDEN_ROLE` | Rol insuficiente. |
 | 403 | `EMAIL_NOT_VERIFIED` | Login sin correo verificado (v0.4). |
 | 404 | `NOT_FOUND` | Recurso inexistente o ajeno. |
-| 409 | `FILE_NAME_CONFLICT`, `FOLDER_NAME_CONFLICT`, `PARENT_FOLDER_UNAVAILABLE`, `CONCURRENT_SUBSCRIPTION_CONFLICT` | Conflicto de estado. |
-| 422 | `STORAGE_QUOTA_EXCEEDED`, `MEMBER_ALREADY_EXISTS`, `EMAIL_BELONGS_TO_OTHER_ORGANIZATION`, `USER_LIMIT_EXCEEDED`, `CANNOT_PURGE_ACTIVE_FILE`, `NO_ACTIVE_SUBSCRIPTION`, `PLAN_NOT_RENEWABLE` | Regla de negocio. |
+| 409 | `FILE_NAME_CONFLICT`, `FOLDER_NAME_CONFLICT`, `PARENT_FOLDER_UNAVAILABLE`, `CONCURRENT_SUBSCRIPTION_CONFLICT`, `TEAM_NAME_CONFLICT` **[v0.6, SPEC-220]**, `TEAM_MEMBER_EXISTS` **[v0.6, SPEC-220]** | Conflicto de estado. |
+| 422 | `STORAGE_QUOTA_EXCEEDED`, `VERSION_ALREADY_CURRENT` **[v0.6, SPEC-210]**, `USER_NOT_IN_ORGANIZATION` **[v0.6, SPEC-220]**, `MEMBER_ALREADY_EXISTS`, `EMAIL_BELONGS_TO_OTHER_ORGANIZATION`, `USER_LIMIT_EXCEEDED`, `CANNOT_PURGE_ACTIVE_FILE`, `NO_ACTIVE_SUBSCRIPTION`, `PLAN_NOT_RENEWABLE` | Regla de negocio. |
 
 ## Cambios de forma en Files ya implementados [v0.5]
 
@@ -251,7 +252,28 @@ Documentan lo que el código ya devuelve (arreglo de tamaño de carpetas, SPEC-0
 
 ## Alcance final [v0.6]
 
-Cada spec agrega aquí sus rutas, campos y códigos de error antes de programar. Por ahora no hay rutas nuevas.
+Cada spec agrega aquí sus rutas, campos y códigos de error antes de programar.
+
+- **[v0.6, SPEC-210]** `GET /files/:id/versions/:versionId/download` → bytes exactos de esa versión, `Content-Type` del archivo y `Content-Disposition: attachment` con nombre seguro. Solo archivos propios, activos y con carpeta activa. Otro archivo, versión ajena, archivo en papelera o inexistente → `404`. `id` o `versionId` que no son UUID → `400`. Emite `FILE_DOWNLOAD`.
+- **[v0.6, SPEC-210]** `POST /files/:id/versions/:versionId/restore` (sin cuerpo) → `200 { "fileId", "versionId", "versionNumber", "sizeBytes", "uploadedAt" }`. Crea una versión nueva con el contenido de la indicada, que pasa a ser la vigente; las anteriores se conservan. Reutiliza la carga multiparte (cuota, cifrado y compensación). Errores: `404` como arriba, también si el archivo entra en papelera mientras se restaura (no crea nada); `400` si `id` o `versionId` no son UUID; `422 VERSION_ALREADY_CURRENT` si la versión indicada ya es la vigente o su contenido es igual al de la vigente (comparación por SHA-256); `422 STORAGE_QUOTA_EXCEEDED` si no cabe en la cuota (no crea nada). Emite `FILE_UPLOAD` y `FILE_VERSION_RESTORED`, ambos con el mismo `correlationId`.
+- **[v0.6, SPEC-209]** `POST /files/:id/share-links` con `{ "expiresInDays": 1 | 7 | 30, "password"?: string }` (contraseña de 8 a 128 caracteres, sin exigir letras ni números) → `201 { "id", "token", "versionId", "expiresAt", "hasPassword", "createdAt" }`. El enlace apunta a la versión vigente en el momento de crearlo y no cambia después. `token` aparece solo en esta respuesta: la base guarda su hash SHA-256 y la contraseña en Argon2id. `expiresInDays` distinto de 1, 7 o 30, o campos no declarados → `400 VALIDATION_ERROR`. `id` que no es UUID → `400`. Archivo ajeno, de otra organización, inexistente, en papelera o con acceso de solo lectura → `404`. Emite `SHARE_LINK_CREATED`.
+- **[v0.6, SPEC-209]** `GET /files/:id/share-links` → `{ "items": [{ "id", "versionId", "expiresAt", "hasPassword", "status", "createdAt", "revokedAt" }] }`, del más reciente al más antiguo. `status` es `active`, `expired` (vencido) o `revoked` (revocado; prevalece sobre vencido). No incluye el token ni su hash. Mismos errores que la creación.
+- **[v0.6, SPEC-209]** `DELETE /share-links/:id` → `204`. Revoca el enlace de forma definitiva; repetirlo también responde `204` sin cambiar `revokedAt` ni volver a auditar. Enlace ajeno, de otra organización o inexistente → `404`; `id` que no es UUID → `400`. Funciona aunque el archivo esté en papelera. Emite `SHARE_LINK_REVOKED`.
+- **[v0.6, SPEC-802]** Todas las rutas de destinos son solo para `tenant_admin`; un colaborador recibe `403 FORBIDDEN_ROLE`. Un destino de otra organización o inexistente → `404`; `id` que no es UUID → `400`.
+- **[v0.6, SPEC-802]** `POST /destinations` con `{ name, location: "cloud" | "on_premises", providerType: "s3" | "minio", endpoint, bucket, region, accessKey, secretKey, useSsl }` → `201 DestinationDto` con `connectionStatus: "Sin comprobar"`. Las credenciales se guardan cifradas en `connection_details_encrypted` y ninguna respuesta, log ni evento las incluye. Emite `DESTINATION_CREATED`.
+- **[v0.6, SPEC-802]** `DestinationDto` = `{ id, name, location, providerType, endpoint, bucket, region, connectionStatus, isEnabled, isDefault, createdAt }`. `connectionStatus` es `Sin comprobar`, `Comprobando`, `Conectado` o `Sin conexión`. En destinos de entorno (configurados con `S3_*` en el servidor) `endpoint` y `region` son `null`: esa configuración no se expone al tenant. Sus datos de conexión no se pueden reemplazar desde la API; `PATCH` con `endpoint`, `bucket`, `region`, `accessKey`, `secretKey` o `useSsl` responde `400 VALIDATION_ERROR`, y sí admite `name`, `location` e `isEnabled`.
+- **[v0.6, SPEC-802]** `GET /destinations` → `{ "items": DestinationDto[] }`.
+- **[v0.6, SPEC-802]** `PATCH /destinations/:id` con cualquiera de los campos de creación, `isEnabled` o ambos → `200 DestinationDto`. Devuelve `connectionStatus` a `Sin comprobar`. Una `secretKey` omitida conserva la actual. Emite `DESTINATION_UPDATED`.
+- **[v0.6, SPEC-802]** `PATCH /destinations/:id` con `{ "isEnabled": false }` impide escribir en el destino, pero sus archivos siguen leyéndose. Deshabilitar el destino predeterminado o uno asignado a carpetas activas → `422 DESTINATION_IN_USE`.
+- **[v0.6, SPEC-802]** `POST /destinations/:id/test` → `200 { "status", "checkedAt", "reason" }`. Escribe, lee, compara y borra `.nexus-connection-test/<uuid>` con un límite de 10 s. `status` pasa a `Conectado` o a `Sin conexión`; `reason` es `AUTH`, `NETWORK`, `BUCKET_NOT_FOUND` o `DATA_MISMATCH` (`null` si conecta), nunca el mensaje crudo del SDK. Un destino deshabilitado responde `409`. Si el endpoint ya no es válido al probar (p. ej. su DNS apunta a loopback), responde `422 DESTINATION_ENDPOINT_NOT_ALLOWED` sin conectarse y sin cambiar el estado. Emite `DESTINATION_TESTED`.
+- **[v0.6, SPEC-802]** Un `endpoint` de loopback, link-local o metadatos de nube (`169.254.169.254`) → `422 DESTINATION_ENDPOINT_NOT_ALLOWED`, sin conectarse. Un rango privado solo se admite con `DESTINATION_ALLOW_PRIVATE=true`. Un host que no resuelve por DNS también responde `422 DESTINATION_ENDPOINT_NOT_ALLOWED`. La validación se repite antes de cada prueba (SPEC-802 T3).
+- **[v0.6, SPEC-220]** `POST /teams` con `{ "name" }` (se recorta; 1 a 150 caracteres) → `201 { "id", "name", "driveId", "createdAt" }`. En una sola transacción crea el equipo, su Drive de tipo `team` y la carpeta raíz `Archivos`. Nombre repetido en la organización sin distinguir mayúsculas → `409 TEAM_NAME_CONFLICT`. Solo `tenant_admin`. Emite `TEAM_CREATED`.
+- **[v0.6, SPEC-220]** `GET /teams` → `{ "items": [{ "id", "name", "driveId", "memberCount", "myLevel" }] }`, ordenado por nombre. `tenant_admin` ve todos los equipos de su organización; un colaborador solo aquellos a los que pertenece. `memberCount` cuenta solo miembros con membresía activa en la organización. `myLevel` es `write` para todo `tenant_admin`, sea o no miembro; para los demás, el nivel de su fila (`read` o `write`).
+- **[v0.6, SPEC-220]** `GET /teams/:id/members` → `{ "items": [{ "userId", "fullName", "email", "level", "joinedAt" }] }`. Solo miembros con membresía activa; los suspendidos o eliminados no aparecen. Solo `tenant_admin`. Equipo ajeno, de otra organización o inexistente → `404`.
+- **[v0.6, SPEC-220]** `POST /teams/:id/members` con `{ "userId", "level": "read" | "write" }` → `201` sin cuerpo. La persona debe tener membresía activa en la organización (`422 USER_NOT_IN_ORGANIZATION`) y no estar ya en el equipo (`409 TEAM_MEMBER_EXISTS`, sin cambiar su nivel). Emite `TEAM_MEMBER_ADDED`.
+- **[v0.6, SPEC-220]** `PATCH /teams/:id/members/:userId` con `{ "level" }` → `200` sin cuerpo. Si el nivel ya es el pedido, responde sin escribir ni auditar. Miembro que no pertenece al equipo → `404`. Emite `TEAM_MEMBER_LEVEL_CHANGED`.
+- **[v0.6, SPEC-220]** `DELETE /teams/:id/members/:userId` → `204`. Miembro que no pertenece al equipo → `404`. Emite `TEAM_MEMBER_REMOVED`.
+- **[v0.6, SPEC-220]** En todas las rutas de equipos: `id` o `userId` que no son UUID → `400`; campos no declarados (p. ej. `organizationId`) → `400`; un colaborador en una ruta de administración → `403 FORBIDDEN_ROLE`; equipo de otra organización o inexistente → `404`. Los eventos de auditoría de equipos llevan `resource_type = team` y el id del equipo, sin nombre de equipo ni datos personales. No hay ruta para eliminar equipos: queda fuera de este corte.
 
 ## Implementación y cambios futuros
 
