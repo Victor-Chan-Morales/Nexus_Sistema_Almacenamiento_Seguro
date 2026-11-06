@@ -105,6 +105,19 @@ function resolveJwtSecret(config: ConfigService): string {
     { provide: OpaqueTokens, useClass: CryptoOpaqueTokens },
     { provide: VerificationMailer, useClass: EmailService },
   ],
-  exports: [AuthService, JwtModule, PassportModule, JwtAuthGuard, RegistrationHooks, MemberAdmission],
+  exports: [
+    AuthService,
+    SessionService,
+    OrganizationRepository,
+    UserRepository,
+    PasswordHasher,
+    UnitOfWork,
+    IamSettings,
+    JwtModule,
+    PassportModule,
+    JwtAuthGuard,
+    RegistrationHooks,
+    MemberAdmission,
+  ],
 })
 export class IamModule {}

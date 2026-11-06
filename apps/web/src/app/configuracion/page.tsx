@@ -1,24 +1,46 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useState } from "react";
 import { AppShell } from "@/components/app-shell";
+import { Dialog } from "@/components/dialog";
+import { MemberRow } from "@/components/member-row";
 import { UiIcon } from "@/components/ui-icon";
 import { ApiError } from "@/lib/api/client";
-import { addMember, getMembers } from "@/lib/api/members";
-import type { MemberRole, OrganizationMembersResponse } from "@/lib/api/types";
-import { formatIsoDate } from "@/lib/format";
+import { addMember, getMembers, removeMember, updateMember } from "@/lib/api/members";
+import { closeOrganization } from "@/lib/api/organizations";
+import type { MemberRole, MemberStatus, OrganizationMember, OrganizationMembersResponse } from "@/lib/api/types";
 import { useSession } from "@/lib/session";
 import { useLoad } from "@/lib/use-load";
 
-const roleLabels: Record<MemberRole, string> = {
-  tenant_admin: "Administrador",
-  colaborador: "Colaborador",
-};
+function mapMemberError(err: unknown): string {
+  if (err instanceof ApiError) {
+    switch (err.code) {
+      case "LAST_ADMIN_REQUIRED":
+        return "No puedes quitar el rol de administrador al único administrador de la organización.";
+      case "CANNOT_MODIFY_SELF":
+        return "No puedes suspenderte ni eliminarte a ti mismo.";
+      case "USER_LIMIT_EXCEEDED":
+        return "La organización alcanzó el límite de usuarios de su plan.";
+      case "MEMBER_ALREADY_EXISTS":
+        return "Este correo ya es miembro de la organización.";
+      case "EMAIL_BELONGS_TO_OTHER_ORGANIZATION":
+        return "El correo electrónico ya pertenece a otra organización.";
+      case "VALIDATION_ERROR":
+        return err.message || "Los datos ingresados no son válidos.";
+      default:
+        return err.message || "Error al procesar la solicitud.";
+    }
+  }
+  return "Error de conexión. Intenta nuevamente.";
+}
 
 export default function SettingsPage() {
-  const { session, failSession } = useSession();
+  const router = useRouter();
+  const { session, signOut, failSession } = useSession();
   const isAdmin = session?.role === "tenant_admin";
   const accessToken = session?.accessToken;
+  const orgName = session?.organization?.name || "";
 
   // Carga reactiva de miembros mediante el hook useLoad del proyecto
   const fetchMembers = useCallback(
@@ -39,6 +61,17 @@ export default function SettingsPage() {
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
+
+  // Estado para SPEC-114: Cierre de empresa
+  const [showCloseModal, setShowCloseModal] = useState(false);
+  const [typedOrgName, setTypedOrgName] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [closeSubmitting, setCloseSubmitting] = useState(false);
+  const [closeError, setCloseError] = useState<string | null>(null);
+
+  const isCloseFormValid =
+    typedOrgName.trim().toLowerCase() === orgName.trim().toLowerCase() &&
+    adminPassword.length > 0;
 
   async function handleAddMember(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -69,30 +102,75 @@ export default function SettingsPage() {
       reload();
     } catch (err) {
       if (failSession(err)) return;
-      // Escenario 3: Mapeo de errores de negocio 422
-      if (err instanceof ApiError) {
-        switch (err.code) {
-          case "MEMBER_ALREADY_EXISTS":
-            setFormError("Este correo ya es miembro de la organización.");
-            break;
-          case "EMAIL_BELONGS_TO_OTHER_ORGANIZATION":
-            setFormError("El correo electrónico ya pertenece a otra organización.");
-            break;
-          case "USER_LIMIT_EXCEEDED":
-            setFormError("La organización alcanzó el límite de usuarios de su plan.");
-            break;
-          case "VALIDATION_ERROR":
-            setFormError(err.message || "Los datos ingresados no son válidos.");
-            break;
-          default:
-            setFormError(err.message || "Error al registrar el miembro.");
-            break;
-        }
-      } else {
-        setFormError("Error de conexión. Intenta nuevamente.");
-      }
+      setFormError(mapMemberError(err));
     } finally {
       setFormSubmitting(false);
+    }
+  }
+
+  async function handleUpdateRole(member: OrganizationMember, newRole: MemberRole) {
+    if (!accessToken) return;
+    try {
+      await updateMember(member.id, { role: newRole }, accessToken);
+      reload();
+    } catch (err) {
+      if (failSession(err)) return;
+      throw new Error(mapMemberError(err));
+    }
+  }
+
+  async function handleToggleStatus(member: OrganizationMember, newStatus: MemberStatus) {
+    if (!accessToken) return;
+    try {
+      await updateMember(member.id, { status: newStatus }, accessToken);
+      reload();
+    } catch (err) {
+      if (failSession(err)) return;
+      throw new Error(mapMemberError(err));
+    }
+  }
+
+  async function handleRemoveMember(member: OrganizationMember) {
+    if (!accessToken) return;
+    try {
+      await removeMember(member.id, accessToken);
+      reload();
+    } catch (err) {
+      if (failSession(err)) return;
+      throw new Error(mapMemberError(err));
+    }
+  }
+
+  async function handleCloseOrganization(e?: FormEvent) {
+    if (e) e.preventDefault();
+    if (!isCloseFormValid || closeSubmitting || !accessToken) return;
+
+    setCloseSubmitting(true);
+    setCloseError(null);
+
+    try {
+      await closeOrganization(
+        { organizationName: typedOrgName.trim(), password: adminPassword },
+        accessToken,
+      );
+      await signOut();
+      router.push("/login");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 401 || err.code === "INVALID_CREDENTIALS") {
+          setCloseError("Contraseña incorrecta.");
+          return;
+        }
+        if (err.status === 422 || err.code === "ORGANIZATION_NAME_MISMATCH") {
+          setCloseError("El nombre de la empresa no coincide.");
+          return;
+        }
+        setCloseError(err.message || "Error al procesar la solicitud de eliminación.");
+        return;
+      }
+      setCloseError("Error de conexión. Intenta nuevamente.");
+    } finally {
+      setCloseSubmitting(false);
     }
   }
 
@@ -110,7 +188,7 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Escenario 4: Restricción para colaborador */}
+        {/* Restricción para colaborador */}
         {!isAdmin ? (
           <section className="panel">
             <div className="auth-alert" role="status">
@@ -189,7 +267,7 @@ export default function SettingsPage() {
                 </button>
               </form>
 
-              {/* Escenario 6: Aviso permanente */}
+              {/* Aviso permanente */}
               <div className="notice settings-notice-invite">
                 <UiIcon name="shield" size={16} />
                 <span>
@@ -204,7 +282,6 @@ export default function SettingsPage() {
                 <div>
                   <h2 className="settings-section-title">Miembros del equipo</h2>
                   <span className="settings-counter">
-                    {/* Escenario 1: Contador N de {userLimit} usuarios */}
                     {userLimit !== null ? `${totalMembers} de ${userLimit} usuarios` : `${totalMembers} usuarios`}
                   </span>
                 </div>
@@ -219,7 +296,6 @@ export default function SettingsPage() {
                 </button>
               </div>
 
-              {/* Escenario 5: Manejo de estados mediante useLoad */}
               {state.status === "loading" ? (
                 <div className="settings-state-box" role="status" aria-live="polite">
                   Cargando miembros...
@@ -234,7 +310,6 @@ export default function SettingsPage() {
                   </button>
                 </div>
               ) : members.length === 0 ? (
-                /* Texto de estado vacío según la spec */
                 <div className="empty-state">
                   <span>
                     <UiIcon name="shield" size={24} />
@@ -251,35 +326,141 @@ export default function SettingsPage() {
                         <th>Correo</th>
                         <th>Rol</th>
                         <th>Fecha de ingreso</th>
+                        {isAdmin && <th>Acciones</th>}
                       </tr>
                     </thead>
                     <tbody>
                       {members.map((m) => (
-                        <tr key={m.id}>
-                          <td className="settings-cell-name">{m.fullName}</td>
-                          <td className="settings-cell-muted">{m.email}</td>
-                          <td>
-                            <span
-                              className={`settings-badge ${
-                                m.role === "tenant_admin"
-                                  ? "settings-badge-admin"
-                                  : "settings-badge-colab"
-                              }`}
-                            >
-                              {roleLabels[m.role] || m.role}
-                            </span>
-                          </td>
-                          <td className="settings-cell-muted">
-                            {formatIsoDate(m.joinedAt || m.createdAt)}
-                          </td>
-                        </tr>
+                        <MemberRow
+                          key={m.id}
+                          member={m}
+                          currentUserId={session?.user?.id}
+                          isAdmin={isAdmin}
+                          onUpdateRole={handleUpdateRole}
+                          onToggleStatus={handleToggleStatus}
+                          onRemove={handleRemoveMember}
+                        />
                       ))}
                     </tbody>
                   </table>
                 </div>
               )}
             </section>
+
+            {/* SPEC-114: Zona de riesgo para administradores */}
+            <section className="panel danger-zone">
+              <div className="danger-zone-header">
+                <div>
+                  <h2 className="danger-zone-title">
+                    <UiIcon name="shield" size={20} />
+                    Zona de riesgo
+                  </h2>
+                  <p className="danger-zone-desc">
+                    Eliminar la empresa cancelará inmediatamente la suscripción activa y revocará el acceso de todos los usuarios.
+                    Los archivos se conservan en la plataforma conforme a la política de retención de datos.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="button button-danger"
+                  onClick={() => {
+                    setShowCloseModal(true);
+                    setTypedOrgName("");
+                    setAdminPassword("");
+                    setCloseError(null);
+                  }}
+                >
+                  Eliminar empresa
+                </button>
+              </div>
+            </section>
           </div>
+        )}
+
+        {/* SPEC-114: Modal de doble confirmación para eliminar empresa */}
+        {showCloseModal && (
+          <Dialog
+            labelledBy="close-org-dialog-title"
+            disabled={closeSubmitting}
+            onClose={() => {
+              if (!closeSubmitting) setShowCloseModal(false);
+            }}
+          >
+            <div>
+              <h2 id="close-org-dialog-title" style={{ color: "var(--color-coral)", marginTop: 0 }}>
+                Eliminar empresa
+              </h2>
+              <div className="danger-modal-callout" role="alert">
+                <strong>¡Atención!</strong> Esta acción es irreversible. Se cancelará la suscripción activa
+                y se revocarán todas las sesiones de los colaboradores de forma inmediata. Los archivos se conservan
+                en la plataforma pero ningún usuario podrá volver a ingresar.
+              </div>
+
+              {closeError && (
+                <div className="auth-alert" role="alert" style={{ marginBottom: "1rem" }}>
+                  {closeError}
+                </div>
+              )}
+
+              <form onSubmit={handleCloseOrganization} className="settings-form">
+                <div className="field">
+                  <label htmlFor="confirm-org-name">
+                    Escribe el nombre de la empresa para confirmar: <strong>{orgName}</strong>
+                  </label>
+                  <input
+                    id="confirm-org-name"
+                    type="text"
+                    value={typedOrgName}
+                    onChange={(e) => setTypedOrgName(e.target.value)}
+                    placeholder={orgName}
+                    disabled={closeSubmitting}
+                    autoFocus
+                    required
+                  />
+                </div>
+
+                <div className="field">
+                  <label htmlFor="confirm-admin-password">
+                    Ingresa tu contraseña de administrador
+                  </label>
+                  <input
+                    id="confirm-admin-password"
+                    type="password"
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    placeholder="Tu contraseña"
+                    disabled={closeSubmitting}
+                    required
+                  />
+                </div>
+
+                <div
+                  style={{
+                    marginTop: "1.5rem",
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    gap: "10px",
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="button button-outline"
+                    onClick={() => setShowCloseModal(false)}
+                    disabled={closeSubmitting}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="button button-danger"
+                    disabled={!isCloseFormValid || closeSubmitting}
+                  >
+                    {closeSubmitting ? "Eliminando..." : "Eliminar definitivamente"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </Dialog>
         )}
       </>
     </AppShell>

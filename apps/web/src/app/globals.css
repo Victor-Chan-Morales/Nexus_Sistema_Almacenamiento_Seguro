@@ -1175,3 +1175,109 @@ h1, h2, h3 { font-family: "Inter", Arial, sans-serif; }
 .file-versions-action { min-height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--brand); cursor: pointer; font: inherit; font-size: 10.5px; font-weight: 700; }
 .file-versions-action:disabled { opacity: .55; cursor: default; }
 @media (max-width: 700px) { .file-versions-actions { width: 100%; } .file-versions-action { flex: 1 1 0; } } 
+
+
+.settings-badge-suspended {
+  background: #fff0f1;
+  color: var(--color-coral);
+  border: 1px solid color-mix(in srgb, var(--color-coral) 25%, transparent);
+}
+
+.settings-actions-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.settings-action-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--foreground);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.settings-action-btn:hover:not(:disabled) {
+  background: var(--surface-hover, #f8f9fa);
+  border-color: var(--muted);
+}
+
+.settings-action-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.settings-action-danger {
+  color: var(--color-coral);
+  border-color: color-mix(in srgb, var(--color-coral) 30%, transparent);
+}
+
+.settings-action-danger:hover:not(:disabled) {
+  background: #fff0f1;
+  border-color: var(--color-coral);
+}
+
+/* SPEC-114: Zona de riesgo / Cierre de empresa */
+.danger-zone {
+  border: 1px solid color-mix(in srgb, var(--color-coral) 40%, transparent);
+  background: color-mix(in srgb, var(--color-coral) 3%, white);
+  margin-top: 28px;
+}
+
+.danger-zone-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.danger-zone-title {
+  color: var(--color-coral);
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin: 0 0 6px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.danger-zone-desc {
+  color: #64748b;
+  font-size: 0.875rem;
+  margin: 0;
+  max-width: 620px;
+  line-height: 1.5;
+}
+
+.button-danger {
+  background: var(--color-coral);
+  border-color: var(--color-coral);
+  color: white;
+}
+
+.button-danger:hover:not(:disabled) {
+  background: #e04358;
+  border-color: #e04358;
+}
+
+.button-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.danger-modal-callout {
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  background: #fff0f1;
+  border: 1px solid color-mix(in srgb, var(--color-coral) 30%, transparent);
+  color: #9b1c2e;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}

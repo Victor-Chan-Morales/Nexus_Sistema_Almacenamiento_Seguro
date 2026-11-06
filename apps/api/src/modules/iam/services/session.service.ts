@@ -90,4 +90,8 @@ export class SessionService {
     if (!rawToken) return;
     await this.sessions.revokeByRefreshHash(this.opaque.hash(rawToken));
   }
+
+  async revokeAllOfOrganization(tx: TransactionContext, organizationId: string): Promise<void> {
+    await this.sessions.revokeAllOfOrganization(tx, organizationId);
+  }
 }
