@@ -54,6 +54,8 @@ export type LoginResponse = {
   user: UserIdentity;
   organization: OrganizationReference;
   role: UserRole;
+  /** SPEC-501: solo en la respuesta; nunca viaja en el access token. */
+  isSuperAdmin: boolean;
 };
 
 export type VerifyEmailResponse = {
@@ -64,6 +66,8 @@ export type CurrentUserResponse = {
   user: UserIdentity;
   organization: OrganizationReference;
   role: UserRole;
+  /** SPEC-501 */
+  isSuperAdmin: boolean;
 };
 
 export type Plan = {
@@ -276,4 +280,29 @@ export type AuditEventsResponse = {
 export type AuditEventsQuery = {
   limit?: number;
   before?: ISODateTime;
+};
+
+/** SPEC-501: consultas de plataforma (solo Super Admin). */
+export type PlatformOrganization = {
+  id: UUID;
+  name: string;
+  status: string;
+  deploymentModel: string;
+  planName: string | null;
+  usedBytes: number;
+  storageLimitBytes: number | null;
+  memberCount: number;
+  createdAt: ISODateTime;
+};
+
+export type PlatformOrganizationsResponse = {
+  items: PlatformOrganization[];
+  total: number;
+};
+
+export type PlatformMetrics = {
+  organizations: { active: number; suspended: number; cancelled: number };
+  activeUsers: number;
+  usedBytes: number;
+  subscriptionsByPlan: { planName: string; count: number }[];
 };
