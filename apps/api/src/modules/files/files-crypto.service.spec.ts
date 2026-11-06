@@ -241,5 +241,36 @@ describe('FilesCryptoService', () => {
       expect(first).not.toContain(secret);
       expect(first).not.toBe(second);
     });
+
+    it('descifra los datos de conexión de la misma organización', () => {
+      const secret = JSON.stringify({ accessKey: 'AK-prueba', secretKey: 'SK-prueba' });
+      const encrypted = service.encryptConnectionDetails(ORG, secret);
+
+      expect(service.decryptConnectionDetails(ORG, encrypted)).toBe(secret);
+    });
+
+    it('no descifra datos de conexión de otra organización', () => {
+      const encrypted = service.encryptConnectionDetails(ORG, 'secret-key-de-prueba');
+
+      expect(() => service.decryptConnectionDetails('org-2', encrypted)).toThrow(
+        new InternalServerErrorException('No se pudieron descifrar los datos de conexión'),
+      );
+    });
+
+    it('rechaza datos de conexión alterados sin revelar el motivo', () => {
+      const encrypted = service.encryptConnectionDetails(ORG, 'secret-key-de-prueba');
+      const [version, nonce, tag, ciphertext] = encrypted.split('.');
+      const altered = flipByte(Buffer.from(ciphertext, 'base64url'), 0).toString('base64url');
+
+      expect(() => service.decryptConnectionDetails(ORG, [version, nonce, tag, altered].join('.'))).toThrow(
+        new InternalServerErrorException('No se pudieron descifrar los datos de conexión'),
+      );
+    });
+
+    it('rechaza un valor con formato distinto de v1', () => {
+      expect(() => service.decryptConnectionDetails(ORG, 'environment:S3_BUCKET')).toThrow(
+        new InternalServerErrorException('No se pudieron descifrar los datos de conexión'),
+      );
+    });
   });
 });

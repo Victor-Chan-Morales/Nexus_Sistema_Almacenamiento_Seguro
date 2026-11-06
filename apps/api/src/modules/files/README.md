@@ -20,6 +20,15 @@ Configura `FILES_MASTER_KEY` como una llave aleatoria de 32 bytes en base64, ent
 
 El navegador se comunica únicamente con la API Nexus. `StorageRouter` (SPEC-801) entrega el almacén S3 de cada destino (SeaweedFS hoy); los nombres originales nunca forman parte de `object_key` y las credenciales del proveedor no se devuelven a la API.
 
+## Destinos propios (SPEC-802)
+
+`DestinationsService` administra los destinos de almacenamiento de la organización: `POST /destinations`, `GET /destinations`, `PATCH /destinations/:id` y `POST /destinations/:id/test`. Todas las rutas son solo para `tenant_admin`.
+
+- Las credenciales (`accessKey`, `secretKey`) se cifran con la llave maestra y se descifran solo dentro de `StorageRouter`. Ninguna respuesta, log ni evento de auditoría las incluye.
+- Antes de conectarse, el endpoint se valida contra loopback, link-local, metadatos de nube y, salvo con `DESTINATION_ALLOW_PRIVATE=true`, rangos privados. La validación resuelve DNS y se repite en cada prueba.
+- Deshabilitar el destino predeterminado o uno con carpetas activas responde `422 DESTINATION_IN_USE`.
+- Los destinos de entorno (`S3_*`) aparecen en el listado sin `endpoint` ni `region`, y no se pueden reemplazar desde la API.
+
 ## Control de acceso a Drives (SPEC-221)
 
 `DriveAccessService` decide qué Drive puede usar cada miembro y en qué nivel. Es el único punto de Files que busca Drives para autorizar una operación; `FilesService` ya no consulta `drive_id` por su cuenta.

@@ -167,7 +167,7 @@ Todas siguen el flujo normal de aprobación y fusión.
 | ID | Especificación | Nivel | Requisitos | Prioridad | Dependencias | Estado |
 |---|---|:---:|---|:---:|---|:---:|
 | `SPEC-801` | [Almacenamiento intercambiable (Strategy)](801-almacenamiento-strategy.md) | N2 | §12.1.1, RF-014 | P1 | 006, 221 | ✅ Hecho |
-| `SPEC-802` | [Administrar destinos](802-administrar-destinos.md) | N2 | RF-014, RF-015 | P1 | 801 | Aprobada |
+| `SPEC-802` | [Administrar destinos](802-administrar-destinos.md) | N2 | RF-014, RF-015 | P1 | 801 | ✅ Hecho |
 | `SPEC-803` | [Elegir Nube, Local o Híbrido](803-elegir-modelo-despliegue.md) | N2 | RF-014, RF-015 | P1 | 802 | Aprobada |
 | `SPEC-804` | [Pantalla de almacenamiento](804-frontend-almacenamiento.md) | N2 | RF-014 | P1 | 803 | Aprobada |
 | `SPEC-805` | [Instalación on-premises en un comando](805-instalacion-on-premises.md) | N2 | RF-015, RNF-010 | P1 | 801 | Aprobada |

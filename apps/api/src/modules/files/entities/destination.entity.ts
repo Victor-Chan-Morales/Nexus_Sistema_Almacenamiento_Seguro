@@ -8,6 +8,12 @@ export class Destination {
   @Column({ name: 'organization_id', type: 'uuid' })
   organizationId!: string;
 
+  @Column({ name: 'name', type: 'varchar', length: 150, default: 'Almacenamiento Nexus' })
+  name!: string;
+
+  @Column({ name: 'location', type: 'enum', enum: ['cloud', 'on_premises'], enumName: 'destination_location', default: 'cloud' })
+  location!: 'cloud' | 'on_premises';
+
   @Column({ name: 'provider_type', type: 'enum', enum: ['s3', 'minio'], enumName: 'destination_provider' })
   providerType!: 's3' | 'minio';
 

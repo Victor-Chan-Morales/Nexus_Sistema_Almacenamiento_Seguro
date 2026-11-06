@@ -54,6 +54,14 @@ export class AuditOutbox {
   @Column({ name: 'last_error', type: 'varchar', length: 100, nullable: true })
   lastError!: string | null;
 
+  /** Resultado con el que se intentó registrar el evento (SPEC-802: `failure` si la prueba de conexión falló). */
+  @Column({ type: 'enum', enum: ['success', 'failure'], enumName: 'event_result', default: 'success' })
+  result!: 'success' | 'failure';
+
+  /** Causa segura de un fallo: categoría cerrada, nunca un mensaje crudo. */
+  @Column({ name: 'safe_reason', type: 'varchar', length: 255, nullable: true })
+  safeReason!: string | null;
+
   @Column({ name: 'created_at', type: 'timestamptz', default: () => 'now()' })
   createdAt!: Date;
 }

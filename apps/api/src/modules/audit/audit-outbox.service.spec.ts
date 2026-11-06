@@ -3,6 +3,7 @@ import { DataSource, EntityManager } from 'typeorm';
 import { AuditChainWriter, ResolvedAuditEvent } from './audit-chain-writer';
 import { AuditOutboxService } from './audit-outbox.service';
 import { AuditAction, AuditResource } from './audit.types';
+import { AuditResult } from './entities/audit-event.entity';
 
 const ORG_ID = '11111111-1111-4111-8111-111111111111';
 const ACTOR_ID = '33333333-3333-4333-8333-333333333333';
@@ -447,5 +448,40 @@ describe('AuditOutboxService — reintento de eventos de auditoría (issue #17)'
     await destroyed;
     expect(db.chain).toHaveLength(1);
     expect(db.outbox.size).toBe(0);
+  });
+});
+
+describe('AuditOutboxService — resultado y causa segura al reenviar (SPEC-802)', () => {
+  let db: ReturnType<typeof createFakeDb>;
+  let service: AuditOutboxService;
+
+  beforeEach(() => {
+    jest.useFakeTimers({ now: T0 });
+    db = createFakeDb();
+    service = new AuditOutboxService(db.dataSource as unknown as DataSource, new AuditChainWriter());
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  it('un fallo encolado conserva failure y su causa segura al reenviarse a la cadena', async () => {
+    await service.enqueue({ ...event, result: AuditResult.FAILURE, safeReason: 'NETWORK' });
+    expect(db.outbox.get(EVENT_ID)).toMatchObject({ result: 'failure', safeReason: 'NETWORK' });
+
+    await service.dispatchDue();
+
+    expect(db.chain).toHaveLength(1);
+    expect(db.chain[0]).toMatchObject({ result: 'failure', safeReason: 'NETWORK' });
+  });
+
+  it('un evento encolado sin resultado explícito se reenvía como success sin causa', async () => {
+    await service.enqueue(event);
+
+    await service.dispatchDue();
+
+    expect(db.chain[0]).toMatchObject({ result: 'success', safeReason: null });
   });
 });

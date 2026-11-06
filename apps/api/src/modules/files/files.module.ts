@@ -21,6 +21,8 @@ import { TenantQuota } from './entities/tenant-quota.entity';
 import { Upload } from './entities/upload.entity';
 import { FilesCryptoService } from './files-crypto.service';
 import { DriveAccessService } from './drive-access.service';
+import { DestinationsService } from './destinations.service';
+import { DestinationsController } from './destinations.controller';
 import { Team } from './entities/team.entity';
 import { TeamMember } from './entities/team-member.entity';
 import { TeamsController } from './teams.controller';
@@ -54,7 +56,13 @@ import { TeamsService } from './teams.service';
     StorageModule, // StorageRouter: guardar/recuperar bytes en el destino de cada versión
     BillingModule, // Para verificar cuota de almacenamiento
   ],
-  controllers: [FoldersController, FilesController, ShareLinksController, TeamsController],
+  controllers: [
+    FoldersController,
+    FilesController,
+    ShareLinksController,
+    DestinationsController,
+    TeamsController,
+  ],
   providers: [
     FilesService,
     FileVersionsService,
@@ -62,6 +70,7 @@ import { TeamsService } from './teams.service';
     DriveAccessService,
     PersonalDriveHook,
     ShareLinksService,
+    DestinationsService,
     TeamsService,
   ],
   exports: [FilesService],
