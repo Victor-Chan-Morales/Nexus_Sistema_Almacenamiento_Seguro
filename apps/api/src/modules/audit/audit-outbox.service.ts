@@ -3,6 +3,7 @@ import { DataSource } from 'typeorm';
 import { OUTBOX_POLL_INTERVAL_MS, outboxBackoffSeconds } from '../../common/outbox-policy';
 import { AuditChainWriter, ResolvedAuditEvent } from './audit-chain-writer';
 import { errorCode, isPermanentError } from './audit-error-code';
+import { AuditResult } from './entities/audit-event.entity';
 import { AuditOutbox, AuditOutboxStatus } from './entities/audit-outbox.entity';
 import { AuditAction, AuditResource } from './audit.types';
 
@@ -65,6 +66,8 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
         resourceId: event.resourceId ?? null,
         correlationId: event.correlationId,
         occurredAt: event.occurredAt,
+        result: event.result ?? AuditResult.SUCCESS,
+        safeReason: event.safeReason ?? null,
         ...(deadCode ? { status: AuditOutboxStatus.DEAD, lastError: deadCode } : {}),
       });
     } catch (error) {
@@ -172,6 +175,8 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
       resourceId: row.resourceId ?? undefined,
       correlationId: row.correlationId,
       occurredAt: row.occurredAt,
+      result: row.result as AuditResult,
+      safeReason: row.safeReason ?? null,
     };
   }
 }

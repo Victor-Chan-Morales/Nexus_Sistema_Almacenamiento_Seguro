@@ -92,6 +92,46 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
     });
   });
 
+  describe('SPEC-802: resultado y causa segura de un evento', () => {
+    it('un fallo se registra con result failure y su causa segura en la fila de la cadena', async () => {
+      await service.logEvent({
+        organizationId: ORG_ID,
+        actorId: ACTOR_ID,
+        action: AuditAction.DESTINATION_TESTED,
+        resourceType: AuditResource.DESTINATION,
+        resourceId: RESOURCE_ID,
+        result: AuditResult.FAILURE,
+        safeReason: 'AUTH',
+      });
+
+      expect(insertedRow()).toMatchObject({ result: AuditResult.FAILURE, safeReason: 'AUTH' });
+    });
+
+    it('sin resultado explícito registra success y causa nula', async () => {
+      await service.logEvent({ organizationId: ORG_ID, actorId: ACTOR_ID, action: AuditAction.FILE_UPLOAD });
+
+      expect(insertedRow()).toMatchObject({ result: AuditResult.SUCCESS, safeReason: null });
+    });
+
+    it('si el registro directo falla, el fallo se encola con su resultado y su causa', async () => {
+      manager.insert.mockRejectedValueOnce(new Error('fallo transitorio'));
+
+      await service.logEvent({
+        organizationId: ORG_ID,
+        actorId: ACTOR_ID,
+        action: AuditAction.DESTINATION_TESTED,
+        resourceType: AuditResource.DESTINATION,
+        resourceId: RESOURCE_ID,
+        result: AuditResult.FAILURE,
+        safeReason: 'NETWORK',
+      });
+
+      expect(outbox.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({ result: AuditResult.FAILURE, safeReason: 'NETWORK' }),
+      );
+    });
+  });
+
   describe('Escenario 2: encadenamiento', () => {
     it('toma el record_hash del último evento de la organización como prev_hash', async () => {
       manager.findOne.mockResolvedValueOnce({ recordHash: 'hash-anterior', chainSeq: '4' });
@@ -278,6 +318,7 @@ describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)'
         resourceId: RESOURCE_ID,
         correlationId: '55555555-5555-4555-8555-555555555555',
         occurredAt: expect.any(Date),
+        safeReason: null,
       });
     });
 

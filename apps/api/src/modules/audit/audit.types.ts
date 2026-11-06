@@ -1,3 +1,5 @@
+import type { AuditResult } from './entities/audit-event.entity';
+
 /** Acciones auditables del corte SPEC-401. Enum cerrado: no admite texto libre. */
 export enum AuditAction {
   AUTH_LOGIN = 'AUTH_LOGIN',
@@ -42,4 +44,8 @@ export interface AuditEventInput {
   resourceId?: string;
   /** Si falta, se genera un UUID por llamada. Las operaciones con varios eventos deben pasar el mismo valor. */
   correlationId?: string;
+  /** Si falta, `success`. SPEC-802: una prueba de conexión fallida registra `failure`. */
+  result?: AuditResult;
+  /** Causa segura de un fallo: una categoría cerrada, nunca el mensaje crudo de un proveedor. */
+  safeReason?: string | null;
 }
