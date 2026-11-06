@@ -307,3 +307,13 @@ export type AuditEventsQuery = {
   limit?: number;
   before?: ISODateTime;
 };
+
+// SPEC-114: Cierre de empresa
+export type CloseOrganizationInput = {
+  organizationName: string;
+  password: string;
+};
+
+export type CloseOrganizationResponse = {
+  closed: boolean;
+};

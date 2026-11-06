@@ -1,4 +1,4 @@
-/** Acciones auditables del corte SPEC-401. Enum cerrado: no admite texto libre. */
+/** Acciones auditables del corte SPEC-401 y SPEC-114. Enum cerrado: no admite texto libre. */
 export enum AuditAction {
   AUTH_LOGIN = 'AUTH_LOGIN',
   AUTH_PASSWORD_RESET = 'AUTH_PASSWORD_RESET',
@@ -15,6 +15,7 @@ export enum AuditAction {
   FOLDER_PURGE = 'FOLDER_PURGE',
   PLAN_ACTIVATED = 'PLAN_ACTIVATED',
   PLAN_RENEWED = 'PLAN_RENEWED',
+  ORGANIZATION_CLOSED = 'ORGANIZATION_CLOSED',
 }
 
 /** Recurso afectado. `resource_type` es varchar(20). */
@@ -24,6 +25,7 @@ export enum AuditResource {
   FILE = 'file',
   FOLDER = 'folder',
   SUBSCRIPTION = 'subscription',
+  ORGANIZATION = 'organization',
 }
 
 /** Entrada de `logEvent`. Sin campos libres: no puede transportar contraseñas, tokens ni nombres de archivo. */

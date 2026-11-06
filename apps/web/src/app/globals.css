@@ -1221,3 +1221,63 @@ h1, h2, h3 { font-family: "Inter", Arial, sans-serif; }
   background: #fff0f1;
   border-color: var(--color-coral);
 }
+
+/* SPEC-114: Zona de riesgo / Cierre de empresa */
+.danger-zone {
+  border: 1px solid color-mix(in srgb, var(--color-coral) 40%, transparent);
+  background: color-mix(in srgb, var(--color-coral) 3%, white);
+  margin-top: 28px;
+}
+
+.danger-zone-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.danger-zone-title {
+  color: var(--color-coral);
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin: 0 0 6px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.danger-zone-desc {
+  color: #64748b;
+  font-size: 0.875rem;
+  margin: 0;
+  max-width: 620px;
+  line-height: 1.5;
+}
+
+.button-danger {
+  background: var(--color-coral);
+  border-color: var(--color-coral);
+  color: white;
+}
+
+.button-danger:hover:not(:disabled) {
+  background: #e04358;
+  border-color: #e04358;
+}
+
+.button-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.danger-modal-callout {
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  background: #fff0f1;
+  border: 1px solid color-mix(in srgb, var(--color-coral) 30%, transparent);
+  color: #9b1c2e;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
