@@ -38,6 +38,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       email: membership.user.email,
       fullName: membership.user.fullName,
       organizationName: membership.organization.name,
+      // De la BD en cada request, ya cargado con la membresía. El JWT no tiene este campo y, si llegara, se ignora.
+      isSuperAdmin: membership.user.isSuperAdmin === true,
     };
   }
 }

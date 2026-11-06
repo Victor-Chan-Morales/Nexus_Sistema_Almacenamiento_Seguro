@@ -19,7 +19,10 @@ export class AuditEventResponseDto {
   action: string;
   resourceType: string | null;
   resourceId: string | null;
-  actorId: string;
+  /** null cuando el actor es el sistema o un visitante (SPEC-407). */
+  actorId: string | null;
+  /** user | system | visitor */
+  actorType: string;
   result: string;
   occurredAt: string;
 }

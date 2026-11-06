@@ -8,7 +8,12 @@ import { AuditAction, AuditResource } from './audit.types';
 export interface ResolvedAuditEvent {
   eventId: string;
   organizationId: string;
-  actorId: string;
+  /** Ausente para `system` y `visitor`; obligatorio para `user`. */
+  actorId?: string;
+  /** Si falta, `USER`. */
+  actorType?: AuditActorType;
+  /** Si falta, `SUCCESS`. */
+  result?: AuditResult;
   action: AuditAction;
   resourceType?: AuditResource;
   resourceId?: string;
@@ -43,14 +48,15 @@ export class AuditChainWriter {
     const fields = {
       eventId: event.eventId,
       organizationId: event.organizationId,
-      actorType: AuditActorType.USER,
-      actorId: event.actorId,
+      // Los valores por defecto son los de siempre: el hash de los eventos existentes no cambia (SPEC-407, escenario 6).
+      actorType: event.actorType ?? AuditActorType.USER,
+      actorId: event.actorId ?? null,
       actionType: event.action,
       resourceType: event.resourceType ?? null,
       resourceId: event.resourceId ?? null,
       // Ningún evento de este corte registra motivo; la columna entra en el hash para que no sea manipulable.
       safeReason: null,
-      result: AuditResult.SUCCESS,
+      result: event.result ?? AuditResult.SUCCESS,
       correlationId: event.correlationId,
       occurredAt: event.occurredAt ?? new Date(),
       prevHash: last?.recordHash ?? null,

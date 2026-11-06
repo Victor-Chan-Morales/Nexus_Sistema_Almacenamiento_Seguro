@@ -10,7 +10,7 @@ import {
   AuditEventsResponseDto,
   ListAuditEventsQueryDto,
 } from './dto/list-audit-events.dto';
-import { AuditEvent } from './entities/audit-event.entity';
+import { AuditActorType, AuditEvent } from './entities/audit-event.entity';
 
 /**
  * Registro síncrono de eventos de auditoría con cadena de hashes por organización.
@@ -29,6 +29,16 @@ export class AuditService {
 
   /** Nunca lanza: un fallo de auditoría no debe romper la operación del usuario. */
   async logEvent(input: AuditEventInput): Promise<void> {
+    // ck_audit_event_actor: actor_type = user ⇔ hay actor_id. Una combinación inválida fallaría siempre, también al
+    // reintentarse desde el outbox: se descarta aquí, con constancia en el log y sin datos del evento ni del actor.
+    const actorType = input.actorType ?? AuditActorType.USER;
+    if ((actorType === AuditActorType.USER) !== (input.actorId !== undefined && input.actorId !== null)) {
+      this.logger.error(
+        `[AUDIT_INVALID_ACTOR] evento ${input.action} descartado: actorType=${actorType} no concuerda con actorId`,
+      );
+      return;
+    }
+
     // Identificadores fijados antes del intento: el reintento usa exactamente los mismos.
     // `capturedAt` solo viaja al outbox; en la ruta directa la cadena fija `occurred_at` dentro del lock.
     const eventId = randomUUID();
@@ -38,6 +48,9 @@ export class AuditService {
       eventId,
       organizationId: input.organizationId,
       actorId: input.actorId,
+      // Sin resolver: el escritor aplica los valores por defecto (user, success) al insertar y al reintentar.
+      actorType: input.actorType,
+      result: input.result,
       action: input.action,
       resourceType: input.resourceType,
       resourceId: input.resourceId,
@@ -91,7 +104,8 @@ export class AuditService {
       action: e.actionType,
       resourceType: e.resourceType ?? null,
       resourceId: e.resourceId ?? null,
-      actorId: e.actorId,
+      actorId: e.actorId ?? null,
+      actorType: e.actorType,
       result: e.result,
       occurredAt: toIso(e.occurredAt),
     }));

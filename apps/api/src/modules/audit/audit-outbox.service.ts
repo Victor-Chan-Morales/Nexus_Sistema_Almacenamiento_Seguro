@@ -3,6 +3,7 @@ import { DataSource } from 'typeorm';
 import { OUTBOX_POLL_INTERVAL_MS, outboxBackoffSeconds } from '../../common/outbox-policy';
 import { AuditChainWriter, ResolvedAuditEvent } from './audit-chain-writer';
 import { errorCode, isPermanentError } from './audit-error-code';
+import { AuditActorType, AuditResult } from './entities/audit-event.entity';
 import { AuditOutbox, AuditOutboxStatus } from './entities/audit-outbox.entity';
 import { AuditAction, AuditResource } from './audit.types';
 
@@ -59,7 +60,9 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
       await this.dataSource.getRepository(AuditOutbox).insert({
         eventId: event.eventId,
         organizationId: event.organizationId,
-        actorId: event.actorId,
+        actorId: event.actorId ?? null,
+        actorType: event.actorType ?? AuditActorType.USER,
+        result: event.result ?? AuditResult.SUCCESS,
         actionType: event.action,
         resourceType: event.resourceType ?? null,
         resourceId: event.resourceId ?? null,
@@ -166,7 +169,9 @@ export class AuditOutboxService implements OnModuleInit, OnModuleDestroy {
     return {
       eventId: row.eventId,
       organizationId: row.organizationId,
-      actorId: row.actorId,
+      actorId: row.actorId ?? undefined,
+      actorType: row.actorType,
+      result: row.result,
       action: row.actionType as AuditAction,
       resourceType: (row.resourceType ?? undefined) as AuditResource | undefined,
       resourceId: row.resourceId ?? undefined,

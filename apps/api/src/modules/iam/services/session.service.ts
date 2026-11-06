@@ -48,6 +48,7 @@ export class SessionService {
       user: { id: user.id, fullName: user.fullName, email: user.email },
       organization: { id: membership.organization.id, name: membership.organization.name },
       role: membership.role,
+      isSuperAdmin: user.isSuperAdmin === true, // solo en la respuesta, nunca en el JWT
     };
   }
 

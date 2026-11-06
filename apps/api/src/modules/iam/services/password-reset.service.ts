@@ -89,6 +89,7 @@ export class PasswordResetService {
       const record = await this.findUsableToken(tx, tokenHash);
       await this.tokensRepo.markUsed(tx, record);
       await this.users.setPasswordAndVerifyEmail(tx, record.userId, passwordHash);
+      await this.users.clearFailedLogins(record.userId, tx); // SPEC-112: restablecer también desbloquea
       await this.sessions.revokeAllActiveOf(tx, record.userId);
       const membership = await this.memberships.findActive(record.userId, undefined, tx);
       return { userId: record.userId, organizationId: membership?.organizationId };
@@ -104,18 +105,6 @@ export class PasswordResetService {
         resourceId: reset.userId,
       }).catch(() => {});
     }
-  }
-
-  /** Token de restablecimiento vigente, sin usar y de una cuenta activa; si no, INVALID_OR_EXPIRED_TOKEN. */
-  private async findUsableToken(tx: TransactionContext, tokenHash: string): Promise<OneTimeToken> {
-    // El filtro por propósito impide usar un token de verificación de correo para restablecer.
-    const record = await this.tokensRepo.findByHashForUpdate(tx, tokenHash, TokenPurpose.PASSWORD_RESET);
-    if (!record || record.usedAt || record.expiresAt <= new Date()) throw IamErrors.invalidOrExpiredToken();
-
-    // Una cuenta que dejó de estar activa desde que se emitió el token no puede restablecerse.
-    const user = await this.users.findById(record.userId, tx);
-    if (!user || user.status !== UserStatus.ACTIVE) throw IamErrors.invalidOrExpiredToken();
-    return record;
   }
 
   /** Token de restablecimiento vigente, sin usar y de una cuenta activa; si no, INVALID_OR_EXPIRED_TOKEN. */
