@@ -4,7 +4,6 @@ import { AuditChainWriter, ResolvedAuditEvent } from './audit-chain-writer';
 import { AuditActorType, AuditResult } from './entities/audit-event.entity';
 import { AuditOutboxService } from './audit-outbox.service';
 import { AuditAction, AuditResource } from './audit.types';
-import { AuditResult } from './entities/audit-event.entity';
 
 const ORG_ID = '11111111-1111-4111-8111-111111111111';
 const ACTOR_ID = '33333333-3333-4333-8333-333333333333';
