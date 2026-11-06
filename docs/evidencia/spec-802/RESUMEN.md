@@ -31,7 +31,8 @@ Respuestas de la API en `evidencia/` (JSON, sin credenciales). Revisadas con `gr
 | E10 | Subida a carpeta con destino propio | Objeto solo en `cliente-a` (56 bytes cifrados) | listado del bucket |
 | E10 | Subida a carpeta de entorno | Objeto solo en `nexus-dev` (72 bytes cifrados) | listado del bucket |
 | E10 | Descarga de ambos archivos | 200, SHA-256 igual al original | consola |
-| L1-L5 | Verificación tras los arreglos | 409 con mensaje propio; purga de la carpeta de prueba (64 bytes liberados) | `L*` (no copiadas) |
+| L1-L5 | Verificación tras los arreglos | 409 con mensaje propio (`L2-probar-409.json`); purga de la carpeta de prueba, 64 bytes liberados (`L5-purga.json`) | `evidencia/L*.json` |
+| V1-V2 | Verificación del resultado de auditoría | Destino en un puerto cerrado: `Sin conexión`, `NETWORK`; la auditoría guarda `failure` y `NETWORK` | `evidencia/V*.json` y consulta SQL |
 | Seguridad | Secreto en logs, evidencias y auditoría | 0 coincidencias | `grep` y consulta SQL |
 | Auditoría | Eventos de destino | `DESTINATION_CREATED` 1, `DESTINATION_UPDATED` 7, `DESTINATION_TESTED` 8 (antes del cambio de resultado) | consulta SQL |
 | Auditoría | Resultado de la prueba fallida | `DESTINATION_TESTED`, `failure`, `NETWORK` | verificación posterior, `87bba85` |
@@ -68,7 +69,12 @@ Al terminar se borraron: la carpeta de prueba con sus dos archivos (purga), el d
 - `storage/storage.module.ts`: registra `FilesCryptoService` para que el router descifre las credenciales propias.
 - Módulo de auditoría (`audit.types.ts`, `audit.service.ts`, `audit-chain-writer.ts`, `audit-outbox.service.ts` y su entidad), con migración `20261106100000`. Cambia el formato de los eventos nuevos, que ahora incluyen `result` y `safe_reason` en el hash. Pendiente de revisión de su dueño.
 
-## Pendiente antes de la PR
+## Pruebas automatizadas de la revisión previa a la PR
 
-- Revisión de Anthony del cambio en el módulo de auditoría.
-- Nada más de la spec: T1 a T4 completas.
+- `destinations.routes.spec.ts`: colaborador recibe `403 FORBIDDEN_ROLE` en las cuatro rutas (escenario 9); un error de validación con credenciales no las refleja (riesgo de la spec).
+- Suite completa de la API: 644 de 644 pruebas.
+
+## Pendiente antes de fusionar
+
+- Aprobación de Anthony del cambio en el módulo de auditoría (revisión en la PR).
+- Aprobación del coordinador.
