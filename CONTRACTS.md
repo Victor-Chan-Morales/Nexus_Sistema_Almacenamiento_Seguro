@@ -252,6 +252,8 @@ Documentan lo que el código ya devuelve (arreglo de tamaño de carpetas, SPEC-0
 
 ## Alcance final [v0.6]
 
+- **[v0.6, SPEC-216]** `GET /public/share-links/:token` sin sesión devuelve `{ requiresPassword, expiresAt }` y, solo para enlaces sin contraseña, `{ name, sizeBytes, mimeType }` de la versión fija. `POST /public/share-links/:token/download` con `{ password? }` devuelve los bytes de esa versión como adjunto. Enlace no disponible → `404 SHARE_LINK_UNAVAILABLE`; contraseña incorrecta o ausente → `401 SHARE_LINK_PASSWORD_INVALID`; cinco fallos por enlace e IP en 15 minutos → `429 TOO_MANY_ATTEMPTS` en los siguientes intentos. Las rutas públicas aplican `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff` y `Cache-Control: no-store`. La descarga y los fallos de contraseña emiten `SHARE_LINK_ACCESSED` con actor visitante, sin token, contraseña ni IP.
+
 Cada spec agrega aquí sus rutas, campos y códigos de error antes de programar.
 
 - **[v0.6, SPEC-210]** `GET /files/:id/versions/:versionId/download` → bytes exactos de esa versión, `Content-Type` del archivo y `Content-Disposition: attachment` con nombre seguro. Solo archivos propios, activos y con carpeta activa. Otro archivo, versión ajena, archivo en papelera o inexistente → `404`. `id` o `versionId` que no son UUID → `400`. Emite `FILE_DOWNLOAD`.
