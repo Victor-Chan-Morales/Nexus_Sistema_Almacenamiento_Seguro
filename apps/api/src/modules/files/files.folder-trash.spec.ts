@@ -266,7 +266,7 @@ describe('FilesService folder trash', () => {
     expect(audit.logEvent).not.toHaveBeenCalled();
   });
 
-  it('keeps an expired folder subtree in trash when restoring it would exceed the plan quota', async () => {
+  it('restores an expired folder subtree without checking the plan quota', async () => {
     const deletedRoot = Object.assign(new Folder(), {
       id: 'folder-1', organizationId: ORG, driveId: DRIVE.id, parentId: 'root-1',
       name: 'Proyectos', isDeleted: true, deletedAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -278,11 +278,8 @@ describe('FilesService folder trash', () => {
       storageLimit: 400n,
     });
 
-    await expect(service.restoreFolder('folder-1', ORG, USER)).rejects.toMatchObject({
-      response: expect.objectContaining({ code: 'STORAGE_QUOTA_EXCEEDED' }),
-      status: 422,
-    });
-    expect(manager.query).not.toHaveBeenCalledWith(
+    await expect(service.restoreFolder('folder-1', ORG, USER)).resolves.toMatchObject({ id: 'folder-1' });
+    expect(manager.query).toHaveBeenCalledWith(
       expect.stringContaining('UPDATE files.folder SET is_deleted = false'),
       expect.anything(),
     );

@@ -32,8 +32,6 @@ export function trashErrorMessage(error: unknown): string {
       return "La carpeta original ya no está disponible";
     case "CANNOT_PURGE_ACTIVE_FILE":
       return GONE_ERROR;
-    case "STORAGE_QUOTA_EXCEEDED":
-      return "No hay espacio suficiente en tu plan para restaurar este elemento. Libera espacio o cambia de plan.";
     default:
       return GENERIC_ERROR;
   }
@@ -115,8 +113,8 @@ function TrashSession({ session }: { session: Session }) {
         <section className="trash-retention-note">
           <span className="trash-retention-icon"><UiIcon name="trash" size={18} /></span>
           <div>
-            <b>Los elementos cuentan para tu almacenamiento durante 30 días</b>
-            <p>Después dejan de contar para la cuota, pero no se eliminan automáticamente. Puedes restaurarlos o eliminarlos definitivamente.</p>
+            <b>La papelera ocupa espacio hasta la eliminación definitiva</b>
+            <p>La purga automática se ejecuta a partir de los 30 días. Puedes restaurar los elementos mientras sigan aquí.</p>
           </div>
           <span className="trash-item-count">{state.status === "ready" ? `${items.length} ${items.length === 1 ? "elemento" : "elementos"}` : "Papelera"}</span>
         </section>
@@ -139,7 +137,7 @@ function TrashSession({ session }: { session: Session }) {
               <div><h2>Elementos eliminados</h2><p>Restaura archivos y carpetas, o elimínalos de forma permanente.</p></div>
             </div>
             <div className="drive-list-card">
-              <div className="drive-list-head"><span>Nombre</span><span>Tamaño</span><span>Eliminado</span><span>Se conserva hasta</span><span>Acciones</span></div>
+              <div className="drive-list-head"><span>Nombre</span><span>Tamaño</span><span>Eliminado</span><span>Se eliminará el</span><span>Acciones</span></div>
               {items.map((item) => (
                 <TrashRow
                   key={item.id}
@@ -185,7 +183,7 @@ function TrashRow({
 }) {
   return (
     <div className="drive-list-row trash-list-row">
-      <span className="drive-item-name"><span className="trash-file-icon"><UiIcon name={item.kind === "folder" ? "folder" : "files"} size={15} /></span><span className="trash-file-label"><b>{item.name}{item.kind === "folder" ? " · Carpeta" : ""}</b><small>Eliminado {formatIsoDate(item.deletedAt)}</small><small>Se conserva hasta {formatIsoDate(item.retentionEndsAt)}</small></span></span>
+      <span className="drive-item-name"><span className="trash-file-icon"><UiIcon name={item.kind === "folder" ? "folder" : "files"} size={15} /></span><span className="trash-file-label"><b>{item.name}{item.kind === "folder" ? " · Carpeta" : ""}</b><small>Eliminado {formatIsoDate(item.deletedAt)}</small><small>Se eliminará el {formatIsoDate(item.retentionEndsAt)}</small></span></span>
       <span>{formatBytes(item.sizeBytes)}</span>
       <span>{formatIsoDate(item.deletedAt)}</span>
       <span>{formatIsoDate(item.retentionEndsAt)}</span>
