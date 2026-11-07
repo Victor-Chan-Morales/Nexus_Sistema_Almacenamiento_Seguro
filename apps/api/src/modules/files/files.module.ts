@@ -5,6 +5,7 @@ import { FilesService } from './files.service';
 import { FileVersionsService } from './file-versions.service';
 import { ShareLinksService } from './share-links.service';
 import { ShareLinksController } from './share-links.controller';
+import { PublicShareLinksController } from './public-share-links.controller';
 import { ShareLink } from './entities/share-link.entity';
 import { FileRecord } from './entities/file-record.entity';
 import { Folder } from './entities/folder.entity';
@@ -60,6 +61,7 @@ import { TeamsService } from './teams.service';
     FoldersController,
     FilesController,
     ShareLinksController,
+    PublicShareLinksController,
     DestinationsController,
     TeamsController,
   ],
