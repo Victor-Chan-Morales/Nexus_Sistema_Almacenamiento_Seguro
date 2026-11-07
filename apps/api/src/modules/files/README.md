@@ -65,3 +65,7 @@ Todas las búsquedas filtran por organización y propietario. Los Drives de equi
 - La subida multipart se mantiene en memoria hasta el máximo contractual de 100,000,000 bytes.
 - Los tipos admitidos son PDF, DOCX, XLSX, PPTX, JPG, PNG, TXT y ZIP; se valida la firma del contenido además de extensión y MIME.
 - Las claves de idempotencia se guardan en `files.upload` con alcance de organización y restricción única.
+
+## Purga automática (SPEC-215)
+
+Las versiones en papelera cuentan para la cuota hasta la purga. La tarea revisa primero carpetas raíz de la papelera y luego archivos, en lotes de 50, solo en organizaciones activas. La retención es de 30 días y el intervalo se configura con TRASH_PURGE_INTERVAL_MS (una hora por defecto). Una transacción por elemento revalida el plazo, protege contra ejecuciones simultáneas y actualiza la cuota. Tras el commit se eliminan los objetos y se registra la purga con actor system.

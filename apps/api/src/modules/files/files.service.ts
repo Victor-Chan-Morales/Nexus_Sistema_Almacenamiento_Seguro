@@ -30,12 +30,12 @@ import { EncryptedFile, FilesCryptoService } from './files-crypto.service';
 import { DriveAccessService, DriveActor } from './drive-access.service';
 import { PurgeFileResponseDto, RestoreFileResponseDto, RestoreFolderResponseDto, TrashItemDto, TrashResponseDto } from './dto/trash.dto';
 import { AuditService } from '../audit/audit.service';
-import { AuditAction, AuditResource } from '../audit/audit.types';
+import { AuditAction, AuditActorType, AuditResource } from '../audit/audit.types';
 
 const MAX_FILE_SIZE_BYTES = 100_000_000;
 const MAX_ACTIVE_UPLOADS_PER_USER = 3;
 const RESERVATION_TTL_MS = 24 * 60 * 60 * 1000;
-/** Días en papelera tras los que un archivo eliminado deja de contar para la cuota (SPEC-202). */
+/** Días antes de que un elemento de la papelera pueda purgarse (SPEC-215). */
 const TRASH_RETENTION_DAYS = 30;
 
 interface FolderTreeRow {
@@ -603,8 +603,7 @@ export class FilesService {
       'SELECT COALESCE(SUM(version.size_bytes), 0)::text AS "usedBytes" ' +
       'FROM files.file_version version ' +
       'INNER JOIN files.file file ON file.file_id = version.file_id ' +
-      'WHERE file.organization_id = $1 ' +
-      `AND (file.is_deleted = false OR file.deleted_at > now() - interval '${TRASH_RETENTION_DAYS} days')`,
+      'WHERE file.organization_id = $1',
       [organizationId],
     );
     return BigInt(rows[0]?.usedBytes ?? 0);
@@ -629,8 +628,7 @@ export class FilesService {
       'SELECT COALESCE(SUM(version.size_bytes), 0)::text AS total ' +
       'FROM files.file_version version ' +
       'INNER JOIN files.file file ON file.file_id = version.file_id ' +
-      'WHERE file.organization_id = $1 ' +
-      `AND (file.is_deleted = false OR file.deleted_at > now() - interval '${TRASH_RETENTION_DAYS} days')`,
+      'WHERE file.organization_id = $1',
       [organizationId],
     );
     const reservedRows = await manager.query(
@@ -1274,27 +1272,6 @@ export class FilesService {
         throw this.businessError(HttpStatus.CONFLICT, 'FOLDER_NAME_CONFLICT', 'Ya existe una carpeta con ese nombre');
       }
 
-      const expiredBytesRows = await manager.query<Array<{ total: string }>>(
-        'SELECT COALESCE(SUM(version.size_bytes), 0)::text AS total ' +
-        'FROM files.file file INNER JOIN files.file_version version ON version.file_id = file.file_id ' +
-        'WHERE file.organization_id = $1 AND file.folder_id = ANY($2::uuid[]) ' +
-        'AND file.is_deleted = true AND file.deleted_at = $3 ' +
-        `AND file.deleted_at <= now() - interval '${TRASH_RETENTION_DAYS} days'`,
-        [organizationId, folderIds, root.deletedAt],
-      );
-      const expiredBytes = BigInt(expiredBytesRows[0]?.total ?? 0);
-      if (expiredBytes > 0n) {
-        const usage = await this.readStorageUsage(manager, organizationId);
-        const limit = await this.billingService.getStorageLimitBytes(organizationId);
-        if (usage.totalBytes + expiredBytes > limit) {
-          throw this.businessError(
-            HttpStatus.UNPROCESSABLE_ENTITY,
-            'STORAGE_QUOTA_EXCEEDED',
-            'La restauración excede la cuota disponible para el plan de la organización',
-          );
-        }
-      }
-
       await manager.query(
         'UPDATE files.folder SET is_deleted = false, deleted_at = NULL ' +
         'WHERE organization_id = $1 AND folder_id = ANY($2::uuid[]) AND deleted_at = $3',
@@ -1339,34 +1316,7 @@ export class FilesService {
         throw new NotFoundException('Carpeta ' + folderId + ' no encontrada en la papelera');
       }
 
-      const tree = await this.getFolderTree(manager, folderId, organizationId, drive.id);
-      const folderIds = tree.map((folder) => folder.id);
-      const files = await manager.getRepository(FileRecord).find({
-        where: { organizationId, folderId: In(folderIds) },
-      });
-      const fileIds = files.map((file) => file.id);
-      const versions = fileIds.length
-        ? await manager.getRepository(FileVersion).find({ where: { fileId: In(fileIds) } })
-        : [];
-      const freedBytes = versions.reduce((total, version) => total + BigInt(version.sizeBytes), 0n);
-      // fk_upload_folder es RESTRICT: las cargas deben borrarse antes que sus carpetas. Una carga en
-      // «Limpieza pendiente» es el único registro de su objeto, por lo que su clave también se elimina.
-      const uploadRepo = manager.getRepository(Upload);
-      const uploads = await uploadRepo.find({ where: { organizationId, folderId: In(folderIds) } });
-
-      for (const fileId of fileIds) await this.removeFileRows(manager, fileId);
-      if (uploads.length) await uploadRepo.delete({ organizationId, folderId: In(folderIds) });
-      for (const folder of tree) await folderRepo.delete({ id: folder.id, organizationId });
-
-      const usage = await this.readStorageUsage(manager, organizationId);
-      await this.writeQuotaCounters(manager, organizationId, usage);
-      const objects = uniqueStoredObjects([
-        ...versions.map((version) => ({ destinationId: version.destinationId, objectKey: version.objectKey })),
-        ...uploads.flatMap((upload) => (
-          upload.objectKey ? [{ destinationId: upload.destinationId, objectKey: upload.objectKey }] : []
-        )),
-      ]);
-      return { freedBytes, objects };
+      return this.applyFolderPurge(manager, folderId, organizationId, drive.id);
     });
 
     void this.auditService?.logEvent({
@@ -1379,6 +1329,38 @@ export class FilesService {
 
     void this.deleteOrphanObjects(organizationId, purged.objects);
     return { id: folderId, freedBytes: Number(purged.freedBytes) };
+  }
+
+  private async applyFolderPurge(manager: EntityManager, folderId: string, organizationId: string, driveId: string) {
+    const folderRepo = manager.getRepository(Folder);
+    const tree = await this.getFolderTree(manager, folderId, organizationId, driveId);
+    const folderIds = tree.map((folder) => folder.id);
+    const files = await manager.getRepository(FileRecord).find({
+      where: { organizationId, folderId: In(folderIds) },
+    });
+    const fileIds = files.map((file) => file.id);
+    const versions = fileIds.length
+      ? await manager.getRepository(FileVersion).find({ where: { fileId: In(fileIds) } })
+      : [];
+    const freedBytes = versions.reduce((total, version) => total + BigInt(version.sizeBytes), 0n);
+    // fk_upload_folder es RESTRICT: las cargas deben borrarse antes que sus carpetas. Una carga en
+    // «Limpieza pendiente» es el único registro de su objeto, por lo que su clave también se elimina.
+    const uploadRepo = manager.getRepository(Upload);
+    const uploads = await uploadRepo.find({ where: { organizationId, folderId: In(folderIds) } });
+
+    for (const fileId of fileIds) await this.removeFileRows(manager, fileId);
+    if (uploads.length) await uploadRepo.delete({ organizationId, folderId: In(folderIds) });
+    for (const folder of tree) await folderRepo.delete({ id: folder.id, organizationId });
+
+    const usage = await this.readStorageUsage(manager, organizationId);
+    await this.writeQuotaCounters(manager, organizationId, usage);
+    const objects = uniqueStoredObjects([
+      ...versions.map((version) => ({ destinationId: version.destinationId, objectKey: version.objectKey })),
+      ...uploads.flatMap((upload) => (
+        upload.objectKey ? [{ destinationId: upload.destinationId, objectKey: upload.objectKey }] : []
+      )),
+    ]);
+    return { freedBytes, objects };
   }
 
   private getFolderTree(
@@ -1455,37 +1437,11 @@ export class FilesService {
       throw this.businessError(HttpStatus.CONFLICT, 'FILE_NAME_CONFLICT', 'Ya existe un archivo con ese nombre en la carpeta');
     }
 
-    await this.assertRestoreFitsQuota(manager, file, organizationId);
-
     // Ambos campos a la vez: el CHECK ck_file_soft_delete_consistent lo exige
     file.isDeleted = false;
     file.deletedAt = null;
     const saved = await fileRepo.save(file);
     return { id: saved.id, name: saved.name, folderId: saved.folderId };
-  }
-
-  /**
-   * Un archivo eliminado hace más de 30 días ya no cuenta para la cuota (readStorageUsage).
-   * Restaurarlo lo vuelve a contar, así que debe caber en el límite del plan, igual que una carga.
-   * Si todavía está dentro de la retención ya cuenta, y no se vuelve a comprobar.
-   */
-  private async assertRestoreFitsQuota(manager: EntityManager, file: FileRecord, organizationId: string): Promise<void> {
-    const retentionCutoff = Date.now() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
-    if (!file.deletedAt || file.deletedAt.getTime() > retentionCutoff) return;
-
-    const version = file.currentVersionId
-      ? await manager.getRepository(FileVersion).findOne({ where: { id: file.currentVersionId, fileId: file.id } })
-      : null;
-    const sizeBytes = BigInt(version?.sizeBytes ?? 0);
-    const usage = await this.readStorageUsage(manager, organizationId);
-    const limit = await this.billingService.getStorageLimitBytes(organizationId);
-    if (usage.totalBytes + sizeBytes > limit) {
-      throw this.businessError(
-        HttpStatus.UNPROCESSABLE_ENTITY,
-        'STORAGE_QUOTA_EXCEEDED',
-        'La restauración excede la cuota disponible para el plan de la organización',
-      );
-    }
   }
 
   /**
@@ -1532,6 +1488,10 @@ export class FilesService {
       );
     }
 
+    return this.applyFilePurge(manager, fileId, organizationId);
+  }
+
+  private async applyFilePurge(manager: EntityManager, fileId: string, organizationId: string) {
     const versions = await manager.getRepository(FileVersion).find({ where: { fileId } });
     const freedBytes = versions.reduce((total, version) => total + BigInt(version.sizeBytes), BigInt(0));
 
@@ -1542,6 +1502,65 @@ export class FilesService {
       freedBytes,
       objects: versions.map((version) => ({ destinationId: version.destinationId, objectKey: version.objectKey })),
     };
+  }
+
+  private expiredTrashQuery(kind: 'folder' | 'file') {
+    const parentId = kind === 'folder' ? 'parent_folder_id' : 'folder_id';
+    return `FROM files.${kind} item
+      JOIN files.folder parent ON parent.folder_id = item.${parentId}
+        AND parent.organization_id = item.organization_id AND parent.is_deleted = false
+      JOIN admin.organization org ON org.organization_id = item.organization_id AND org.status = 'active'
+      WHERE item.is_deleted = true AND item.deleted_at <= now() - interval '${TRASH_RETENTION_DAYS} days'`;
+  }
+
+  listExpiredTrash(kind: 'folder' | 'file', after: string | null) {
+    return this.dataSource.manager.query<{ id: string; organizationId: string }[]>(
+      `SELECT item.${kind}_id AS id, item.organization_id AS "organizationId"
+       ${this.expiredTrashQuery(kind)}
+       AND ($1::uuid IS NULL OR item.${kind}_id > $1)
+       ORDER BY item.${kind}_id LIMIT 50`,
+      [after],
+    );
+  }
+
+  purgeExpiredFile(fileId: string, organizationId: string) {
+    return this.purgeExpiredTrash('file', fileId, organizationId);
+  }
+
+  purgeExpiredFolder(folderId: string, organizationId: string) {
+    return this.purgeExpiredTrash('folder', folderId, organizationId);
+  }
+
+  private async purgeExpiredTrash(kind: 'folder' | 'file', id: string, organizationId: string) {
+    const purged = await this.dataSource.transaction(async (manager) => {
+      // Mantiene el mismo orden de locks que las restauraciones y purgas manuales.
+      await this.lockTenantQuota(manager, organizationId);
+      const organizations: unknown[] = await manager.query(
+        "SELECT organization_id FROM admin.organization WHERE organization_id = $1 AND status = 'active' FOR SHARE SKIP LOCKED",
+        [organizationId],
+      );
+      if (!organizations.length) return null;
+      const [item] = await manager.query<{ driveId: string }[]>(
+        `SELECT parent.drive_id AS "driveId" ${this.expiredTrashQuery(kind)}
+         AND item.${kind}_id = $1 AND item.organization_id = $2
+         FOR UPDATE OF item SKIP LOCKED`,
+        [id, organizationId],
+      );
+      if (!item) return null;
+
+      return kind === 'folder'
+        ? this.applyFolderPurge(manager, id, organizationId, item.driveId)
+        : this.applyFilePurge(manager, id, organizationId);
+    });
+    if (!purged) return;
+    await this.deleteOrphanObjects(organizationId, purged.objects);
+    await this.auditService?.logEvent({
+      organizationId,
+      actorType: AuditActorType.SYSTEM,
+      action: kind === 'folder' ? AuditAction.FOLDER_PURGE : AuditAction.FILE_PURGE,
+      resourceType: kind === 'folder' ? AuditResource.FOLDER : AuditResource.FILE,
+      resourceId: id,
+    });
   }
 
   /**
