@@ -12,7 +12,7 @@
 | **Dependencias** | SPEC-803 |
 | **Prioridad** | P1 |
 | **Estimación** | 2 h |
-| **Estado** | Aprobada (2026-11-04, Víctor Chán Morales) |
+| **Estado** | Implementada (2026-11-06, `feat/804-frontend-almacenamiento`). Aprobada el 2026-11-04 por Víctor Chán Morales |
 
 ## 2. Objetivo
 
@@ -79,15 +79,15 @@ No modifica la base de datos.
 
 - `lib/api/storage.ts` (nuevo).
 - `docker-compose.yml`: servicio `seaweedfs-local` con perfil `s3-local`, otro volumen y puerto 8334. No altera los perfiles existentes.
-- Dentro de Docker se alcanza por nombre de servicio; desde la API en el equipo, por `localhost:8334`, con `DESTINATION_ALLOW_PRIVATE=true`.
+- Dentro de Docker se alcanza por nombre de servicio (`seaweedfs-local:8333`). Desde la API en el equipo se registra con la IP de la LAN y `localhost:8334` **no** sirve: SPEC-802 bloquea loopback siempre, con o sin `DESTINATION_ALLOW_PRIVATE=true` (corrección de la versión aprobada, ver §13).
 - Dividir en `components/storage-settings.tsx` y `components/destination-form.tsx`.
 
 ## 9. Plan de Tareas
 
-- [ ] **T1 (15 min)**: Cliente y tipos.
-- [ ] **T2 (50 min)**: Pantalla y formulario.
-- [ ] **T3 (25 min)**: Selector y etiqueta en el explorador.
-- [ ] **T4 (30 min)**: Servicio en Compose y prueba manual completa.
+- [x] **T1 (15 min)**: Cliente y tipos (`746a42c`).
+- [x] **T2 (50 min)**: Pantalla y formulario (`746a42c`).
+- [x] **T3 (25 min)**: Selector y etiqueta en el explorador (`c8f00e0`).
+- [x] **T4 (30 min)**: Servicio en Compose y prueba manual completa (`c1ad403`). Evidencia en `docs/evidencia/spec-804/RESUMEN.md`.
 
 **Archivos permitidos:** `app/almacenamiento/page.tsx`, `components/storage-settings.tsx`, `components/destination-form.tsx`, `lib/api/storage.ts` (nuevos), `components/file-browser-live.tsx`, `components/app-shell.tsx`, `lib/api/types.ts`, `app/globals.css`, `docker-compose.yml`, `.env.example`, `docs/GUIA_INSTALACION_Y_EJECUCION.md`.
 
@@ -99,7 +99,7 @@ No modifica la base de datos.
 
 ## 11. Impacto en Documentación
 
-- [ ] `docs/GUIA_INSTALACION_Y_EJECUCION.md`, `docs/FIGMA_MAP.md`.
+- [x] `docs/GUIA_INSTALACION_Y_EJECUCION.md`, `docs/FIGMA_MAP.md`.
 
 ## 12. Preguntas Abiertas
 
@@ -111,3 +111,4 @@ Ninguna.
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
+| 2026-11-06 | Claude Code | Implementada en `feat/804-frontend-almacenamiento` (`746a42c`, `c8f00e0`, `c1ad403`). **Corrección de §8:** el destino de la API en el equipo se registra con la IP de la LAN, no con `localhost:8334`, porque SPEC-802 bloquea loopback (la evidencia de SPEC-802, E8, lo confirma con 422). **Desviaciones de archivos permitidos:** `lib/storage-labels.ts`, `components/storage-model-picker.tsx`, `components/destination-list.tsx`, `components/installation-request-panel.tsx` (subcomponentes de la pantalla), `lib/api/README.md` (lista de clientes, regla 11) y `docs/evidencia/spec-804/`. **Pendiente:** cotejo visual con diseño (espacio vacío sobre los títulos de las tarjetas), y los escenarios 2 (registro y prueba desde la interfaz) y 7 (nueva solicitud desde la interfaz) sin recorrer con clics; ver la evidencia. |

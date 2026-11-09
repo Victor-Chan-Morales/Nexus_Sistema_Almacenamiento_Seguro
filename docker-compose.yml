@@ -4,6 +4,7 @@
 #   docker compose up -d                  → postgres + seaweedfs + mailpit
 #   docker compose run --rm migrate       → aplica las migraciones (dbmate)
 #   docker compose --profile containerized-api up -d --build   → además, la API en contenedor
+#   docker compose --profile s3-local up -d                    → además, un segundo S3 (SeaweedFS) en localhost:8334
 #
 # La API normalmente corre en el host (npm run dev:api) y se conecta a los puertos publicados.
 # Todos los servicios comparten la red nexus_backend: entre contenedores se llaman por nombre de servicio
@@ -17,6 +18,7 @@ networks:
 volumes:
   nexus-postgres-data:
   nexus-seaweedfs-data:
+  nexus-seaweedfs-local-data:
 
 services:
   # ── Base de datos ─────────────────────────────────────────────────────────
@@ -78,6 +80,28 @@ services:
       - "8888:8888"
     volumes:
       - nexus-seaweedfs-data:/data
+    networks:
+      - nexus_backend
+
+  # ── Segundo almacén S3 (perfil s3-local, para probar el destino "Servidor local") ──
+  # Solo se levanta con: docker compose --profile s3-local up -d
+  # Bucket de prueba: nexus-local (créalo con cualquier cliente S3; ver la guía de instalación).
+  # Desde la API en el equipo: http://<IP-de-la-LAN>:8334 (localhost está bloqueado por SPEC-802).
+  # Dentro de Docker: http://seaweedfs-local:8333.
+  seaweedfs-local:
+    profiles: ["s3-local"]
+    image: chrislusf/seaweedfs:latest@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    container_name: nexus-seaweedfs-local-dev
+    restart: unless-stopped
+    command: server -dir=/data -s3 -s3.port=8333 -volume.max=0 -master.volumeSizeLimitMB=1024
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_LOCAL_ACCESS_KEY:-nexus_local_2}
+      AWS_SECRET_ACCESS_KEY: ${S3_LOCAL_SECRET_KEY:-local_only_change_me_2}
+    ports:
+      # Solo para desarrollo: API S3 del segundo almacén (no se publican 9333 ni 8888)
+      - "8334:8333"
+    volumes:
+      - nexus-seaweedfs-local-data:/data
     networks:
       - nexus_backend
 

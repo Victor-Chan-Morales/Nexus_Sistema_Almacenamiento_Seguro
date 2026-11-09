@@ -5,6 +5,14 @@
 
 Registro dinámico de decisiones, acuerdos pendientes y bloqueos. Añada entradas nuevas al principio; no borre historia. Los contratos de integración v0.3 fueron aprobados por el integrador para implementación el 2026-10-18.
 
+## 2026-11-06 — SPEC-804: pantalla de almacenamiento y segundo S3 (T1 a T4)
+
+- Se implementó SPEC-804 en `feat/804-frontend-almacenamiento` en tres commits: `c1ad403` (segundo S3 con el perfil `s3-local`, `.env.example` y guía), `746a42c` (cliente, pantalla `/almacenamiento`, cambio de modelo y gestión de destinos) y `c8f00e0` (selector de destino y etiqueta de ubicación en el explorador).
+- Verificación en navegador headless (Playwright, en local) contra la API y la web reales: pantalla del administrador, selector del explorador en modelo híbrido, etiquetas de ubicación, diálogo de cambio de modelo sin confirmar y vista del colaborador en solo lectura (sin llamadas a `/destinations`). Detalle y lo no comprobado en `docs/evidencia/spec-804/RESUMEN.md`.
+- Corrección de la spec §8: el destino de la API en el equipo se registra con la IP de la LAN; `localhost` lo bloquea SPEC-802.
+- Decisiones: el selector de destino en "Crear carpeta" solo aparece en la raíz de un Drive con modelo híbrido, y el botón queda deshabilitado hasta elegir. La pantalla recarga en silencio tras cambios para no borrar mensajes de "Probar conexión".
+- Pendiente: cotejo visual con el diseño (espacio vacío sobre los títulos de las tarjetas); los escenarios 2 y 7 no se recorrieron con clics en la interfaz; el comando de AWS CLI de la guía no se ejecutó (la creación del bucket se hizo con el SDK).
+
 ## 2026-11-06 — SPEC-803: elegir Nube, Local o Híbrido (T1 a T4)
 
 - Se implementó SPEC-803 en `feat/803-elegir-modelo-despliegue` en tres commits: `1d959a1` (base: modelo de despliegue en IAM, `DestinationDefaults`, auditoría), `d38ccfa` (destino de carpetas por modelo) y `32f6b28` (política de almacenamiento y solicitudes de instalación). Sin migración.

@@ -63,5 +63,6 @@ Se preparó navegación y contenido inicial en estas rutas. La implementación v
 | `/perfil` | Perfil de solo lectura con nombre, correo, organización y rol de la sesión, y acceso a recuperación de contraseña | Sin frame específico; cotejo visual pendiente |
 | `/configuracion` | Gestión de miembros del equipo | Conectada a la API (SPEC-106) |
 | `/auditoria` | Bitácora conectada a la API: tabla (fecha, actor, acción con insignia por familia, recurso), filtro visual por acción, "Cargar más" por cursor y aviso para colaborador | Sin frame específico; cotejo visual pendiente |
+| `/almacenamiento` | Modelo de despliegue (Nube, Servidor local, Híbrido) con el actual marcado, diálogo de cambio, destinos con prueba de conexión y solicitud de instalación (SPEC-804) | Sin frame específico; cotejo visual pendiente. Capturas en `docs/evidencia/spec-804/` |
 
 Las acciones de demostración que aún quedan (las retiran SPEC-601 y SPEC-606) solo alteran datos locales del navegador. La selección de un archivo no transfiere sus bytes a SeaweedFS ni sustituye las operaciones de API de IAM, Billing o Files.

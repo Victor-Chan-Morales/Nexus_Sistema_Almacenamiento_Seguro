@@ -116,6 +116,10 @@ export type Folder = {
   driveId: UUID;
   sizeBytes?: number;
   createdAt?: ISODateTime;
+  /** SPEC-803: destino de la carpeta. Las subcarpetas heredan el de su carpeta principal. */
+  destinationId?: UUID | null;
+  /** SPEC-803: ubicación del destino para la etiqueta Nube / Servidor local del explorador. */
+  destinationLocation?: DestinationLocation | null;
 };
 
 export type PersonalDrive = {
@@ -132,6 +136,8 @@ export type FolderListResponse = {
 export type CreateFolderInput = {
   name: string;
   parentFolderId?: UUID;
+  /** SPEC-803: solo en carpetas principales de un modelo híbrido. En otros casos la API responde 422. */
+  destinationId?: UUID;
 };
 
 export type CreateFolderResponse = Folder & {
@@ -304,6 +310,97 @@ export type AuditEventsResponse = {
 export type AuditEventsQuery = {
   limit?: number;
   before?: ISODateTime;
+};
+
+// SPEC-803/804: modelo de despliegue, destinos de almacenamiento e solicitudes de instalación
+export type DeploymentModel = "cloud" | "on_premises" | "hybrid";
+export type DestinationLocation = "cloud" | "on_premises";
+export type DestinationConnectionStatus = "Sin comprobar" | "Comprobando" | "Conectado" | "Sin conexión";
+export type DestinationProviderType = "s3" | "minio";
+
+/** SPEC-802: forma de un destino en `GET /destinations`. Sin credenciales; `endpoint` y `region` son null en los destinos de entorno. */
+export type Destination = {
+  id: UUID;
+  name: string;
+  location: DestinationLocation;
+  providerType: DestinationProviderType;
+  endpoint: string | null;
+  bucket: string;
+  region: string | null;
+  connectionStatus: DestinationConnectionStatus;
+  isEnabled: boolean;
+  isDefault: boolean;
+  createdAt: ISODateTime;
+};
+
+export type DestinationListResponse = {
+  items: Destination[];
+};
+
+/** SPEC-802: cuerpo de `POST /destinations`. Las credenciales solo viajan en la solicitud; ninguna respuesta las devuelve. */
+export type CreateDestinationInput = {
+  name: string;
+  location: DestinationLocation;
+  providerType: DestinationProviderType;
+  endpoint: string;
+  bucket: string;
+  region: string;
+  accessKey: string;
+  secretKey: string;
+  useSsl: boolean;
+};
+
+/** SPEC-802: respuesta de `POST /destinations/:id/test`. `reason` es null cuando la conexión funciona. */
+export type TestDestinationResponse = {
+  status: "Conectado" | "Sin conexión";
+  checkedAt: ISODateTime;
+  reason: "AUTH" | "NETWORK" | "BUCKET_NOT_FOUND" | "DATA_MISMATCH" | null;
+};
+
+/** SPEC-803: destino que se ofrece para elegir en la política (sin endpoint ni credenciales). */
+export type StoragePolicyDestination = {
+  id: UUID;
+  name: string;
+  location: DestinationLocation;
+};
+
+/** SPEC-803: respuesta de `GET` y `PUT /organizations/storage-policy`. */
+export type StoragePolicy = {
+  model: DeploymentModel;
+  defaultDestinationId: UUID | null;
+  destinations: StoragePolicyDestination[];
+};
+
+/** SPEC-803: cuerpo de `PUT /organizations/storage-policy`. */
+export type UpdateStoragePolicyInput = {
+  model: DeploymentModel;
+  defaultDestinationId: UUID;
+};
+
+export type InstallationRequestStatus = "Pendiente" | "Aprobada" | "Rechazada" | "Cerrada";
+
+/** SPEC-803: solicitud de instalación de la organización (`GET /organizations/installation-requests`). */
+export type InstallationRequest = {
+  id: UUID;
+  requestedModel: DeploymentModel;
+  status: InstallationRequestStatus;
+  createdAt: ISODateTime;
+  reviewedAt: ISODateTime | null;
+};
+
+export type InstallationRequestListResponse = {
+  items: InstallationRequest[];
+};
+
+export type CreateInstallationRequestInput = {
+  requestedModel: DeploymentModel;
+};
+
+/** SPEC-803: respuesta `201` de `POST /organizations/installation-requests`. */
+export type CreateInstallationRequestResponse = {
+  id: UUID;
+  status: InstallationRequestStatus;
+  createdAt: ISODateTime;
 };
 
 /** SPEC-501: consultas de plataforma (solo Super Admin). */
