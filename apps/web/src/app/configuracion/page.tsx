@@ -70,7 +70,7 @@ export default function SettingsPage() {
   const [closeError, setCloseError] = useState<string | null>(null);
 
   const isCloseFormValid =
-    typedOrgName.trim().toLowerCase() === orgName.trim().toLowerCase() &&
+    typedOrgName.trim() === orgName.trim() &&
     adminPassword.length > 0;
 
   async function handleAddMember(e: FormEvent<HTMLFormElement>) {
@@ -154,7 +154,7 @@ export default function SettingsPage() {
         accessToken,
       );
       await signOut();
-      router.push("/login");
+      router.push("/login?empresa=cerrada");
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 401 || err.code === "INVALID_CREDENTIALS") {

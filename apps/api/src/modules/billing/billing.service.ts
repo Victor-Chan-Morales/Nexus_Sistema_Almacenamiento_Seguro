@@ -227,9 +227,11 @@ export class BillingService implements OnModuleInit {
    */
   async cancelActive(organizationId: string, transactionalManager?: EntityManager): Promise<void> {
     const execute = async (manager: EntityManager): Promise<void> => {
+      // loadEagerRelations: false evita el LEFT JOIN de `plan`, que Postgres no admite con FOR UPDATE.
       const active = await manager.findOne(Subscription, {
         where: { organizationId, status: SubscriptionStatus.ACTIVE },
         lock: { mode: 'pessimistic_write' },
+        loadEagerRelations: false,
       });
       if (active) {
         active.status = SubscriptionStatus.CANCELLED;

@@ -36,7 +36,6 @@ export abstract class OrganizationRepository {
    * altas de miembros de una misma organización. Devuelve false si la organización no existe.
    */
   abstract lockById(tx: TransactionContext, organizationId: string): Promise<boolean>;
-  abstract findById(organizationId: string, tx?: TransactionContext): Promise<Organization | null>;
   abstract findByIdForUpdate(organizationId: string, tx: TransactionContext): Promise<Organization | null>;
   abstract setStatus(tx: TransactionContext, organizationId: string, status: OrgStatus): Promise<void>;
 }

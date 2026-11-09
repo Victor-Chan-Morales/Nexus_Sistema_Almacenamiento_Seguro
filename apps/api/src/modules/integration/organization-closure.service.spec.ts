@@ -46,7 +46,6 @@ describe('OrganizationClosureService (SPEC-114)', () => {
     organizations = {
       create: jest.fn(),
       lockById: jest.fn(),
-      findById: jest.fn(),
       findByIdForUpdate: jest.fn().mockResolvedValue(fakeOrg as Organization),
       setStatus: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<OrganizationRepository>;
@@ -151,5 +150,42 @@ describe('OrganizationClosureService (SPEC-114)', () => {
         password: 'correct-password',
       }),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it('si cancelActive falla, propaga el error y no registra auditoría', async () => {
+    billing.cancelActive.mockRejectedValue(new Error('db caída'));
+
+    await expect(
+      service.close(actor, {
+        organizationName: 'Empresa Test',
+        password: 'correct-password',
+      }),
+    ).rejects.toThrow('db caída');
+
+    expect(audit.logEvent).not.toHaveBeenCalled();
+  });
+
+  it('si la revocación de sesiones falla, propaga el error y no registra auditoría', async () => {
+    sessions.revokeAllOfOrganization.mockRejectedValue(new Error('revocación fallida'));
+
+    await expect(
+      service.close(actor, {
+        organizationName: 'Empresa Test',
+        password: 'correct-password',
+      }),
+    ).rejects.toThrow('revocación fallida');
+
+    expect(audit.logEvent).not.toHaveBeenCalled();
+  });
+
+  it('si la auditoría falla después del commit, el cierre sigue siendo exitoso', async () => {
+    audit.logEvent.mockRejectedValue(new Error('outbox caído'));
+
+    const result = await service.close(actor, {
+      organizationName: 'Empresa Test',
+      password: 'correct-password',
+    });
+
+    expect(result).toEqual({ closed: true });
   });
 });

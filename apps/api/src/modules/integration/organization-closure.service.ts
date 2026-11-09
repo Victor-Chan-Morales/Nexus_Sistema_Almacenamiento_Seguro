@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   Optional,
   UnauthorizedException,
@@ -29,6 +30,8 @@ import { CloseOrganizationDto } from './dto/close-organization.dto';
  */
 @Injectable()
 export class OrganizationClosureService {
+  private readonly logger = new Logger(OrganizationClosureService.name);
+
   constructor(
     private readonly organizations: OrganizationRepository,
     private readonly billing: BillingService,
@@ -76,14 +79,20 @@ export class OrganizationClosureService {
       await this.sessions.revokeAllOfOrganization(tx, org.id);
     });
 
-    // 3. Auditoría posterior al commit (best-effort)
+    // 3. Auditoría posterior al commit (best-effort, SPEC-114 §8): un fallo no revierte el cierre, pero se registra.
     void this.audit?.logEvent({
       organizationId: actor.organizationId,
       actorId: actor.userId,
       action: AuditAction.ORGANIZATION_CLOSED,
       resourceType: AuditResource.ORGANIZATION,
       resourceId: actor.organizationId,
-    }).catch(() => {});
+    }).catch((err: unknown) => {
+      this.logger.warn(
+        `No se pudo registrar ORGANIZATION_CLOSED para ${actor.organizationId}: ${
+          err instanceof Error ? err.message : 'error desconocido'
+        }`,
+      );
+    });
 
     return { closed: true };
   }

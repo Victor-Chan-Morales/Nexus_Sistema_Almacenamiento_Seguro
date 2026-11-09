@@ -5,6 +5,13 @@
 
 Registro dinámico de decisiones, acuerdos pendientes y bloqueos. Añada entradas nuevas al principio; no borre historia. Los contratos de integración v0.3 fueron aprobados por el integrador para implementación el 2026-10-18.
 
+## 2026-11-09 — Correcciones de la revisión de la PR #54 (SPEC-114 / SPEC-109)
+
+- **Estado:** la rama `feat/109-114-miembros-cierre-empresa` recibe un commit de correcciones local, pendiente de push. La descripción de la PR la actualiza su autor.
+- **Decisiones:** la comparación del nombre de la empresa es exacta en pantalla y en API (SPEC-114 §4). La auditoría `ORGANIZATION_CLOSED` sigue siendo best-effort tras el commit (SPEC-114 §8), pero un fallo se registra en log en lugar de descartarse. Con contraseña correcta, una cuenta de organización cerrada recibe `403 NO_ACTIVE_MEMBERSHIP`.
+- **Hallazgo:** `BillingService.cancelActive` consultaba la suscripción con bloqueo y la relación `plan` eager; Postgres rechazaba el `FOR UPDATE` sobre el `LEFT JOIN`, y el cierre respondía 500. Lo detectó el E2E nuevo, no los tests unitarios, que mockean el repositorio.
+- **Pendiente:** push de la rama y actualizar la descripción de la PR; verificación manual de la pantalla de cierre y de la aparición del aviso en `/login` (Escenario 6). El E2E se ejecutó contra la base local de desarrollo (puerto 5433), con filas de prueba `closure.*`.
+
 ## 2026-10-31 — Pantalla de auditoría conectada (SPEC-403)
 
 - **Estado:** `/auditoria` deja el `PlaceholderPage` y muestra la bitácora real (`apps/web/src/components/audit-log.tsx`) contra `GET /audit/events` (SPEC-402) mediante el cliente `apps/web/src/lib/api/audit.ts`. Tabla con fecha, actor, acción en español con insignia por familia (`.audit-badge-{auth,files,team,plan}` en `globals.css`) y recurso; filtro visual por acción, "Cargar más" por cursor, estados de carga/vacío/error y aviso para `colaborador` sin llamar a la API. Rama `feat/403-frontend-auditoria` **apilada sobre `feat/106-frontend-miembros-configuracion` (PR #29)**; se rebasará sobre `main` cuando #29 entre.

@@ -93,10 +93,6 @@ export class TypeOrmOrganizationRepository implements OrganizationRepository {
     return row !== null;
   }
 
-  async findById(organizationId: string, tx?: TransactionContext): Promise<Organization | null> {
-    return managerOf(this.dataSource, tx).findOne(Organization, { where: { id: organizationId } });
-  }
-
   async findByIdForUpdate(organizationId: string, tx: TransactionContext): Promise<Organization | null> {
     return tx.findOne(Organization, {
       where: { id: organizationId },
