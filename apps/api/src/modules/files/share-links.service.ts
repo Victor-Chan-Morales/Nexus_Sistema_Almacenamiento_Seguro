@@ -4,6 +4,7 @@ import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction, AuditResource } from '../audit/audit.types';
 import { OpaqueTokens, PasswordHasher } from '../iam/ports/security';
+import { Organization } from '../iam/entities/organization.entity';
 import { DriveAccess, DriveAccessService, DriveActor } from './drive-access.service';
 import { CreatedShareLinkDto, CreateShareLinkDto, ShareLinkItemDto, ShareLinksResponseDto, ShareLinkStatus } from './dto/share-link.dto';
 import { FileVersion } from './entities/file-version.entity';
@@ -45,6 +46,30 @@ export class ShareLinksService {
     private readonly hasher: PasswordHasher,
     @Optional() private readonly auditService?: AuditService,
   ) {}
+
+  async resolvePublicLink(token: string) {
+    const unavailable = () => new NotFoundException({
+      code: 'SHARE_LINK_UNAVAILABLE',
+      message: 'El enlace no está disponible.',
+    });
+    const link = await this.linkRepository.findOneBy({ tokenHash: this.opaque.hash(token) });
+    if (!link || shareLinkStatus(link, new Date()) !== 'active') throw unavailable();
+
+    const version = await this.versionRepository.findOne({
+      where: { id: link.versionId, fileRecord: { organizationId: link.organizationId } },
+      relations: { fileRecord: { folder: true } },
+    });
+    const file = version?.fileRecord;
+    if (!version || !file || file.isDeleted || !file.folder || file.folder.isDeleted
+      || file.folder.organizationId !== link.organizationId) throw unavailable();
+
+    const active = await this.dataSource.getRepository(Organization).existsBy({
+      id: link.organizationId,
+      status: 'active',
+    });
+    if (!active) throw unavailable();
+    return { link, file, version };
+  }
 
   /** Crea el enlace fijado a la versión vigente. Argon2id va fuera de la transacción para no retener el bloqueo. */
   async createLink(fileId: string, dto: CreateShareLinkDto, actor: DriveActor): Promise<CreatedShareLinkDto> {
