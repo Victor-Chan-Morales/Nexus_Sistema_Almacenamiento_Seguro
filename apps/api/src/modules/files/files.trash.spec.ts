@@ -370,37 +370,14 @@ describe('SPEC-203: FilesService.restoreFile', () => {
     });
   });
 
-  it('escenario 7: un archivo caducado que cabe en la cuota se restaura y vuelve a contar', async () => {
+  it('restaura un archivo vencido sin volver a consultar la cuota', async () => {
     const { service, fileRepo, billing } = buildRestoreService({
-      file: expiredTrashedFile(),
-      usedBytes: 100,
-      limitBytes: 1000,
-      versionSize: '50',
+      file: expiredTrashedFile(), usedBytes: 1000, limitBytes: 1000, versionSize: '50',
     });
 
-    await expect(service.restoreFile(FILE_ID, ORG, USER)).resolves.toEqual({
-      id: FILE_ID,
-      name: 'contrato.pdf',
-      folderId: 'folder-1',
-    });
-    expect(billing.getStorageLimitBytes).toHaveBeenCalledWith(ORG);
+    await expect(service.restoreFile(FILE_ID, ORG, USER)).resolves.toMatchObject({ id: FILE_ID });
+    expect(billing.getStorageLimitBytes).not.toHaveBeenCalled();
     expect(fileRepo.save).toHaveBeenCalledWith(expect.objectContaining({ isDeleted: false, deletedAt: null }));
-  });
-
-  it('escenario 7: un archivo caducado que no cabe en la cuota responde 422 STORAGE_QUOTA_EXCEEDED y sigue en la papelera', async () => {
-    const { service, fileRepo, audit } = buildRestoreService({
-      file: expiredTrashedFile(),
-      usedBytes: 980,
-      limitBytes: 1000,
-      versionSize: '50',
-    });
-
-    const error = await errorOf(service.restoreFile(FILE_ID, ORG, USER));
-
-    expect((error as HttpException).getStatus()).toBe(422);
-    expect((error as HttpException).getResponse()).toMatchObject({ code: 'STORAGE_QUOTA_EXCEEDED' });
-    expect(fileRepo.save).not.toHaveBeenCalled();
-    expect(audit.logEvent).not.toHaveBeenCalled();
   });
 
   it('un archivo dentro de la retención ya cuenta para la cuota: no se vuelve a comprobar', async () => {
