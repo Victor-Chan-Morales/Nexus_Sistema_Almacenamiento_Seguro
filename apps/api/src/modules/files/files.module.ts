@@ -27,6 +27,10 @@ import { Team } from './entities/team.entity';
 import { TeamMember } from './entities/team-member.entity';
 import { TeamsController } from './teams.controller';
 import { TeamsService } from './teams.service';
+import { DestinationDefaults } from './destination-defaults.service';
+import { DeploymentModelSource } from './ports/deployment-model-source';
+import { FolderPlacementService } from './placement/folder-placement.service';
+import { OrganizationRepository } from '../iam/ports/repositories';
 
 /**
  * Módulo FILES
@@ -72,7 +76,11 @@ import { TeamsService } from './teams.service';
     ShareLinksService,
     DestinationsService,
     TeamsService,
+    DestinationDefaults,
+    // SPEC-803 (DIP): Files consulta el modelo de despliegue por su puerto; IAM lo implementa
+    { provide: DeploymentModelSource, useExisting: OrganizationRepository },
+    FolderPlacementService,
   ],
-  exports: [FilesService],
+  exports: [FilesService, DestinationDefaults],
 })
 export class FilesModule {}

@@ -55,6 +55,8 @@ const buildService = ({
     {} as never,
     {} as never,
     new DriveAccessService(dataSource as never),
+    undefined,
+    {} as never,
   );
   return { service, qb, driveRepository, dataSource, fileRepository };
 };
@@ -251,6 +253,7 @@ const buildRestoreService = ({
     {} as never,
     new DriveAccessService(dataSource as never),
     audit as unknown as AuditService,
+    {} as never,
   );
   return { service, fileRepo, folderRepo, manager, audit, billing };
 };
@@ -491,6 +494,7 @@ const buildPurgeService = ({
     {} as never,
     new DriveAccessService(dataSource as never),
     audit as unknown as AuditService,
+    {} as never,
   );
   return { service, fileRepo, versionRepo, manager, storage, storageRouter, audit, dataSource };
 };

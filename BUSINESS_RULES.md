@@ -50,6 +50,11 @@ El rol Auditor no se implementa: la propuesta §7 define tres roles (ADR-008 §2
 8. No responder éxito si Storage falla o si no se guardaron los metadatos. Si una escritura parcial deja objeto huérfano, intentar compensación y dejar registro operativo seguro.
 9. El destino efectivo puede heredarse de organización/carpeta según la política; el cliente no puede sobrescribir destinos permitidos ni consultar credenciales.
 10. Las operaciones de lista, preview, descarga, eliminación, enlace y versión deben verificar tenant y permiso incluso si reciben UUID. El error de recurso ajeno no revela su existencia.
+11. **[SPEC-803]** El modelo de despliegue (`cloud`, `on_premises` o `hybrid`) decide dónde nace cada carpeta. En `cloud` y `on_premises`, toda carpeta principal usa el destino predeterminado y no admite elegir otro. En `hybrid`, cada carpeta principal (hija directa de la raíz del Drive) puede elegir un destino disponible; si no elige, usa el predeterminado.
+12. **[SPEC-803]** Una subcarpeta hereda el destino de su carpeta principal y no admite elegir otro. Sus versiones nuevas se guardan en ese destino.
+13. **[SPEC-803]** Un destino solo se puede elegir o marcar como predeterminado si pertenece a la organización, está habilitado y `Conectado`. El destino predeterminado de una organización es único.
+14. **[SPEC-803]** Cambiar de modelo no mueve archivos: las versiones existentes conservan su destino y se siguen descargando. Al cambiar el predeterminado, se repuntan las carpetas raíz de los Drives para que lo subido directamente a la raíz vaya al nuevo destino. Al pasar de `hybrid` a un solo modelo, las carpetas conservan su destino y sus versiones nuevas siguen allí.
+15. **[SPEC-803]** Elegir `cloud` exige un destino disponible de Nube; `on_premises`, uno de Servidor local; `hybrid`, uno de cada ubicación. Registrar una solicitud de instalación no es requisito para elegir modelo. Una organización tiene como máximo una solicitud de instalación `Pendiente`.
 
 ## Alcance funcional por corte
 

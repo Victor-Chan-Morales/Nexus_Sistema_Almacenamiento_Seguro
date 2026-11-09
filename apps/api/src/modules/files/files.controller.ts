@@ -26,6 +26,7 @@ import { FilesService } from './files.service';
 import { FileVersionsService, RestoredVersionDto } from './file-versions.service';
 import { PurgeFileResponseDto, RestoreFileResponseDto, RestoreFolderResponseDto, TrashResponseDto } from './dto/trash.dto';
 import { FileVersionsResponseDto } from './dto/versions.dto';
+import { CreateFolderDto } from './dto/folder.dto';
 import { CurrentUser } from '../iam/decorators/current-user.decorator';
 import { AuthUser } from '../iam/interfaces/auth-user.interface';
 import { AuditService } from '../audit/audit.service';
@@ -76,17 +77,15 @@ export class FoldersController {
   }
 
   @Post()
-  async createFolder(
-    @Request() req: any,
-    @Body() body: { name: string; parentId?: string; parentFolderId?: string },
-  ) {
+  async createFolder(@Request() req: any, @Body() dto: CreateFolderDto) {
     const orgId = req.user.organizationId;
     const userId = req.user.userId || req.user.id;
     return this.filesService.createFolder(
       orgId,
       userId,
-      body.name,
-      body.parentFolderId || body.parentId,
+      dto.name,
+      dto.parentFolderId || dto.parentId,
+      dto.destinationId,
     );
   }
 

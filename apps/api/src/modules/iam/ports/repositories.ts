@@ -46,6 +46,16 @@ export abstract class OrganizationRepository {
    * altas de miembros de una misma organización. Devuelve false si la organización no existe.
    */
   abstract lockById(tx: TransactionContext, organizationId: string): Promise<boolean>;
+
+  /** Modelo de despliegue actual (SPEC-803). Devuelve null si la organización no existe. */
+  abstract findDeploymentModel(tx: TransactionContext, organizationId: string): Promise<DeploymentModel | null>;
+
+  /** Cambia el modelo de despliegue dentro de la transacción del llamador. */
+  abstract updateDeploymentModel(
+    tx: TransactionContext,
+    organizationId: string,
+    model: DeploymentModel,
+  ): Promise<void>;
 }
 
 export abstract class MembershipRepository {

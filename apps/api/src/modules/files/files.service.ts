@@ -29,6 +29,8 @@ import { Upload } from './entities/upload.entity';
 import { EncryptedFile, FilesCryptoService } from './files-crypto.service';
 import { DriveAccessService, DriveActor } from './drive-access.service';
 import { PurgeFileResponseDto, RestoreFileResponseDto, RestoreFolderResponseDto, TrashItemDto, TrashResponseDto } from './dto/trash.dto';
+import { DestinationLocation } from './dto/destination.dto';
+import { FolderPlacementService } from './placement/folder-placement.service';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction, AuditResource } from '../audit/audit.types';
 
@@ -133,6 +135,28 @@ export interface UploadedFileDto {
   uploadedAt: Date;
 }
 
+/** Carpeta en la navegación. `destinationLocation` es null si la carpeta no tiene destino asignado (SPEC-803). */
+export interface FolderSummary {
+  id: string;
+  name: string;
+  parentFolderId: string | null;
+  driveId: string;
+  createdAt: Date;
+  sizeBytes: number;
+  destinationLocation: DestinationLocation | null;
+}
+
+/** Carpeta recién creada, con el destino que recibió (SPEC-803). */
+export interface CreatedFolder {
+  id: string;
+  name: string;
+  parentFolderId: string | null;
+  driveId: string;
+  createdAt: Date;
+  destinationId: string;
+  destinationLocation: DestinationLocation;
+}
+
 @Injectable()
 export class FilesService {
   private readonly logger = new Logger(FilesService.name);
@@ -150,7 +174,9 @@ export class FilesService {
     private readonly billingService: BillingService,
     private readonly crypto: FilesCryptoService,
     private readonly driveAccess: DriveAccessService,
-    @Optional() private readonly auditService?: AuditService,
+    // Sin `?`: el parámetro obligatorio siguiente no puede ir detrás de uno opcional. @Optional mantiene la inyección.
+    @Optional() private readonly auditService: AuditService | undefined,
+    private readonly placement: FolderPlacementService,
   ) {}
 
   /**
@@ -430,7 +456,7 @@ export class FilesService {
     parentId?: string,
   ): Promise<{
     drive: { id: string; name: string; rootFolderId: string };
-    items: Array<{ id: string; name: string; parentFolderId: string | null; driveId: string; createdAt: Date; sizeBytes: number }>;
+    items: FolderSummary[];
   }> {
     const drive = await this.getOrCreateUserDrive(organizationId, userId);
     const effectiveParentId = parentId || drive.rootFolderId;
@@ -448,32 +474,42 @@ export class FilesService {
 
     const folderIds = folders.map((folder) => folder.id);
     const folderSizes = await this.calculateFolderSizes(organizationId, folderIds);
+    const locations = await this.placement.locationsOf(organizationId, folders.map((folder) => folder.destinationId));
 
     return {
       drive,
-      items: folders.map((folder) => ({
-        id: folder.id,
-        name: folder.name,
-        parentFolderId: folder.parentId,
-        driveId: folder.driveId,
-        createdAt: folder.createdAt,
-        sizeBytes: folderSizes.get(folder.id) ?? 0,
-      })),
+      items: folders.map((folder) => this.toFolderSummary(folder, folderSizes, locations)),
     };
   }
 
+  /** Vista de una carpeta para la navegación: tamaño acumulado y ubicación de su destino (SPEC-803). */
+  private toFolderSummary(
+    folder: Folder,
+    sizes: Map<string, number>,
+    locations: Map<string, DestinationLocation>,
+  ): FolderSummary {
+    return {
+      id: folder.id,
+      name: folder.name,
+      parentFolderId: folder.parentId,
+      driveId: folder.driveId,
+      createdAt: folder.createdAt,
+      sizeBytes: sizes.get(folder.id) ?? 0,
+      destinationLocation: folder.destinationId ? (locations.get(folder.destinationId) ?? null) : null,
+    };
+  }
+
+  /**
+   * SPEC-803: `destinationId` solo lo admite una carpeta principal de un modelo híbrido; en otros casos responde 422.
+   * La carpeta guarda el destino que resuelve `FolderPlacementService`, dentro de la misma transacción.
+   */
   async createFolder(
     organizationId: string,
     userId: string,
     name: string,
     parentId?: string,
-  ): Promise<{
-    id: string;
-    name: string;
-    parentFolderId: string | null;
-    driveId: string;
-    createdAt: Date;
-  }> {
+    destinationId?: string,
+  ): Promise<CreatedFolder> {
     const normalizedName = name?.trim();
     if (!normalizedName || normalizedName.length > 255) {
       throw new BadRequestException('El nombre de carpeta debe tener entre 1 y 255 caracteres');
@@ -487,12 +523,19 @@ export class FilesService {
         parentId || drive.rootFolderId,
         { manager },
       );
+      const { destination: defaultDestination } = await this.ensureTenantResources(manager, organizationId);
+      const destination = await this.placement.resolveForNewFolder(manager, {
+        organizationId,
+        parent: parentFolder,
+        requestedDestinationId: destinationId,
+        defaultDestination,
+      });
       const folderRepo = manager.getRepository(Folder);
       const saved = await folderRepo.save(folderRepo.create({
         organizationId,
         driveId: drive.id,
         parentId: parentFolder.id,
-        destinationId: parentFolder.destinationId,
+        destinationId: destination.id,
         name: normalizedName,
         createdBy: userId,
         isDeleted: false,
@@ -504,6 +547,8 @@ export class FilesService {
         parentFolderId: saved.parentId,
         driveId: saved.driveId,
         createdAt: saved.createdAt,
+        destinationId: destination.id,
+        destinationLocation: destination.location,
       };
     });
 
@@ -523,8 +568,8 @@ export class FilesService {
     userId: string,
     folderId: string,
   ): Promise<{
-    folder: { id: string; name: string; parentFolderId: string | null; driveId: string; createdAt: Date; sizeBytes: number };
-    folders: Array<{ id: string; name: string; parentFolderId: string | null; driveId: string; createdAt: Date; sizeBytes: number }>;
+    folder: FolderSummary;
+    folders: FolderSummary[];
     files: UploadedFileDto[];
   }> {
     const drive = await this.getOrCreateUserDrive(organizationId, userId);
@@ -543,24 +588,14 @@ export class FilesService {
 
     const folderIds = [folder.id, ...folders.map((f) => f.id)];
     const folderSizes = await this.calculateFolderSizes(organizationId, folderIds);
+    const locations = await this.placement.locationsOf(
+      organizationId,
+      [folder.destinationId, ...folders.map((item) => item.destinationId)],
+    );
 
     return {
-      folder: {
-        id: folder.id,
-        name: folder.name,
-        parentFolderId: folder.parentId,
-        driveId: folder.driveId,
-        createdAt: folder.createdAt,
-        sizeBytes: folderSizes.get(folder.id) ?? 0,
-      },
-      folders: folders.map((item) => ({
-        id: item.id,
-        name: item.name,
-        parentFolderId: item.parentId,
-        driveId: item.driveId,
-        createdAt: item.createdAt,
-        sizeBytes: folderSizes.get(item.id) ?? 0,
-      })),
+      folder: this.toFolderSummary(folder, folderSizes, locations),
+      folders: folders.map((item) => this.toFolderSummary(item, folderSizes, locations)),
       files: files.map((file) => this.toUploadedFileDto(file, file.versions ?? [])),
     };
   }

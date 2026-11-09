@@ -1,4 +1,5 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { DeploymentModel } from '../domain/enums';
 
 /** Tabla admin.organization. created_at / updated_at los llena la BD (default y trigger). */
 @Entity({ schema: 'admin', name: 'organization' })
@@ -15,5 +16,5 @@ export class Organization {
 
   /** ENUM admin.deployment_model, NOT NULL y sin default: el registro debe enviarlo. */
   @Column({ name: 'deployment_model', type: 'varchar' })
-  deploymentModel!: string;
+  deploymentModel!: DeploymentModel;
 }

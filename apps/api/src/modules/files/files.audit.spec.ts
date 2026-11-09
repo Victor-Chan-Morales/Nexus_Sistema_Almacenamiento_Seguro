@@ -53,6 +53,7 @@ describe('SPEC-405: Files Audit Hooks', () => {
       {} as never,
       driveAccess,
       mockAuditService as unknown as AuditService,
+      {} as never,
     );
 
     fileVersions = new FileVersionsService(

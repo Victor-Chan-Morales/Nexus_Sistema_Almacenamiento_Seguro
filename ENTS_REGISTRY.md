@@ -65,7 +65,10 @@ La clase del diagrama no cambia la propiedad del módulo ni amplía automáticam
 | ShareLinksService | Miguel | Files; crea, lista y revoca enlaces a una versión fija (SPEC-209). El acceso público por token es de SPEC-216. |
 | DestinationsService | Miguel | Files; administra los destinos propios y su prueba de conexión (SPEC-802). Las credenciales no salen de Files ni de Storage. |
 | TeamsService | Miguel | Files; crea equipos con su Drive team y administra sus miembros con nivel read o write (SPEC-220). El acceso a archivos del Drive de equipo es de SPEC-222 y SPEC-224. |
-| InstallationService | Por asignar | No se crea con ese nombre: lo cubren `StoragePolicyService` (SPEC-803) y `PlatformActionsService` (SPEC-503). |
+| StoragePolicyService | Por asignar | Integration; coordina IAM (modelo de despliegue de la organización) y Files (destinos) para cambiar el modelo y su predeterminado en una transacción (SPEC-803). |
+| InstallationRequestsService | Por asignar | Integration; registra y lista solicitudes de instalación. Una pendiente por organización. La revisión del Super Admin es de SPEC-503 (SPEC-803). |
+| FolderPlacementService, DestinationDefaults | Miguel | Files; deciden el destino de una carpeta nueva según el modelo y consultan o cambian el predeterminado y las raíces de los Drives (SPEC-803). |
+| PlatformActionsService | Por asignar | Revisión de solicitudes de instalación y acciones de plataforma (SPEC-503). |
 | DatabaseServiceClient | No aprobado como servicio compartido | Mantener repositorios/puertos por dominio; Víctor coordina solo la composición y conexión común. |
 
 Las relaciones Usuario–Membresía–Sesión, tenant–recursos, recurso–destino y permiso–sujeto deben conservarse aunque se muevan métodos a servicios. Los hallazgos completos están en `docs/revision-diagrama-clases.md`.
@@ -80,6 +83,9 @@ Las relaciones Usuario–Membresía–Sesión, tenant–recursos, recurso–dest
 | StorageRouter (ObjectStorage) | Files | Guardar, recuperar o eliminar objeto en el destino de la versión; errores previsibles, sin filtrar secreto. Para SPEC-802 también `probe` (prueba de conexión) e `invalidate` (descarta el cliente de un destino tras editarlo) |
 | IAM | Files | `OpaqueTokens` y `PasswordHasher`, exportados por `IamModule` para generar y hashear tokens y contraseñas de enlaces compartidos (SPEC-209) |
 | IAM | Files | `MemberAdmission.isActiveMember` y `activeMembers`, para validar y listar miembros activos de un equipo sin que Files lea tablas de IAM (SPEC-220) |
+| IAM | Files | Puerto `DeploymentModelSource`, enlazado a `OrganizationRepository` (`findDeploymentModel`), para que Files lea el modelo de despliegue sin importar entidades de IAM (SPEC-803) |
+| IAM | Integration | `OrganizationRepository` (`lockById`, `findDeploymentModel`, `updateDeploymentModel`), exportado por `IamModule` para la política de almacenamiento y las solicitudes (SPEC-803) |
+| Files | Integration | `DestinationDefaults`, exportado por `FilesModule`: lista destinos disponibles, lee el predeterminado y lo cambia dentro de la transacción del llamador (SPEC-803) |
 | Web | IAM/Billing/Files | Solicitudes HTTP según `CONTRACTS.md`; no se comunica directamente con DB ni object storage |
 
 ## Ciclo de cambio

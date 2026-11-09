@@ -12,7 +12,7 @@
 | **Dependencias** | SPEC-802 |
 | **Prioridad** | P1 |
 | **Estimación** | 3 h |
-| **Estado** | Aprobada (2026-11-04, Víctor Chán Morales) |
+| **Estado** | Implementada (2026-11-06, `feat/803-elegir-modelo-despliegue`). Aprobada el 2026-11-04 por Víctor Chán Morales |
 
 ## 2. Objetivo
 
@@ -105,10 +105,10 @@ Sin migración. Usa `admin.organization.deployment_model`, `folder.destination_i
 
 ## 9. Plan de Tareas
 
-- [ ] **T1 (60 min)**: `StoragePolicyService` y rutas.
-- [ ] **T2 (50 min)**: `createFolder` y respuestas con destino.
-- [ ] **T3 (20 min)**: Solicitudes de instalación.
-- [ ] **T4 (50 min)**: Pruebas y prueba manual con dos contenedores.
+- [x] **T1 (60 min)**: `StoragePolicyService` y rutas (`32f6b28`).
+- [x] **T2 (50 min)**: `createFolder` y respuestas con destino (`d38ccfa`).
+- [x] **T3 (20 min)**: Solicitudes de instalación (`32f6b28`).
+- [x] **T4 (50 min)**: Pruebas y prueba manual con dos contenedores. Evidencia en `docs/evidencia/spec-803/RESUMEN.md`.
 
 **Archivos permitidos:** `integration/storage-policy.service.ts`, `integration/storage-policy.controller.ts`, `integration/entities/installation-request.entity.ts`, sus specs (nuevos; coordinar la entidad con SPEC-503), `integration/integration.module.ts`, `files/files.service.ts`, `files/files.controller.ts`, `iam/entities/organization.entity.ts`, `iam/ports/repositories.ts`, `iam/infrastructure/typeorm-repositories.ts`, `audit/audit.types.ts`.
 
@@ -121,7 +121,7 @@ Sin migración. Usa `admin.organization.deployment_model`, `folder.destination_i
 
 ## 11. Impacto en Documentación
 
-- [ ] `CONTRACTS.md` v0.6, `BUSINESS_RULES.md`.
+- [x] `CONTRACTS.md` v0.6, `BUSINESS_RULES.md`.
 
 ## 12. Preguntas Abiertas
 
@@ -134,3 +134,4 @@ Ninguna. Decisión del coordinador (2026-11-04): elegir Local o Híbrido solo re
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada, con decisión de §12. |
 | 2026-11-04 | Claude Code (revisión) | Corrige el destino de las carpetas principales y las raíces al cambiar de modelo. Aprobado por el coordinador (2026-11-04). |
+| 2026-11-06 | Claude Code | Implementada en `feat/803-elegir-modelo-despliegue` (`1d959a1`, `d38ccfa`, `32f6b28`). Sin migración. Los 12 escenarios tienen prueba automática y los escenarios 4 y 9 también se comprobaron a mano con dos S3 (evidencia en `docs/evidencia/spec-803/RESUMEN.md`). **Desviaciones de archivos permitidos:** `iam/iam.module.ts` (exporta `OrganizationRepository`), `files/files.module.ts` (registra los puertos y servicios nuevos), `common/errors/business-error.ts` (helper de errores compartido), `files/destination-defaults.service.ts` y `files/destination-errors.ts` (cambio del predeterminado y errores de destino), `files/ports/` (puerto `DeploymentModelSource`), `files/placement/` (destino de carpetas por modelo), `files/dto/folder.dto.ts`, `files/folders.routes.spec.ts`, `integration/storage-model-requirements.ts`, `integration/storage-policy.errors.ts`, `integration/installation-requests.*` y `integration/dto/`. **Decisiones:** la solicitud pendiente única se garantiza con `lockById` dentro de la transacción (no hay índice único en la BD y la spec dice sin migración); una subcarpeta cuyo destino padre ya no está disponible responde `422 DESTINATION_NOT_AVAILABLE` en lugar de caer al predeterminado; el cambio de predeterminado repunta también las raíces de los Drives de equipo. |

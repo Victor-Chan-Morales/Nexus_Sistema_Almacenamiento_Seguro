@@ -131,6 +131,19 @@ export class TypeOrmOrganizationRepository implements OrganizationRepository {
     });
     return row !== null;
   }
+
+  async findDeploymentModel(tx: TransactionContext, organizationId: string): Promise<DeploymentModel | null> {
+    const row = await tx.findOne(Organization, { where: { id: organizationId } });
+    return row?.deploymentModel ?? null;
+  }
+
+  async updateDeploymentModel(
+    tx: TransactionContext,
+    organizationId: string,
+    model: DeploymentModel,
+  ): Promise<void> {
+    await tx.update(Organization, { id: organizationId }, { deploymentModel: model });
+  }
 }
 
 @Injectable()
