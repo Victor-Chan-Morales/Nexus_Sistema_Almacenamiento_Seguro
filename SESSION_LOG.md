@@ -200,7 +200,7 @@ Se aprobaron las propuestas 1 a 12: correo mediante EmailService, sesiones con a
 
 - Implementado en `feat/807-conexion-postgres-ssl` (desde `main` `8561e5e`): `buildPostgresSsl` (`apps/api/src/config/postgres-config.ts`) y `resolveApiPort` (`apps/api/src/config/api-port.ts`), con sus pruebas. Cableado en `app.module.ts` (`ssl`) y `main.ts` (puerto). `.env.example` con `POSTGRES_SSL` y `POSTGRES_SSL_CA`. Guía y catálogo actualizados.
 - Decisión D1 confirmada: un valor vacío de `POSTGRES_SSL`, `POSTGRES_SSL_CA`, `API_PORT` o `PORT` cuenta como no definido.
-- Verificación automática en `apps/api`: `npm run lint` sin errores (64 avisos, igual que antes del cambio), `tsc`, `build` y `npm test` (58 suites, 936 pruebas en verde tras fusionar `main` d9c5d1c; 25 nuevas de SPEC-807).
+- Verificación automática en `apps/api`: `npm run lint` sin errores (61 avisos), `tsc`, `build` y `npm test` (58 suites, 936 pruebas en verde tras fusionar `main` d9c5d1c; 25 nuevas de SPEC-807).
 - Verificación manual, build local:
   - Escenario 6: `PORT=10000` sin `API_PORT` escucha en 10000 y `/api/health` responde 200.
   - Escenarios 4, 5 y 9: el proceso termina con código 1 y el mensaje exacto, sin filtrar secretos.
