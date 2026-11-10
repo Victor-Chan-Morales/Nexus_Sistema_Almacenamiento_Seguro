@@ -429,14 +429,15 @@ describe('ShareLinksService (SPEC-209)', () => {
       expect(links[0].revokedAt).toBeNull();
     });
 
-    it('con nivel read, crear, listar y revocar responden 404', async () => {
+    it('SPEC-222: con nivel read, crear, listar y revocar responden 403', async () => {
       const { service, links, driveAccess } = buildFixture();
       links.push(linkRow({ id: 'a' }));
       withAccessLevel(driveAccess, 'read');
 
-      await expect(service.createLink('file-1', { expiresInDays: 1 }, ACTOR)).rejects.toBeInstanceOf(NotFoundException);
-      await expect(service.listLinks('file-1', ACTOR)).rejects.toBeInstanceOf(NotFoundException);
-      await expect(service.revokeLink('a', ACTOR)).rejects.toBeInstanceOf(NotFoundException);
+      const denied = { status: 403, response: expect.objectContaining({ code: 'DRIVE_PERMISSION_DENIED' }) };
+      await expect(service.createLink('file-1', { expiresInDays: 1 }, ACTOR)).rejects.toMatchObject(denied);
+      await expect(service.listLinks('file-1', ACTOR)).rejects.toMatchObject(denied);
+      await expect(service.revokeLink('a', ACTOR)).rejects.toMatchObject(denied);
       expect(links).toHaveLength(1);
       expect(links[0].revokedAt).toBeNull();
     });

@@ -254,6 +254,9 @@ Documentan lo que el código ya devuelve (arreglo de tamaño de carpetas, SPEC-0
 
 ## Alcance final [v0.6]
 
+- **[v0.6, SPEC-222]** `GET /drives` devuelve `{ items: [{ id, name, type, teamId, rootFolderId, myLevel }] }`. El Drive personal es de su dueño (`owner`). Un miembro ve los Drives de sus equipos con su nivel `read` o `write`. Un administrador ve los Drives de equipo de su organización con nivel `write`.
+- **[v0.6, SPEC-222]** `GET /folders` y `GET /files/trash` aceptan `driveId` opcional. Sin él usan el Drive personal. La consulta de una carpeta o archivo por ID resuelve el Drive del recurso para navegar, descargar y consultar versiones. Un Drive ajeno o de otra organización, o un equipo del que se quitó al miembro, responde `404`. Un lector recibe `403 DRIVE_PERMISSION_DENIED` al administrar enlaces. La escritura de archivos y carpetas en equipo corresponde a SPEC-224.
+
 - **[v0.6, SPEC-218]** `POST /folders` recorta el nombre y responde `409 FOLDER_NAME_CONFLICT` si una carpeta activa ya lo usa bajo el mismo padre, sin distinguir mayúsculas. `POST /folders/:id/restore` aplica la misma regla. Los nombres de carpetas en papelera no reservan el nombre.
 
 - **[v0.6, SPEC-404]** `GET /audit/verify` (solo `tenant_admin`) comprueba la cadena de la organización de la sesión y devuelve `200 { valid, checkedEvents, firstBrokenEventId, reason, verifiedAt }`. `checkedEvents` incluye el primer evento inconsistente. Una cadena íntegra devuelve `null` en `firstBrokenEventId` y `reason`. Los motivos posibles son `SEQUENCE_GAP`, `PREV_HASH_MISMATCH` y `HASH_MISMATCH`. El borrado de los eventos finales no es detectable sin un checkpoint firmado.
