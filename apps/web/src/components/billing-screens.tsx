@@ -5,9 +5,9 @@ import { useCallback, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { ApiError } from "@/lib/api/client";
-import { activateSubscription, getBillingOperations, getPlans, renewSubscription } from "@/lib/api/billing";
+import { activateSubscription, getBillingOperations, getBillingReceipt, getPlans, renewSubscription } from "@/lib/api/billing";
 import { getDashboard } from "@/lib/api/dashboard";
-import type { ActivateSubscriptionResponse, BillingOperationsResponse, DashboardResponse, PaymentCardPayload, Plan } from "@/lib/api/types";
+import type { ActivateSubscriptionResponse, BillingOperationsResponse, BillingReceipt, DashboardResponse, PaymentCardPayload, Plan } from "@/lib/api/types";
 import { formatBytes, formatIsoDate, formatUsd, usagePercent } from "@/lib/format";
 import { RequireSession, useSession } from "@/lib/session";
 import { useLoad } from "@/lib/use-load";
@@ -18,7 +18,7 @@ import { PaymentForm } from "@/components/payment-form";
 import { UiIcon } from "@/components/ui-icon";
 
 function BillingFrame({ title, subtitle, children, wide = false }: { title: string; subtitle: string; children: React.ReactNode; wide?: boolean }) {
-  return <main className="billing-page"><Link className="billing-logo-link" href="/" aria-label="Nexus, página principal"><Brand /></Link><section className={`billing-card ${wide ? "billing-card-wide" : ""}`}><header className="billing-heading"><h1>{title}</h1><p>{subtitle}</p></header>{children}</section></main>;
+  return <main className="billing-page"><Link className="billing-logo-link no-print" href="/" aria-label="Nexus, página principal"><Brand /></Link><section className={`billing-card ${wide ? "billing-card-wide" : ""}`}><header className="billing-heading"><h1>{title}</h1><p>{subtitle}</p></header>{children}</section></main>;
 }
 
 function BillingRows({ rows }: { rows: Array<[string, string]> }) {
@@ -183,7 +183,7 @@ export function BillingHistoryTable({ token }: { token?: string }) {
     <h2 id="billing-history-title">Historial de operaciones</h2>
     {state.status === "loading" && <LoadingIndicator>Cargando historial…</LoadingIndicator>}
     {state.status === "error" && <Notice title="No se pudo cargar el historial" message={state.message} onRetry={reload} />}
-    {state.status === "ready" && (state.data.items.length === 0 ? <p className="billing-reference-note">Aún no hay movimientos</p> : <div className="billing-table-wrapper"><table className="billing-table"><thead><tr><th>Fecha</th><th>Plan</th><th>Tipo</th><th>Importe</th><th>Estado</th></tr></thead><tbody>{state.data.items.map((op) => <tr key={op.id}><td>{formatIsoDate(op.occurredAt)}</td><td>{op.planName}</td><td>{op.type === "renewal" ? "Renovación" : "Cobro"}</td><td>{formatUsd(op.amount)}</td><td><span className="billing-badge">Simulado</span></td></tr>)}</tbody></table></div>)}
+    {state.status === "ready" && (state.data.items.length === 0 ? <p className="billing-reference-note">Aún no hay movimientos</p> : <div className="billing-table-wrapper"><table className="billing-table"><thead><tr><th>Fecha</th><th>Plan</th><th>Tipo</th><th>Importe</th><th>Estado</th><th>Comprobante</th></tr></thead><tbody>{state.data.items.map((op) => <tr key={op.id}><td>{formatIsoDate(op.occurredAt)}</td><td>{op.planName}</td><td>{op.type === "renewal" ? "Renovación" : "Cobro"}</td><td>{formatUsd(op.amount)}</td><td><span className="billing-badge">Simulado</span></td><td><Link className="billing-secondary-link" href={`/suscripcion/comprobante/${encodeURIComponent(op.id)}`}>Comprobante</Link></td></tr>)}</tbody></table></div>)}
   </section>;
 }
 
@@ -257,6 +257,59 @@ function ActiveSubscription({ data, plan, isAdmin, token, onRenewed, historyKey 
 
 export function CurrentSubscription() {
   return <RequireSession>{() => <CurrentSubscriptionContent />}</RequireSession>;
+}
+
+// SPEC-306: 403 y 404 son estados de la pantalla; cualquier otro error pasa a useLoad (401 incluido).
+type ReceiptResult =
+  | { kind: "ready"; receipt: BillingReceipt }
+  | { kind: "forbidden" }
+  | { kind: "notFound" };
+
+function receiptRows(receipt: BillingReceipt): Array<[string, string]> {
+  const rows: Array<[string, string]> = [
+    ["Número de comprobante", receipt.receiptNumber],
+    ["Organización", receipt.organizationName],
+    ["Plan", receipt.planName],
+    ["Tipo", receipt.type === "renewal" ? "Renovación" : "Cobro"],
+    ["Importe", formatUsd(receipt.amount)],
+    ["Fecha", formatIsoDate(receipt.occurredAt)],
+  ];
+  // Solo los últimos cuatro dígitos; si la operación no tiene tarjeta (Demo, US$0), no hay fila.
+  if (receipt.cardLast4 !== null) rows.push(["Tarjeta de prueba", `•••• ${receipt.cardLast4}`]);
+  return rows;
+}
+
+function ReceiptContent({ operationId }: { operationId: string }) {
+  const { session } = useSession();
+  const token = session?.accessToken;
+  const fetcher = useCallback(async (signal: AbortSignal): Promise<ReceiptResult> => {
+    try {
+      const receipt = await getBillingReceipt(operationId, token ?? "", { signal });
+      return { kind: "ready", receipt };
+    } catch (error: unknown) {
+      if (error instanceof ApiError && error.status === 403) return { kind: "forbidden" };
+      if (error instanceof ApiError && error.status === 404) return { kind: "notFound" };
+      throw error;
+    }
+  }, [operationId, token]);
+  const { state, reload } = useLoad<ReceiptResult>(fetcher, Boolean(token), "No pudimos cargar el comprobante. Inténtalo de nuevo.");
+
+  return <BillingFrame title="Comprobante de operación" subtitle="Registro de una operación simulada de tu organización.">
+    {state.status === "loading" && <LoadingIndicator>Cargando comprobante…</LoadingIndicator>}
+    {state.status === "error" && <Notice title="No se pudo cargar el comprobante" message={state.message} onRetry={reload} />}
+    {state.status === "ready" && state.data.kind === "forbidden" && <div className="billing-error-box"><b>Sin permiso</b><p>No tienes permiso para ver los comprobantes de la organización.</p></div>}
+    {state.status === "ready" && state.data.kind === "notFound" && <div className="billing-error-box"><b>Comprobante no encontrado</b><p>El comprobante no existe o no pertenece a tu organización.</p></div>}
+    {state.status === "ready" && state.data.kind === "ready" && <>
+      <div className="billing-warning"><span aria-hidden="true">△</span><div><b>Simulación: sin valor fiscal</b></div></div>
+      <BillingRows rows={receiptRows(state.data.receipt)} />
+      <button type="button" className="button button-primary billing-primary no-print" onClick={() => window.print()}>Imprimir o guardar PDF</button>
+    </>}
+    <Link className="billing-secondary-link no-print" href="/suscripcion"><UiIcon name="arrowLeft" size={15} /> Volver a la suscripción</Link>
+  </BillingFrame>;
+}
+
+export function ReceiptScreen({ operationId }: { operationId: string }) {
+  return <RequireSession>{() => <ReceiptContent operationId={operationId} />}</RequireSession>;
 }
 
 function ChangeRejectedContent() {

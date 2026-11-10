@@ -4,6 +4,7 @@ import { DataSource, Repository } from 'typeorm';
 import {
   BadRequestException,
   ConflictException,
+  NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { BillingService } from './billing.service';
@@ -382,6 +383,102 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
           occurredAt: '2026-10-01T18:00:00.000Z',
         },
       ]);
+    });
+  });
+
+  describe('5 bis. Comprobante de operación (getReceipt — SPEC-306 Escenarios 1, 4 y 5)', () => {
+    const receiptOperationId = '3f9a2c1b-8d7e-4f60-a1b2-c3d4e5f60718';
+
+    const mockReceiptQuery = (result: unknown) => {
+      const qb = {
+        innerJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(result),
+      };
+      (billingOperationRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+      return qb;
+    };
+
+    it('SPEC-306 Escenario 1: devuelve número derivado de operation_id, plan, tipo, importe, fecha y últimos cuatro dígitos', async () => {
+      const qb = mockReceiptQuery({
+        id: receiptOperationId,
+        subscriptionId: 'sub-team',
+        type: BillingOperationType.CHARGE,
+        amount: '19.99' as unknown as number,
+        simulatedAt: new Date('2026-10-29T18:00:00.000Z'),
+        subscription: { id: 'sub-team', organizationId: 'org-123', plan: mockTeamPlan },
+        cardLast4: '4242',
+      });
+
+      const receipt = await service.getReceipt('org-123', receiptOperationId);
+
+      expect(receipt).toEqual({
+        receiptNumber: 'NX-3F9A2C1B8D7E4F60A1B2C3D4E5F60718',
+        planName: 'Team',
+        type: 'charge',
+        amount: 19.99,
+        cardLast4: '4242',
+        occurredAt: '2026-10-29T18:00:00.000Z',
+      });
+      expect(qb.where).toHaveBeenCalledWith('op.id = :operationId', { operationId: receiptOperationId });
+      expect(qb.andWhere).toHaveBeenCalledWith('sub.organizationId = :organizationId', {
+        organizationId: 'org-123',
+      });
+    });
+
+    it('SPEC-306 Escenario 1: el número de comprobante es determinista para el mismo operation_id', async () => {
+      mockReceiptQuery({
+        id: receiptOperationId,
+        type: BillingOperationType.RENEWAL,
+        amount: '19.99' as unknown as number,
+        simulatedAt: new Date('2026-10-29T18:00:00.000Z'),
+        subscription: { id: 'sub-team', organizationId: 'org-123', plan: mockTeamPlan },
+        cardLast4: null,
+      });
+
+      const first = await service.getReceipt('org-123', receiptOperationId);
+      const second = await service.getReceipt('org-123', receiptOperationId);
+
+      expect(first.receiptNumber).toBe(second.receiptNumber);
+      expect(first.receiptNumber).toBe('NX-3F9A2C1B8D7E4F60A1B2C3D4E5F60718');
+    });
+
+    it('SPEC-306 Escenario 4: operación ajena o inexistente responde NotFound con código NOT_FOUND', async () => {
+      mockReceiptQuery(null);
+
+      const error = await service.getReceipt('org-123', receiptOperationId).catch((err: unknown) => err);
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as NotFoundException).getResponse()).toEqual({
+        code: 'NOT_FOUND',
+        message: 'El comprobante no existe o no pertenece a tu organización.',
+      });
+    });
+
+    it('SPEC-306 Escenario 4: un id que no es UUID responde NotFound sin consultar la base', async () => {
+      const qb = mockReceiptQuery(null);
+
+      await expect(service.getReceipt('org-123', 'no-es-uuid')).rejects.toBeInstanceOf(NotFoundException);
+      expect(billingOperationRepo.createQueryBuilder).not.toHaveBeenCalled();
+      expect(qb.getOne).not.toHaveBeenCalled();
+    });
+
+    it('SPEC-306 Escenario 5: operación sin tarjeta (Demo, US$0) devuelve cardLast4 null e importe 0', async () => {
+      mockReceiptQuery({
+        id: receiptOperationId,
+        type: BillingOperationType.CHARGE,
+        amount: '0.00' as unknown as number,
+        simulatedAt: new Date('2026-10-01T18:00:00.000Z'),
+        subscription: { id: 'sub-demo', organizationId: 'org-123', plan: mockDemoPlan },
+        cardLast4: null,
+      });
+
+      const receipt = await service.getReceipt('org-123', receiptOperationId);
+
+      expect(receipt.cardLast4).toBeNull();
+      expect(receipt.amount).toBe(0);
+      expect(receipt.planName).toBe('Demo');
     });
   });
 
