@@ -18,6 +18,8 @@ type SessionContextValue = {
   signOut: () => Promise<void>;
   /** Devuelve true si el error era una sesión vencida (401) y ya se limpió el estado. */
   failSession: (error: unknown) => boolean;
+  /** SPEC-113: aplica el nombre devuelto por PATCH /auth/me a la sesión en memoria, sin tocar el token. */
+  updateSessionUser: (fullName: string) => void;
 };
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -62,7 +64,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     return false;
   }, []);
 
-  const value = useMemo(() => ({ ...state, signIn, signOut, failSession }), [state, signIn, signOut, failSession]);
+  const updateSessionUser = useCallback((fullName: string) => {
+    setState((current) => (current.session
+      ? { ...current, session: { ...current.session, user: { ...current.session.user, fullName } } }
+      : current));
+  }, []);
+
+  const value = useMemo(
+    () => ({ ...state, signIn, signOut, failSession, updateSessionUser }),
+    [state, signIn, signOut, failSession, updateSessionUser],
+  );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 

@@ -43,6 +43,7 @@ import { MemberAdmission } from './member-admission';
 import { MembersController } from './members.controller';
 import { RegistrationHooks } from './registration-hooks';
 import { AccountNotices } from './services/account-notices.service';
+import { AccountService } from './services/account.service';
 import { AuthService } from './services/auth.service';
 import { EmailOutboxService } from './services/email-outbox.service';
 import { EmailVerificationService } from './services/email-verification.service';
@@ -87,6 +88,7 @@ function resolveJwtSecret(config: ConfigService): string {
     PasswordResetService,
     EmailOutboxService,
     AccountNotices,
+    AccountService,
     VerificationTokenService,
     OutboxCipher,
     IamSettings,

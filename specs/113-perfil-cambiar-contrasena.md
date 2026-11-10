@@ -5,7 +5,7 @@
 | Campo | Valor |
 |---|---|
 | **Nivel de Rigor** | N2 (IAM) |
-| **Responsable Principal** | Por asignar |
+| **Responsable Principal** | Víctor Chán Morales |
 | **Aprobador** | Víctor Chán Morales |
 | **Módulo Afectado** | `apps/api/src/modules/iam/`, `apps/web/src/components/profile-page.tsx` |
 | **Requisitos Vinculados** | RF-001, Curso §4.1 |
@@ -86,3 +86,4 @@ Ninguna.
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
 | 2026-11-04 | Claude Code (revisión) | Se aclara cómo distingue la pantalla una contraseña incorrecta de una sesión vencida. Aprobado por el coordinador (2026-11-04). |
+| 2026-11-10 | Claude Code (implementación) | Responsable asignado a Víctor Chán Morales (decisión D8). Implementación de SPEC-113. |
