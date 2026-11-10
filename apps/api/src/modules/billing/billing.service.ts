@@ -223,6 +223,30 @@ export class BillingService implements OnModuleInit {
   }
 
   /**
+   * SPEC-114: Cancela la suscripción activa de una organización fijando status = 'cancelled' y end_date = CURRENT_DATE.
+   */
+  async cancelActive(organizationId: string, transactionalManager?: EntityManager): Promise<void> {
+    const execute = async (manager: EntityManager): Promise<void> => {
+      // loadEagerRelations: false evita el LEFT JOIN de `plan`, que Postgres no admite con FOR UPDATE.
+      const active = await manager.findOne(Subscription, {
+        where: { organizationId, status: SubscriptionStatus.ACTIVE },
+        lock: { mode: 'pessimistic_write' },
+        loadEagerRelations: false,
+      });
+      if (active) {
+        active.status = SubscriptionStatus.CANCELLED;
+        active.expiresAt = new Date();
+        await manager.save(active);
+      }
+    };
+    if (transactionalManager) {
+      await execute(transactionalManager);
+    } else {
+      await this.dataSource.transaction(execute);
+    }
+  }
+
+  /**
    * Persiste transaccionalmente el cambio o activación de suscripción.
    * Cancela la suscripción activa previa y guarda la nueva de forma atómica.
    * Captura específicamente la colisión del índice único parcial

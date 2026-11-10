@@ -111,6 +111,7 @@ export class TypeOrmUserRepository implements UserRepository {
 
 @Injectable()
 export class TypeOrmOrganizationRepository implements OrganizationRepository {
+  constructor(private readonly dataSource: DataSource) {}
   create(
     tx: TransactionContext,
     data: { name: string; deploymentModel: DeploymentModel },
@@ -143,6 +144,17 @@ export class TypeOrmOrganizationRepository implements OrganizationRepository {
     model: DeploymentModel,
   ): Promise<void> {
     await tx.update(Organization, { id: organizationId }, { deploymentModel: model });
+  }
+
+  async findByIdForUpdate(organizationId: string, tx: TransactionContext): Promise<Organization | null> {
+    return tx.findOne(Organization, {
+      where: { id: organizationId },
+      lock: { mode: 'pessimistic_write' },
+    });
+  }
+
+  async setStatus(tx: TransactionContext, organizationId: string, status: OrgStatus): Promise<void> {
+    await tx.update(Organization, { id: organizationId }, { status });
   }
 }
 
@@ -270,6 +282,10 @@ export class TypeOrmSessionRepository implements SessionRepository {
 
   async revokeAllActiveOf(tx: TransactionContext, userId: string): Promise<void> {
     await tx.update(Session, { userId, revokedAt: IsNull() }, { revokedAt: () => 'now()' });
+  }
+
+  async revokeAllOfOrganization(tx: TransactionContext, organizationId: string): Promise<void> {
+    await tx.update(Session, { organizationId, revokedAt: IsNull() }, { revokedAt: () => 'now()' });
   }
 
   async revokeByRefreshHash(refreshTokenHash: string): Promise<void> {
