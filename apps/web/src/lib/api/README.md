@@ -11,6 +11,7 @@ La base HTTP compartida y los clientes tipados implementan las rutas del contrat
 - `members.ts`: listado y alta de miembros de la organización.
 - `audit.ts`: bitácora de auditoría paginada por cursor (solo administradores).
 - `storage.ts`: política de almacenamiento (modelo Nube / Servidor local / Híbrido), destinos, prueba de conexión y solicitudes de instalación (SPEC-803 y SPEC-804).
+- `platform.ts`: consola del Super Admin: métricas, organizaciones, suspender y reactivar, solicitudes e instalaciones, y `platformErrorMessage` con los códigos de SPEC-503 (SPEC-502).
 
 ## Uso
 

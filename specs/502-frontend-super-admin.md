@@ -81,6 +81,8 @@ No modifica la base de datos.
 
 **Archivos permitidos:** `lib/api/platform.ts`, `components/platform-console.tsx` (nuevos), `app/dashboard/super-admin/page.tsx`, `components/dashboard-views.tsx` (quitar `SuperAdminDashboard`), `components/app-shell.tsx`, `components/account-menu.tsx`, `lib/api/types.ts`, `app/globals.css`.
 
+**Ampliación aprobada (2026-11-10):** la lista `GET /platform/installation-requests` añade `installationId`, `installationStatus`, `operatorName` y `hostReference`, para que la consola avance instalaciones sin depender de la respuesta de `approve`. Toca `integration/platform-actions.service.ts`, su spec, `test/platform-actions.e2e-spec.ts` y `CONTRACTS.md`, fuera de la lista anterior.
+
 ## 10. Estrategia de Pruebas
 
 | Criterio | Tipo | Evidencia |
@@ -101,3 +103,4 @@ Ninguna.
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
+| 2026-11-10 | Claude Code (implementación) | Consola implementada con datos reales. Ampliación de la lista de solicitudes de SPEC-503 aprobada por el coordinador (ver §9). `AppShell` conserva `demo` porque `DashboardDemoView` lo usa; el Super Admin ya no lo pasa (§7). |
