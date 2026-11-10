@@ -13,7 +13,7 @@
 | **Prioridad** | P1 |
 | **Estimación** | 2.5 h |
 | **Hito Objetivo** | Corte 100% (Nov-2026) |
-| **Estado** | Borrador |
+| **Estado** | Implementada |
 
 ---
 
@@ -97,7 +97,7 @@ Escenario 9: Fallo de envío posterior
 Escenario 10: El inicio de sesión sigue bloqueado hasta verificar
   Dada una cuenta sin correo verificado que solicitó un reenvío
   Cuando intenta iniciar sesión con su contraseña correcta
-  Entonces el sistema responde 401 con código EMAIL_NOT_VERIFIED, como hoy
+  Entonces el sistema responde 403 con código EMAIL_NOT_VERIFIED, según el contrato vigente de login
 
 Escenario 11: Pantalla de verificación
   Dado un visitante en /verificar-correo sin enlace de verificación
@@ -291,3 +291,4 @@ Ninguna. Valores confirmados por Víctor: enfriamiento de 120 s, tope de 5 token
 | Fecha | Autor | Descripción |
 |---|---|---|
 | 2026-11-09 | Revisión de coordinación | Versión inicial en borrador a partir del estado de `origin/main` (`58be6a5`). |
+| 2026-11-10 | Miguel | Implementación, pruebas y evidencia. Se corrige el estado HTTP del escenario 10 para reflejar el contrato vigente de login (403). |

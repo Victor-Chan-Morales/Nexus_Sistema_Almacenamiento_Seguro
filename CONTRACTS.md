@@ -6,6 +6,8 @@
 
 > **Versión 0.6 — aplica `docs/decisions/ADR-008-alcance-final.md`, aprobado por Víctor, coordinador, el 2026-11-04.** Las reglas marcadas **[v0.6]** son el contrato acordado. Cada una indica la spec que la implementa: hasta que esa spec se fusione, el código puede seguir con la regla anterior. Cada spec nueva agrega sus rutas en la sección "Alcance final [v0.6]" antes de programar.
 
+> **Versión 0.7 — SPEC-116.** Añade el reenvío del correo de verificación de una cuenta.
+
 Los tipos del frontend viven en `apps/web/src/lib/api/types.ts`. Son tipos de compilación; la API también debe validar los datos en tiempo de ejecución.
 
 ## Reglas comunes
@@ -26,10 +28,11 @@ Los tipos del frontend viven en `apps/web/src/lib/api/types.ts`. Son tipos de co
 | IAM | `POST /auth/login` | `{ email, password }` | `{ accessToken, expiresAt, user: { id, fullName, email }, organization: { id, name }, role }` | Sebastián |
 | IAM | `GET /auth/me` | Bearer token | `{ user, organization, role }` | Sebastián |
 | IAM | `POST /auth/verify-email` | `{ token }` | `{ verified: true }` | Sebastián |
+| IAM **[v0.7]** | `POST /auth/resend-verification` | `{ email }` | `200 { message }` genérico | Miguel |
 | IAM | `POST /auth/refresh` | Cookie `nexus_refresh` | Misma respuesta de sesión que login; renovar cookie | Sebastián |
 | IAM | `POST /auth/logout` | Cookie `nexus_refresh` | `204 No Content`; revocar esa sesión y limpiar cookie | Sebastián |
 | Billing | `GET /plans` | Sin autenticación | `{ items: [{ id, name, description, priceMonthly, storageLimitBytes, userLimit, validityDays: number \| null }] }` | Anthony |
-| Integración Billing/Files | `POST /subscriptions/activate` | Bearer token + `{ planId }` | `{ subscriptionId, status: "active", simulated: true, startDate, endDate }` | Víctor integra; Billing persiste |
+| Integración Billing/Files | `POST /subscriptions/activate` | Bearer token + `{ planId, payment? }` **[v0.6, SPEC-305]** (`payment` es opcional en el DTO; es obligatorio solo si el plan cuesta más de US$0 y no es reactivación del plan vigente, ver «Pago simulado») | `{ subscriptionId, status: "active", simulated: true, startDate, endDate }` | Víctor integra; Billing persiste |
 | Dashboard | `GET /dashboard` | Bearer token | Respuesta definida en “Dashboard” | Víctor |
 | Files | `GET /folders` | Bearer token | `{ drive: { id, name, rootFolderId }, items: [{ id, name, parentFolderId, driveId }] }` | Miguel |
 | Files | `POST /folders` | `{ name, parentFolderId? }` | `{ id, name, parentFolderId, driveId, createdAt }` | Miguel |
@@ -48,7 +51,7 @@ Los tipos del frontend viven en `apps/web/src/lib/api/types.ts`. Son tipos de co
 | Files **[v0.5]** | `DELETE /files/:id/purge` | Bearer token | `{ id, freedBytes }` | Miguel |
 | Files **[v0.5]** | `GET /files/:id/versions` | Bearer token | `{ fileId, fileName, currentVersion, versions: [...] }` | Miguel |
 | Billing **[v0.5]** | `GET /billing/operations` | Bearer token, `tenant_admin` | `{ items: [...] }` | Anthony |
-| Integración **[v0.5]** | `POST /subscriptions/renew` | Bearer token, `tenant_admin`, sin cuerpo | Misma respuesta que `activate` | Anthony |
+| Integración **[v0.5]** | `POST /subscriptions/renew` | Bearer token, `tenant_admin`, cuerpo opcional `{ payment }` **[v0.6, SPEC-305]** | Misma respuesta que `activate` | Anthony |
 | Audit **[v0.5]** | `GET /audit/events` | Bearer token, `tenant_admin`; `?limit&before` | `{ events: [...], nextBefore }` | Anthony |
 
 ## IAM y sesión
@@ -59,6 +62,8 @@ Los tipos del frontend viven en `apps/web/src/lib/api/types.ts`. Son tipos de co
 - Login y refresh devuelven el mismo formato de sesión: access token, expiración, usuario, organización activa y rol.
 - Después de validar correo y contraseña, si la cuenta aún no verificó su correo, `POST /auth/login` responde HTTP `403` con el error común y `code: "EMAIL_NOT_VERIFIED"`. No emite access token ni cookie de refresh en ese caso.
 - `POST /auth/verify-email` recibe `{ token }`. El enlace del correo debe abrir `/verificar-correo?token=...`; el token vence en 15 minutos y solo se usa una vez.
+- **[v0.7, SPEC-116]** `POST /auth/resend-verification` es público. Recibe `{ email }`, recorta espacios y valida el formato y el máximo de 254 caracteres. Un valor inválido responde `400 VALIDATION_FAILED`.
+- Para un correo válido, responde `200 { "message": "Si la cuenta existe y aún no está verificada, recibirás un nuevo enlace de verificación." }` y procesa la solicitud en segundo plano. Solo una cuenta activa sin verificar puede recibir un nuevo enlace, con 120 segundos desde la última emisión y menos de cinco tokens de verificación emitidos en 24 horas, incluido el del registro. Un reenvío aceptado invalida los tokens anteriores sin usar. Los reenvíos suprimidos conservan la misma respuesta y el estado de los tokens.
 - El registro agrega en la misma transacción un mensaje de salida para enviar el correo de verificación. El envío SMTP ocurre después del commit y se reintenta desde una cola/outbox persistente si el proveedor falla; no se revierte una cuenta ya creada por una falla temporal de correo ni se devuelve el token al navegador. No hay endpoint de reenvío manual en este corte.
 - Si el token de 15 minutos vence mientras el proveedor SMTP sigue caído, el reintento emite uno nuevo antes de enviar: el enlace que recibe la persona siempre está vigente y una caída temporal del correo no deja la cuenta sin forma de verificarse. Los reintentos se abandonan 24 horas después del registro.
 - El enlace del correo se arma con `WEB_URL`, la única variable de origen de la web (la misma que autoriza el CORS).
@@ -207,9 +212,37 @@ Todas estas rutas se acotan al **Drive personal del solicitante** y tratan un re
 
 ## Facturación: historial y renovación [v0.5]
 
-- `GET /billing/operations` (solo `tenant_admin`) → `{ "items": [{ "id", "type": "charge" | "renewal", "planName", "amount", "simulated": true, "occurredAt" }] }`, más recientes primero, máximo 100. `amount` es USD (número; el mapper convierte el `numeric` de PostgreSQL, que llega como cadena). Se resuelve por la suscripción de la organización del token.
+- `GET /billing/operations` (solo `tenant_admin`) → `{ "items": [{ "id", "type": "charge" | "renewal", "planName", "amount", "simulated": true, "occurredAt", "cardLast4": string | null }] }`, más recientes primero, máximo 100. `amount` es USD (número; el mapper convierte el `numeric` de PostgreSQL, que llega como cadena). Se resuelve por la suscripción de la organización del token.
+- **[v0.6, SPEC-305]** `cardLast4` (`string | null`) en cada operación: últimos cuatro dígitos de la tarjeta de prueba aprobada. Es `null` en cargos de US$0 y en renovaciones de planes gratuitos.
 - `POST /subscriptions/activate` escribe una operación `charge` (monto del plan) cuando **crea** una suscripción. Reactivar el mismo plan no escribe nada. Todo cambio de plan crea una suscripción nueva y por tanto escribe un `charge` con el precio del plan destino, incluso US$0 (por ejemplo, bajar de Team a Demo). El hook `demo-subscription` del alta de la organización escribe un `charge` de US$0 dentro de la transacción del registro. La reducción de plan sigue respondiendo `422 STORAGE_QUOTA_EXCEEDED` (no existe `DOWNGRADE_STORAGE_EXCEEDED`).
-- `POST /subscriptions/renew` (solo `tenant_admin`, sin cuerpo): extiende la vigencia de la suscripción vigente en `validityDays` desde `max(hoy, fin actual)` y escribe una operación `renewal`. No crea otra suscripción. Respuesta igual a `activate` (`{ subscriptionId, status: "active", simulated: true, startDate, endDate }`). `422 NO_ACTIVE_SUBSCRIPTION` sin suscripción vigente; `422 PLAN_NOT_RENEWABLE` para planes sin vigencia (Demo).
+- `POST /subscriptions/renew` (solo `tenant_admin`, cuerpo opcional `{ payment }` **[v0.6, SPEC-305]**): extiende la vigencia de la suscripción vigente en `validityDays` desde `max(hoy, fin actual)` y escribe una operación `renewal`. No crea otra suscripción. Respuesta igual a `activate` (`{ subscriptionId, status: "active", simulated: true, startDate, endDate }`). `422 NO_ACTIVE_SUBSCRIPTION` sin suscripción vigente; `422 PLAN_NOT_RENEWABLE` para planes sin vigencia (Demo).
+
+### Pago simulado [v0.6, SPEC-305]
+
+Aplica a `POST /subscriptions/activate` y `POST /subscriptions/renew` (ADR-008 §5, SPEC-305). No hay dinero real ni se guardan datos de tarjeta.
+
+- **Entrada.** `activate` recibe `{ planId, payment? }`. `renew` recibe `{ payment? }` y no lleva `planId`. `payment` = `{ cardNumber, holderName, expiry, cvv }`.
+  - `cardNumber`: se quitan los espacios y no hay otra transformación. Solo son válidos `4242424242424242` (aprobada) y `4000000000000002` (rechazada). Cualquier otro número responde `422 TEST_CARD_REQUIRED` sin procesar nada.
+  - `holderName`: texto de 1 a 100 caracteres.
+  - `expiry`: formato `MM/YY`, mes de 01 a 12. El año es 2000 + YY. Está vencida si (año, mes) es anterior al mes actual en UTC; el mes actual es válido. Fecha vencida o mal formada responde `400 VALIDATION_ERROR`.
+  - `cvv`: exactamente 3 dígitos (`/^\d{3}$/`). Otro valor responde `400 VALIDATION_ERROR`.
+- **Cuándo se exige.** `payment` es obligatorio solo si el plan cuesta más de US$0 y la operación no es la reactivación idempotente del plan vigente. Si falta, responde `400 VALIDATION_ERROR`. Reactivar el plan vigente no exige tarjeta.
+- **Plan gratuito (US$0).** Si llega `payment`, no se usa para el cobro: no exige tarjeta ni se guarda; su formato sí se valida (400 `VALIDATION_ERROR` si es inválido). `cardLast4` queda en `null`.
+- **Resultado.** Tarjeta aprobada: la operación guarda `cardLast4 = "4242"` y la suscripción cambia. Tarjeta rechazada: `402 PAYMENT_DECLINED`; no cambian la suscripción ni el historial.
+- **Orden en `activate`** (dentro de la transacción de `SubscriptionCoordinator`):
+  1. Bloqueo pesimista de la suscripción vigente.
+  2. Idempotencia: mismo plan vigente → respuesta sin tarjeta.
+  3. Cuota: `422 STORAGE_QUOTA_EXCEEDED` antes de simular el cobro.
+  4. Pago requerido (400) → validación de campos (400) → tarjeta de prueba (422) → simulación (402).
+  5. Persistencia de la suscripción con `cardLast4`.
+- **Orden en `renew`:**
+  1. Bloqueo de la suscripción activa; si no hay vigente o está vencida, `422 NO_ACTIVE_SUBSCRIPTION`.
+  2. Si el plan no es renovable (`validityDays` no mayor que 0), `422 PLAN_NOT_RENEWABLE`. Va antes de simular el pago.
+  3. Simulación del pago; si es rechazada, `402 PAYMENT_DECLINED` y la vigencia no cambia.
+  4. Extender la vigencia y registrar la operación `renewal` con `cardLast4`.
+- **Auditoría.** Solo el rechazo (`402`) se registra, como `PAYMENT_DECLINED` con resultado `failure`, después del rollback. No se auditan los `400` ni los `422` de pago.
+- **Datos sensibles.** El número completo y el CVV no se guardan, no se registran en logs ni en auditoría y no aparecen en las respuestas. Ningún mensaje de error repite un valor recibido.
+- **Mensajes.** `402`: «La tarjeta de prueba fue rechazada. No se realizó ningún cobro y tu suscripción no cambió.». `422 TEST_CARD_REQUIRED`: «Solo se aceptan tarjetas de prueba. No uses tarjetas reales: esta es una simulación y no se procesa ningún cobro.».
 
 ## Auditoría [v0.5]
 
@@ -225,6 +258,7 @@ Todas estas rutas se acotan al **Drive personal del solicitante** y tratan un re
 ```
 
 - Acciones del corte: `AUTH_LOGIN`, `AUTH_PASSWORD_RESET`, `MEMBER_ADDED`, `FILE_UPLOAD`, `FILE_DOWNLOAD`, `FILE_DELETE`, `FILE_RESTORE`, `FILE_PURGE`, `FILE_VERSION_RESTORED` **[v0.6, SPEC-210]**, `SHARE_LINK_CREATED` **[v0.6, SPEC-209]**, `SHARE_LINK_REVOKED` **[v0.6, SPEC-209]**, `DESTINATION_CREATED` **[v0.6, SPEC-802]**, `DESTINATION_UPDATED` **[v0.6, SPEC-802]**, `DESTINATION_TESTED` **[v0.6, SPEC-802]** (con `result: failure` y `safe_reason` = `AUTH`, `NETWORK`, `BUCKET_NOT_FOUND` o `DATA_MISMATCH` cuando la conexión falla; `success` cuando conecta), `TEAM_CREATED`, `TEAM_MEMBER_ADDED`, `TEAM_MEMBER_LEVEL_CHANGED`, `TEAM_MEMBER_REMOVED` **[v0.6, SPEC-220]**, `FOLDER_CREATE`, `FOLDER_DELETE`, `FOLDER_RESTORE`, `FOLDER_PURGE`, `PLAN_ACTIVATED`, `PLAN_RENEWED`, `DEPLOYMENT_MODEL_CHANGED` **[v0.6, SPEC-803]**, `INSTALLATION_REQUESTED` **[v0.6, SPEC-803]**, `ORGANIZATION_SUSPENDED` **[v0.6, SPEC-503]**, `ORGANIZATION_REACTIVATED` **[v0.6, SPEC-503]**, `INSTALLATION_REQUEST_APPROVED` **[v0.6, SPEC-503]**, `INSTALLATION_REQUEST_REJECTED` **[v0.6, SPEC-503]**, `INSTALLATION_STATUS_CHANGED` **[v0.6, SPEC-503]**. Tipos de recurso: `user`, `membership`, `file`, `folder`, `subscription`, `share_link` **[v0.6, SPEC-209]**, `destination` **[v0.6, SPEC-802]**, `team` **[v0.6, SPEC-220]**, `organization` **[v0.6, SPEC-803]**, `installation_request` **[v0.6, SPEC-803]**, `installation` **[v0.6, SPEC-503]**.
+- Acciones de pago [v0.6, SPEC-305]: `PAYMENT_DECLINED` (resultado `failure`).
 - El evento no incluye nombres de archivo ni datos personales. El frontend resuelve `actorId` a nombre con `GET /organizations/members` (misma audiencia: solo administradores).
 - Cada evento guarda `record_hash` y `prev_hash` desde el primer registro. **[v0.6]** La verificación de cadena llega con SPEC-404; los checkpoints firmados no se implementan (ADR-008 §10).
 - El registro de auditoría es de mejor esfuerzo y posterior al commit de la operación: si falla, la operación principal no se ve afectada.
@@ -232,18 +266,21 @@ Todas estas rutas se acotan al **Drive personal del solicitante** y tratan un re
 
 ## Códigos de error [v0.5]
 
-Catálogo común. El filtro emite `VALIDATION_ERROR` para cualquier `400` de validación (no existe `VALIDATION_FAILED`).
+Catálogo común. El filtro usa `VALIDATION_ERROR` por defecto. La ruta de reenvío de verificación usa el código de SPEC-116.
 
 | HTTP | `code` | Uso |
 |---|---|---|
-| 400 | `VALIDATION_ERROR` | Entrada inválida. |
+| 400 | `VALIDATION_ERROR` | Entrada inválida. **[v0.6, SPEC-305]** En pago: falta `payment` en un plan de pago; vencimiento vencido o mal formado; CVV que no tiene exactamente 3 dígitos. |
+| 400 | `VALIDATION_FAILED` **[v0.7, SPEC-116]** | Correo ausente, mal formado o superior a 254 caracteres al pedir un reenvío de verificación. |
 | 400 | `INVALID_OR_EXPIRED_TOKEN` | Token de recuperación inválido, vencido o usado. |
 | 401 | `UNAUTHORIZED` | Sin sesión válida (token ausente, inválido o vencido). |
+| 402 | `PAYMENT_DECLINED` **[v0.6, SPEC-305]** | Tarjeta de prueba rechazada (`4000 0000 0000 0002`). No hay cobro ni cambio en la suscripción ni en el historial. |
 | 403 | `FORBIDDEN_ROLE` | Rol insuficiente. |
 | 403 | `EMAIL_NOT_VERIFIED` | Login sin correo verificado (v0.4). |
 | 404 | `NOT_FOUND` | Recurso inexistente o ajeno. |
 | 409 | `FILE_NAME_CONFLICT`, `FOLDER_NAME_CONFLICT`, `PARENT_FOLDER_UNAVAILABLE`, `CONCURRENT_SUBSCRIPTION_CONFLICT`, `TEAM_NAME_CONFLICT` **[v0.6, SPEC-220]**, `TEAM_MEMBER_EXISTS` **[v0.6, SPEC-220]**, `INSTALLATION_REQUEST_PENDING` **[v0.6, SPEC-803]** | Conflicto de estado. |
 | 422 | `STORAGE_QUOTA_EXCEEDED`, `VERSION_ALREADY_CURRENT` **[v0.6, SPEC-210]**, `USER_NOT_IN_ORGANIZATION` **[v0.6, SPEC-220]**, `MEMBER_ALREADY_EXISTS`, `EMAIL_BELONGS_TO_OTHER_ORGANIZATION`, `USER_LIMIT_EXCEEDED`, `CANNOT_PURGE_ACTIVE_FILE`, `NO_ACTIVE_SUBSCRIPTION`, `PLAN_NOT_RENEWABLE`, `DEPLOYMENT_MODEL_REQUIREMENTS_UNMET` **[v0.6, SPEC-803]**, `DESTINATION_SELECTION_NOT_ALLOWED` **[v0.6, SPEC-803]**, `DESTINATION_NOT_AVAILABLE` **[v0.6, SPEC-803]** | Regla de negocio. |
+| 422 | `TEST_CARD_REQUIRED` **[v0.6, SPEC-305]** | Número distinto de las tarjetas de prueba. No se procesa nada. |
 
 ## Cambios de forma en Files ya implementados [v0.5]
 

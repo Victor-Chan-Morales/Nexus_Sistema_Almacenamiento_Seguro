@@ -42,6 +42,7 @@ import { VerificationMailer } from './ports/verification-mailer';
 import { MemberAdmission } from './member-admission';
 import { MembersController } from './members.controller';
 import { RegistrationHooks } from './registration-hooks';
+import { AccountNotices } from './services/account-notices.service';
 import { AuthService } from './services/auth.service';
 import { EmailOutboxService } from './services/email-outbox.service';
 import { EmailVerificationService } from './services/email-verification.service';
@@ -85,6 +86,7 @@ function resolveJwtSecret(config: ConfigService): string {
     MembersService,
     PasswordResetService,
     EmailOutboxService,
+    AccountNotices,
     VerificationTokenService,
     OutboxCipher,
     IamSettings,
@@ -106,6 +108,7 @@ function resolveJwtSecret(config: ConfigService): string {
     { provide: VerificationMailer, useClass: EmailService },
   ],
   exports: [
+    AccountNotices,
     AuthService,
     SessionService,
     UserRepository,

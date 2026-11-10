@@ -62,6 +62,10 @@ export type VerifyEmailResponse = {
   verified: true;
 };
 
+export type ResendVerificationResponse = {
+  message: string;
+};
+
 export type CurrentUserResponse = {
   user: UserIdentity;
   organization: OrganizationReference;
@@ -229,6 +233,14 @@ export type BillingOperationItem = {
   amount: number;
   simulated: boolean;
   occurredAt: ISODateTime;
+  cardLast4: string | null;
+};
+
+export type PaymentCardPayload = {
+  cardNumber: string;
+  holderName: string;
+  expiry: string;
+  cvv: string;
 };
 
 export type BillingOperationsResponse = {

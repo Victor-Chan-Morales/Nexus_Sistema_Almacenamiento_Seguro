@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, In, IsNull } from 'typeorm';
+import { DataSource, In, IsNull, MoreThanOrEqual } from 'typeorm';
 import {
   DeploymentModel,
   MembershipStatus,
@@ -50,6 +50,10 @@ export class TypeOrmUserRepository implements UserRepository {
 
   findById(id: string, tx?: TransactionContext): Promise<User | null> {
     return managerOf(this.dataSource, tx).findOne(User, { where: { id } });
+  }
+
+  findByIdForUpdate(id: string, tx: TransactionContext): Promise<User | null> {
+    return tx.findOne(User, { where: { id }, lock: { mode: 'pessimistic_write' } });
   }
 
   create(
@@ -125,10 +129,14 @@ export class TypeOrmOrganizationRepository implements OrganizationRepository {
     );
   }
 
-  async lockById(tx: TransactionContext, organizationId: string): Promise<boolean> {
+  async lockById(
+    tx: TransactionContext,
+    organizationId: string,
+    options?: { allowReferences: boolean },
+  ): Promise<boolean> {
     const row = await tx.findOne(Organization, {
       where: { id: organizationId },
-      lock: { mode: 'pessimistic_write' },
+      lock: { mode: options?.allowReferences ? 'for_no_key_update' : 'pessimistic_write' },
     });
     return row !== null;
   }
@@ -200,8 +208,8 @@ export class TypeOrmMembershipRepository implements MembershipRepository {
     });
   }
 
-  listByOrganization(organizationId: string): Promise<Membership[]> {
-    return this.dataSource.getRepository(Membership).find({
+  listByOrganization(organizationId: string, tx?: TransactionContext): Promise<Membership[]> {
+    return managerOf(this.dataSource, tx).find(Membership, {
       where: { organizationId },
       relations: { user: true, roleRef: true },
       select: {
@@ -209,7 +217,7 @@ export class TypeOrmMembershipRepository implements MembershipRepository {
         userId: true,
         status: true,
         createdAt: true,
-        user: { fullName: true, email: true },
+        user: { fullName: true, email: true, status: true },
         roleRef: { name: true },
       },
       order: { createdAt: 'ASC' },
@@ -299,6 +307,23 @@ export class TypeOrmSessionRepository implements SessionRepository {
 
 @Injectable()
 export class TypeOrmOneTimeTokenRepository implements OneTimeTokenRepository {
+  async latestCreatedAt(tx: TransactionContext, userId: string, purpose: TokenPurpose): Promise<Date | null> {
+    const token = await tx.findOne(OneTimeToken, {
+      where: { userId, purpose },
+      select: { createdAt: true },
+      order: { createdAt: 'DESC' },
+    });
+    return token?.createdAt ?? null;
+  }
+
+  countCreatedSince(tx: TransactionContext, userId: string, purpose: TokenPurpose, since: Date): Promise<number> {
+    return tx.countBy(OneTimeToken, { userId, purpose, createdAt: MoreThanOrEqual(since) });
+  }
+
+  findByHash(tx: TransactionContext, tokenHash: string, purpose: TokenPurpose): Promise<OneTimeToken | null> {
+    return tx.findOneBy(OneTimeToken, { tokenHash, purpose });
+  }
+
   create(
     tx: TransactionContext,
     data: { userId: string; purpose: TokenPurpose; tokenHash: string; expiresAt: Date },
@@ -387,8 +412,8 @@ export class TypeOrmEmailOutboxRepository implements EmailOutboxRepository {
     }));
   }
 
-  async updatePayload(id: string, data: { encryptedPayload: string; expiresAt: Date }): Promise<void> {
-    await this.dataSource.manager.update(EmailOutbox, { id }, data);
+  async updatePayload(id: string, data: { encryptedPayload: string; expiresAt: Date }, tx: TransactionContext): Promise<void> {
+    await tx.update(EmailOutbox, { id }, data);
   }
 
   async markSent(id: string): Promise<void> {
@@ -408,7 +433,10 @@ export class TypeOrmEmailOutboxRepository implements EmailOutboxRepository {
     });
   }
 
-  async markExpired(id: string): Promise<void> {
-    await this.dataSource.manager.update(EmailOutbox, { id }, { status: OutboxStatus.EXPIRED, encryptedPayload: '' });
+  async markExpired(id: string, expectedPayload?: string): Promise<void> {
+    const where = expectedPayload === undefined
+      ? { id }
+      : { id, status: OutboxStatus.PENDING, encryptedPayload: expectedPayload };
+    await this.dataSource.manager.update(EmailOutbox, where, { status: OutboxStatus.EXPIRED, encryptedPayload: '' });
   }
 }

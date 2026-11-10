@@ -11,6 +11,7 @@ import { Organization } from '../src/modules/iam/entities/organization.entity';
 import { User } from '../src/modules/iam/entities/user.entity';
 import { Session } from '../src/modules/iam/entities/session.entity';
 import { EmailOutboxService } from '../src/modules/iam/services/email-outbox.service';
+import { EmailVerificationService } from '../src/modules/iam/services/email-verification.service';
 import { RegistrationHooks } from '../src/modules/iam/registration-hooks';
 import { VerificationMailer } from '../src/modules/iam/ports/verification-mailer';
 
@@ -27,6 +28,9 @@ class FakeEmailService {
   }
   async sendMemberInvitation(to: string, _name: string, token: string) {
     return this.sendVerification(to, _name, token);
+  }
+  async sendAccountNotice() {
+    if (this.failing) throw new Error('SMTP caído');
   }
   tokenFor(to: string): string {
     const found = [...this.sent].reverse().find((m) => m.to === to);
@@ -354,6 +358,69 @@ describe('IAM (e2e) — contrato CONTRACTS.md v0.4', () => {
       .post('/api/auth/verify-email')
       .send({ token: mailer.tokenFor(email) })
       .expect(200);
+  });
+
+  it('SPEC-116: serializa reenvíos, conserva el límite diario y solo acepta el enlace más reciente', async () => {
+    const email = emailOf('resend');
+    await request(server()).post('/api/auth/register').send(body(email)).expect(201);
+    const originalToken = mailer.tokenFor(email);
+    const service = app.get(EmailVerificationService);
+    const work = jest.spyOn(service, 'resend');
+    const send = (value: string) =>
+      request(server()).post('/api/auth/resend-verification').send({ email: value });
+    const finish = async () => { await Promise.all(work.mock.results.map((result) => result.value)); };
+    const generic = { message: 'Si la cuenta existe y aún no está verificada, recibirás un nuevo enlace de verificación.' };
+    const allTokens = () => dataSource.query(
+      `SELECT t.used_at FROM iam.one_time_token t JOIN iam."user" u USING (user_id)
+       WHERE u.email = $1 AND t.purpose = 'email_verification' ORDER BY t.created_at`, [email],
+    );
+    const ageRecentTokens = () => dataSource.query(
+      `UPDATE iam.one_time_token t SET created_at = now() - interval '3 minutes'
+       FROM iam."user" u WHERE t.user_id = u.user_id AND u.email = $1 AND t.purpose = 'email_verification'`, [email],
+    );
+
+    try {
+      expectErrorShape(await send('no-es-un-correo').expect(400), 'VALIDATION_FAILED');
+      expect(work).not.toHaveBeenCalled();
+      expect((await send(email).expect(200)).body).toEqual(generic);
+      await finish();
+      expect(await allTokens()).toEqual([{ used_at: null }]);
+
+      await ageRecentTokens();
+      const unknown = emailOf('resend-unknown');
+      const responses = await Promise.all([send('  ' + email.toUpperCase() + '  '), send(email), send(unknown)]);
+      responses.forEach((response) => {
+        expect(response.status).toBe(200);
+        expect(response.body).toEqual(generic);
+      });
+      await finish();
+      expect(await allTokens()).toEqual([{ used_at: expect.any(Date) }, { used_at: null }]);
+      expect(mailer.sent.filter((entry) => entry.to === email)).toHaveLength(2);
+      expect(mailer.sent.some((entry) => entry.to === unknown)).toBe(false);
+      const replacement = mailer.tokenFor(email);
+      expect(replacement).not.toBe(originalToken);
+
+      await ageRecentTokens();
+      await dataSource.query(
+        `INSERT INTO iam.one_time_token (user_id, token_hash, purpose, created_at, expires_at, used_at)
+         SELECT user_id, gen_random_uuid()::text, 'email_verification', now() - interval '1 hour',
+                now() + interval '1 minute', now() FROM iam."user" CROSS JOIN generate_series(1, 3)
+         WHERE email = $1`, [email],
+      );
+      expect((await send(email).expect(200)).body).toEqual(generic);
+      await finish();
+      expect(await allTokens()).toHaveLength(5);
+      expect(mailer.sent.filter((entry) => entry.to === email)).toHaveLength(2);
+      expectErrorShape(await login(email).expect(403), 'EMAIL_NOT_VERIFIED');
+      expectErrorShape(
+        await request(server()).post('/api/auth/verify-email').send({ token: originalToken }).expect(400),
+        'INVALID_VERIFICATION_TOKEN',
+      );
+      await request(server()).post('/api/auth/verify-email').send({ token: replacement }).expect(200);
+      await login(email).expect(200);
+    } finally {
+      work.mockRestore();
+    }
   });
 
   it('si el token venció mientras el SMTP estaba caído, el reintento emite uno nuevo y ese enlace verifica', async () => {

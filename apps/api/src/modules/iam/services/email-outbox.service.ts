@@ -1,9 +1,9 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { OutboxKind } from '../constants';
 import { OUTBOX_POLL_INTERVAL_MS, outboxBackoffSeconds, outboxHorizonPassed } from '../../../common/outbox-policy';
-import { TokenPurpose } from '../domain/enums';
+import { TokenPurpose, UserStatus } from '../domain/enums';
 import { OutboxCipher } from '../infrastructure/outbox-cipher';
-import { EmailOutboxRepository, OutboxMessage } from '../ports/repositories';
+import { EmailOutboxRepository, OutboxMessage, UserRepository } from '../ports/repositories';
 import { TransactionContext, UnitOfWork } from '../ports/transaction';
 import { VerificationMailer } from '../ports/verification-mailer';
 import { VerificationTokenService } from './verification-token.service';
@@ -14,10 +14,10 @@ const BATCH_SIZE = 20;
 const TOKEN_RENEWAL_MARGIN_MS = 60_000;
 
 /**
- * Outbox de correo (`email_verification`, `password_reset`, `member_invitation`). El mensaje se escribe dentro de
- * la transacción que lo origina y se envía después del commit. Si el proveedor falla, el mensaje queda pendiente
+ * Outbox de enlaces y avisos por correo. El mensaje se envía después del commit de la outbox.
+ * Si el proveedor falla, el mensaje queda pendiente
  * y el worker lo reintenta con espera creciente durante 24 horas.
- * Solo `email_verification` renueva el token vencido esperando (la cuenta ya existe y no hay reenvío manual);
+ * Solo `email_verification` renueva un token vencido que no fue consumido ni reemplazado;
  * `password_reset` y `member_invitation` se abandonan al vencer el token y se vuelven a solicitar.
  * Nunca lanza hacia quien encola: la operación de origen ya se confirmó aunque el correo no salga todavía.
  */
@@ -32,6 +32,7 @@ export class EmailOutboxService implements OnModuleInit, OnModuleDestroy {
     private readonly cipher: OutboxCipher,
     private readonly mailer: VerificationMailer,
     private readonly tokens: VerificationTokenService,
+    private readonly users: UserRepository,
   ) {}
 
   onModuleInit(): void {
@@ -136,13 +137,17 @@ export class EmailOutboxService implements OnModuleInit, OnModuleDestroy {
 
     if (message.kind !== 'email_verification' && message.expiresAt.getTime() <= Date.now()) {
       await this.outbox.markExpired(message.id);
-      this.logger.warn(`Mensaje ${message.id} (${message.kind}) abandonado: el token venció sin enviarse`);
+      this.logger.warn(`Mensaje ${message.id} (${message.kind}) abandonado: venció sin enviarse`);
       return;
     }
 
     try {
-      const payload = await this.freshPayload(message);
-      await this.deliver(message, this.cipher.decrypt(payload));
+      const token = await this.deliveryToken(message);
+      if (token === null) {
+        await this.outbox.markExpired(message.id, message.encryptedPayload);
+        return;
+      }
+      await this.deliver(message, token);
     } catch (err) {
       await this.scheduleRetry(message, (err as Error).name);
       return;
@@ -158,27 +163,33 @@ export class EmailOutboxService implements OnModuleInit, OnModuleDestroy {
         return this.mailer.sendPasswordReset(message.recipientEmail, message.recipientName, token);
       case 'member_invitation':
         return this.mailer.sendMemberInvitation(message.recipientEmail, message.recipientName, token);
+      case 'plan_changed':
+      case 'member_status_changed':
+      case 'organization_closed':
+        return this.mailer.sendAccountNotice(message.recipientEmail, message.kind);
       default:
         throw new Error(`UnknownOutboxKind`);
     }
   }
 
-  /**
-   * Payload a enviar (solo email_verification renueva). Si el token venció (o está por vencer) mientras el proveedor estaba caído, se emite
-   * uno nuevo y se guarda cifrado: así la cuenta nunca queda creada con un enlace inservible y sin reenvío.
-   */
-  private async freshPayload(message: OutboxMessage): Promise<string> {
-    if (message.kind !== 'email_verification' || message.expiresAt.getTime() > Date.now() + TOKEN_RENEWAL_MARGIN_MS) {
-      return message.encryptedPayload;
-    }
+  private async deliveryToken(message: OutboxMessage): Promise<string | null> {
+    const rawToken = this.cipher.decrypt(message.encryptedPayload);
+    if (message.kind !== 'email_verification') return rawToken;
 
-    const { rawToken, expiresAt } = await this.uow.run((tx) => this.tokens.issue(tx, message.userId));
-    const encryptedPayload = this.cipher.encrypt(rawToken);
-    await this.outbox.updatePayload(message.id, { encryptedPayload, expiresAt });
-    message.encryptedPayload = encryptedPayload;
-    message.expiresAt = expiresAt;
-    this.logger.log(`Mensaje ${message.id}: token renovado antes de reintentar el envío`);
-    return encryptedPayload;
+    return this.uow.run(async (tx) => {
+      const user = await this.users.findByIdForUpdate(message.userId, tx);
+      if (!user || user.emailVerified || user.status !== UserStatus.ACTIVE) return null;
+
+      const token = await this.tokens.findForUpdate(tx, rawToken);
+      if (!token || token.userId !== user.id || token.usedAt) return null;
+      const expiresAt = Math.min(token.expiresAt.getTime(), message.expiresAt.getTime());
+      if (expiresAt > Date.now() + TOKEN_RENEWAL_MARGIN_MS) return rawToken;
+
+      const replacement = await this.tokens.replace(tx, token);
+      const encryptedPayload = this.cipher.encrypt(replacement.rawToken);
+      await this.outbox.updatePayload(message.id, { encryptedPayload, expiresAt: replacement.expiresAt }, tx);
+      return replacement.rawToken;
+    });
   }
 
   private async scheduleRetry(message: OutboxMessage, errorName: string): Promise<void> {

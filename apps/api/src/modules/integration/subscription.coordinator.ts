@@ -8,6 +8,9 @@ import { DataSource, EntityManager } from 'typeorm';
 import { BillingService } from '../billing/billing.service';
 import { FilesService } from '../files/files.service';
 import { Subscription, SubscriptionStatus } from '../billing/entities/subscription.entity';
+import { PaymentInput, resolveSimulatedPayment } from '../billing/simulated-payment';
+import { OrganizationRepository } from '../iam/ports/repositories';
+import { AccountNotices } from '../iam/services/account-notices.service';
 
 /**
  * SubscriptionCoordinator — Coordinador de Integración entre Billing y Files
@@ -20,8 +23,12 @@ import { Subscription, SubscriptionStatus } from '../billing/entities/subscripti
  *    nunca asume 0 bytes.
  * 4. Control de concurrencia y carreras: ejecuta bajo transacción TypeORM con bloqueo pesimista
  *    (SELECT FOR UPDATE) e idempotencia para activaciones del mismo plan.
- * 5. Delega la persistencia en BillingService.persistSubscription para unificar la creación
- *    de suscripción, control de colisión única (23505) y registro de operaciones.
+ * 5. Pago simulado (SPEC-305): después de la cuota y antes de persistir, resuelve la tarjeta de
+ *    prueba con resolveSimulatedPayment. Un rechazo (402), una tarjeta que no es de prueba (422) o
+ *    datos inválidos (400) revierten la transacción sin cambiar la suscripción. Los planes de US$0 y la
+ *    reactivación idempotente no exigen tarjeta. Nunca se registra el número ni el CVV.
+ * 6. Delega la persistencia en BillingService.persistSubscription para unificar la creación
+ *    de suscripción, control de colisión única (23505) y registro de operaciones (con cardLast4).
  *
  * Códigos de error según CONTRACTS.md: la cuota insuficiente responde 422 STORAGE_QUOTA_EXCEEDED
  * (regla de negocio); 409 queda reservado para el conflicto de estado por activación concurrente.
@@ -34,15 +41,23 @@ export class SubscriptionCoordinator {
     private readonly billingService: BillingService,
     private readonly filesService: FilesService,
     private readonly dataSource: DataSource,
+    private readonly organizations: OrganizationRepository,
+    private readonly notices: AccountNotices,
   ) {}
 
   /**
    * Coordina la activación o cambio de suscripción bajo una transacción atómica protegida.
    */
-  async activateSubscription(organizationId: string, planId: string): Promise<Subscription> {
+  async activateSubscription(
+    organizationId: string,
+    planId: string,
+    payment?: PaymentInput,
+  ): Promise<Subscription> {
     const targetPlan = await this.billingService.findPlanById(planId);
 
-    return this.dataSource.transaction(async (manager: EntityManager) => {
+    const { subscription, changed } = await this.dataSource.transaction(async (manager: EntityManager) => {
+      // Serializa incluso sin suscripción previa, sin bloquear las referencias que crean las cargas.
+      await this.organizations.lockById(manager, organizationId, { allowReferences: true });
       // 1. Lectura de estado vigente con bloqueo pesimista para prevenir carreras concurrentes
       // Sin cargar el plan: PostgreSQL rechaza FOR UPDATE sobre el lado nulo de un LEFT JOIN,
       // y aquí solo hacen falta planId y el estado para cancelar la suscripción vigente.
@@ -54,7 +69,7 @@ export class SubscriptionCoordinator {
 
       // 2. Idempotencia: Si ya está activo el mismo plan, retornar la suscripción vigente sin recrear
       if (currentActive && currentActive.planId === targetPlan.id) {
-        return currentActive;
+        return { subscription: currentActive, changed: false };
       }
 
       // 3. Validación de Downgrade contra FilesModule (Uso Confirmado + Reservas Activas)
@@ -86,8 +101,14 @@ export class SubscriptionCoordinator {
         });
       }
 
-      // 4. Delegar la persistencia atómica en BillingService.persistSubscription
-      return this.billingService.persistSubscription(organizationId, targetPlan, manager);
+      // 4. Pago simulado (SPEC-305): solo tras validar la cuota. Lanza 400 / 422 / 402 sin persistir nada.
+      const cardLast4 = resolveSimulatedPayment(targetPlan, payment, new Date());
+
+      // 5. Delegar la persistencia atómica en BillingService.persistSubscription
+      const subscription = await this.billingService.persistSubscription(organizationId, targetPlan, manager, cardLast4);
+      return { subscription, changed: true };
     });
+    if (changed) await this.notices.planChanged(organizationId);
+    return subscription;
   }
 }

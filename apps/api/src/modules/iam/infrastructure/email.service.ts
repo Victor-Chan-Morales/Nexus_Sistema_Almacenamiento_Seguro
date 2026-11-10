@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import {
+  AccountNoticeKind,
   DEFAULT_RESET_PASSWORD_PATH,
   DEFAULT_VERIFY_EMAIL_PATH,
   MEMBER_INVITATION_TOKEN_TTL_HOURS,
@@ -11,6 +12,21 @@ import {
 } from '../constants';
 import { buildVerificationLink } from '../iam.utils';
 import { VerificationMailer } from '../ports/verification-mailer';
+
+const ACCOUNT_NOTICE_COPY: Record<AccountNoticeKind, { subject: string; text: string }> = {
+  plan_changed: {
+    subject: 'Suscripción actualizada en Nexus',
+    text: 'Se actualizó la suscripción de tu organización. Puedes consultar su estado en la sección Suscripción de Nexus.',
+  },
+  member_status_changed: {
+    subject: 'Acceso a tu organización actualizado en Nexus',
+    text: 'Tu organización suspendió o retiró tu acceso a Nexus. Si necesitas más información, contacta a tu administrador.',
+  },
+  organization_closed: {
+    subject: 'Organización cerrada en Nexus',
+    text: 'Tu organización cerró su cuenta en Nexus. El acceso quedó deshabilitado y los archivos se conservan.',
+  },
+};
 
 /**
  * EmailService del plan: implementación SMTP de VerificationMailer. En desarrollo apunta a
@@ -82,6 +98,11 @@ export class EmailService implements VerificationMailer {
         `<p>Si no esperabas esta invitación, ignora este mensaje.</p>`,
     });
     this.logger.log('Correo de invitación enviado');
+  }
+
+  async sendAccountNotice(to: string, kind: AccountNoticeKind): Promise<void> {
+    const { subject, text } = ACCOUNT_NOTICE_COPY[kind];
+    await this.send(to, subject, { text, html: `<p>${escapeHtml(text)}</p>` });
   }
 
   private linkTo(path: string, token: string): string {

@@ -27,7 +27,7 @@ import { Reservation } from './entities/reservation.entity';
 import { TenantEncryptionKey } from './entities/tenant-encryption-key.entity';
 import { TenantQuota } from './entities/tenant-quota.entity';
 import { Upload } from './entities/upload.entity';
-import { EncryptedFile, FilesCryptoService } from './files-crypto.service';
+import { EncryptedFile, FilesCryptoService, lockTenantEncryption } from './files-crypto.service';
 import { DriveAccessService, DriveActor } from './drive-access.service';
 import { PurgeFileResponseDto, RestoreFileResponseDto, RestoreFolderResponseDto, TrashItemDto, TrashResponseDto } from './dto/trash.dto';
 import { DestinationLocation } from './dto/destination.dto';
@@ -372,14 +372,27 @@ export class FilesService {
     manager: EntityManager,
     organizationId: string,
   ): Promise<{ destination: Destination; key: TenantEncryptionKey }> {
+    await lockTenantEncryption(manager, organizationId);
     const destinationRepo = manager.getRepository(Destination);
     const keyRepo = manager.getRepository(TenantEncryptionKey);
     const quotaRepo = manager.getRepository(TenantQuota);
 
+    let key = await keyRepo.findOne({ where: { organizationId, status: 'active' } });
+    if (!key) {
+      const keyVersion = this.crypto.currentKeyVersion();
+      this.crypto.assertMasterKeyAvailable(keyVersion);
+      key = await keyRepo.save(keyRepo.create({
+        organizationId,
+        externalReference: this.crypto.externalKeyReference(organizationId, keyVersion),
+        status: 'active',
+        rotatedAt: null,
+      }));
+    }
     let destination = await destinationRepo.findOne({
       where: { organizationId, isDefault: true, isEnabled: true },
     });
     if (!destination) {
+      const keyVersion = this.crypto.keyVersionFromReference(key.externalReference, organizationId);
       destination = await destinationRepo.save(destinationRepo.create({
         organizationId,
         providerType: 's3',
@@ -394,20 +407,8 @@ export class FilesService {
             credentials: 'environment:S3_ACCESS_KEY,S3_SECRET_KEY',
             bucket: 'environment:S3_BUCKET',
           }),
+          keyVersion,
         ),
-      }));
-    }
-
-    let key = await keyRepo.findOne({
-      where: { organizationId, status: 'active' },
-      order: { createdAt: 'DESC' },
-    });
-    if (!key) {
-      key = await keyRepo.save(keyRepo.create({
-        organizationId,
-        externalReference: this.crypto.externalKeyReference(organizationId),
-        status: 'active',
-        rotatedAt: null,
       }));
     }
 
@@ -896,15 +897,16 @@ export class FilesService {
             order: { versionNumber: 'DESC' },
           });
           const versionNumber = (latest?.versionNumber ?? 0) + 1;
+          const { destination, key } = await this.ensureTenantResources(manager, organizationId);
           const encrypted: EncryptedFile = this.crypto.encryptFile(
             organizationId,
             fileRecord.id,
             versionNumber,
             bytes,
+            this.crypto.keyVersionFromReference(key.externalReference, organizationId),
           );
           const generatedObjectKey = organizationId + '/' + fileRecord.id + '/v' + versionNumber + '/' + randomUUID();
 
-          const { destination, key } = await this.ensureTenantResources(manager, organizationId);
           const destinationId = folder.destinationId ?? destination.id;
           // Se registra antes de escribir: si la escritura falla a medio camino, la compensación lo borra en este destino.
           stored = { destinationId, objectKey: generatedObjectKey };
@@ -1242,14 +1244,7 @@ export class FilesService {
       const storage = await this.storageRouter.forRead(organizationId, version.destinationId);
       const objectStream = await storage.get(version.objectKey);
       const objectBytes = await this.readStream(objectStream);
-      const plaintext = this.crypto.decryptFile(
-        organizationId,
-        file.id,
-        version.versionNumber,
-        version.encryptedDek,
-        version.checksum,
-        objectBytes,
-      );
+      const plaintext = await this.crypto.decryptStoredVersion(this.versionRepository.manager, organizationId, version, objectBytes);
       return {
         stream: Readable.from([plaintext]),
         mimeType: file.mimeType || 'application/octet-stream',

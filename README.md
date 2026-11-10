@@ -54,6 +54,7 @@ npm run infra:up
 - API S3 de SeaweedFS en `localhost:8333`, estado del master en `localhost:9333` y consola del filer en `localhost:8888`.
 - `infra:up` arranca PostgreSQL y SeaweedFS en Docker. La API NestJS corre localmente en `http://localhost:3001/api` con `npm run dev:api`; health check en `http://localhost:3001/api/health`.
 - El perfil Docker opcional para la API es `docker compose --profile containerized-api up -d --build`.
+- Para instalar el sistema completo en un servidor Linux, usa el [paquete on-premises](deploy/on-premises/README.md).
 
 Para ejecutar la API en desarrollo local con recarga en caliente:
 ```bash

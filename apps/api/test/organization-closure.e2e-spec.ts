@@ -22,6 +22,7 @@ class FakeEmailService {
   async sendMemberInvitation(to: string, name: string, token: string) {
     return this.sendVerification(to, name, token);
   }
+  async sendAccountNotice() {}
   tokenFor(to: string): string {
     const found = [...this.sent].reverse().find((m) => m.to === to);
     if (!found) throw new Error(`sin correo para ${to}`);

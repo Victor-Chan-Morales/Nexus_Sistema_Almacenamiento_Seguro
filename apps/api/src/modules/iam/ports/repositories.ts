@@ -16,6 +16,7 @@ export abstract class UserRepository {
   /** Como findByEmail, pero bloquea la fila del usuario hasta el fin de la transacción (SELECT ... FOR UPDATE). */
   abstract findByEmailForUpdate(email: string, tx: TransactionContext): Promise<User | null>;
   abstract findById(id: string, tx?: TransactionContext): Promise<User | null>;
+  abstract findByIdForUpdate(id: string, tx: TransactionContext): Promise<User | null>;
   abstract create(
     tx: TransactionContext,
     data: { email: string; fullName: string; passwordHash: string },
@@ -42,10 +43,14 @@ export abstract class OrganizationRepository {
   ): Promise<Organization>;
 
   /**
-   * Bloquea la fila de la organización (SELECT ... FOR UPDATE) hasta el fin de la transacción. Serializa las
-   * altas de miembros de una misma organización. Devuelve false si la organización no existe.
+   * Bloquea la fila de la organización hasta el fin de la transacción. Con allowReferences,
+   * otras transacciones pueden insertar referencias a esa fila. Devuelve false si la organización no existe.
    */
-  abstract lockById(tx: TransactionContext, organizationId: string): Promise<boolean>;
+  abstract lockById(
+    tx: TransactionContext,
+    organizationId: string,
+    options?: { allowReferences: boolean },
+  ): Promise<boolean>;
 
   /** Modelo de despliegue actual (SPEC-803). Devuelve null si la organización no existe. */
   abstract findDeploymentModel(tx: TransactionContext, organizationId: string): Promise<DeploymentModel | null>;
@@ -81,7 +86,7 @@ export abstract class MembershipRepository {
    * Miembros de una organización (cualquier estado) con el nombre y el correo del usuario y el nombre del rol,
    * del más antiguo al más nuevo. Solo carga las columnas necesarias: nunca el hash de la contraseña.
    */
-  abstract listByOrganization(organizationId: string): Promise<Membership[]>;
+  abstract listByOrganization(organizationId: string, tx?: TransactionContext): Promise<Membership[]>;
 
   /**
    * Una membresía de ESTA organización, con `user` y `roleRef` cargados, o null si no existe o es de otra organización
@@ -125,6 +130,9 @@ export abstract class SessionRepository {
 
 /** Tokens de un solo uso (hoy verificación de correo; mañana también restablecer contraseña). */
 export abstract class OneTimeTokenRepository {
+  abstract latestCreatedAt(tx: TransactionContext, userId: string, purpose: TokenPurpose): Promise<Date | null>;
+  abstract countCreatedSince(tx: TransactionContext, userId: string, purpose: TokenPurpose, since: Date): Promise<number>;
+  abstract findByHash(tx: TransactionContext, tokenHash: string, purpose: TokenPurpose): Promise<OneTimeToken | null>;
   abstract create(
     tx: TransactionContext,
     data: { userId: string; purpose: TokenPurpose; tokenHash: string; expiresAt: Date },
@@ -171,11 +179,11 @@ export abstract class EmailOutboxRepository {
     data: { ids?: string[]; now: Date; leaseUntil: Date; limit: number },
   ): Promise<OutboxMessage[]>;
   /** Reemplaza el token cifrado y su vencimiento cuando el reintento emite un token nuevo. */
-  abstract updatePayload(id: string, data: { encryptedPayload: string; expiresAt: Date }): Promise<void>;
+  abstract updatePayload(id: string, data: { encryptedPayload: string; expiresAt: Date }, tx: TransactionContext): Promise<void>;
   abstract markSent(id: string): Promise<void>;
   abstract markFailed(
     id: string,
     data: { attempts: number; nextAttemptAt: Date; lastError: string },
   ): Promise<void>;
-  abstract markExpired(id: string): Promise<void>;
+  abstract markExpired(id: string, expectedPayload?: string): Promise<void>;
 }

@@ -680,6 +680,20 @@ h1, h2, h3 { font-family: "Inter", Arial, sans-serif; }
   .billing-primary, .billing-secondary { min-height: 50px; font-size: 12.6px; }
 }
 
+/* SPEC-305: formulario de tarjeta de prueba. */
+.payment-form { display: grid; gap: 14px; margin-top: 4px; }
+.payment-form .billing-warning { margin: 0; }
+.payment-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.payment-form-field { display: grid; gap: 6px; min-width: 0; }
+.payment-form-field label { color: var(--ink); font-size: 12.6px; font-weight: 700; }
+.payment-form-field input { width: 100%; min-width: 0; min-height: 45px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink); font: inherit; font-size: 13.65px; }
+.payment-form-field input:focus { border-color: var(--brand); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-purple) 11%, transparent); }
+.payment-form-field input:disabled { background: var(--canvas); color: var(--muted); }
+.payment-form-error { margin: 0; }
+@media (max-width: 480px) {
+  .payment-form-row { grid-template-columns: 1fr; }
+}
+
 /* Public pages: keep brand colors on the approved identity tokens. */
 .public-logo-crop { flex-basis: 42px; width: 42px; height: 36px; }
 .public-header { border-bottom-color: #e1e4ec; }
@@ -758,6 +772,9 @@ h1, h2, h3 { font-family: "Inter", Arial, sans-serif; }
 .auth-form-card .auth-switch a, .auth-form-card .text-button, .auth-resend button { color: var(--brand); }
 .auth-alert { padding: 11px 13px; border: 1px solid #f3a7b1; border-radius: 8px; background: #fff2f4; color: #af4255; font-size: 11.55px; line-height: 1.5; }
 .auth-result-card { width: min(100%, 510px); }
+.auth-resend-section { margin-top: 24px; padding-top: 20px; border-top: 1px solid #e4e7ef; text-align: left; }
+.auth-resend-section h2 { margin: 0 0 14px; font-size: 18px; }
+.auth-resend-section .auth-result-notice { margin: 0; }
 .auth-result-icon { display: grid; width: 56px; height: 56px; place-items: center; margin: 0 auto 17px; border-radius: 50%; background: #f1eefb; color: var(--brand); font-size: 26.25px; }
 .auth-result-notice { display: grid; gap: 7px; margin: 0 0 17px; padding: 15px; border: 1px solid #efdaa4; border-radius: 9px; background: #fff9e9; color: #785917; font-size: 12.6px; line-height: 1.55; text-align: left; }
 .auth-result-notice span { font-size: 11.55px; }
@@ -979,6 +996,9 @@ h1, h2, h3 { font-family: "Inter", Arial, sans-serif; }
 .services-scroll svg,
 .contact-form > .button svg { flex: 0 0 auto; margin-left: 5px; vertical-align: middle; }
 .billing-secondary-link svg { flex: 0 0 auto; }
+/* Botón con aspecto de enlace (p. ej. "Cancelar" al renovar): quita el estilo nativo de <button>. */
+button.billing-secondary-link { background: none; border: 0; padding: 0; cursor: pointer; font-family: inherit; }
+button.billing-secondary-link:disabled { cursor: default; opacity: 0.6; }
 .services-visual-list > i,
 .services-visual-list > span:last-child,
 .drive-notice > span,

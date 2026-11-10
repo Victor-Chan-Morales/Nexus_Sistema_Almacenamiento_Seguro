@@ -90,6 +90,7 @@ describe('OrganizationClosureService (SPEC-114)', () => {
       users,
       hasher,
       uow,
+      { captureClosureRecipients: jest.fn().mockResolvedValue([]), organizationClosed: jest.fn() } as never,
       audit,
     );
   });

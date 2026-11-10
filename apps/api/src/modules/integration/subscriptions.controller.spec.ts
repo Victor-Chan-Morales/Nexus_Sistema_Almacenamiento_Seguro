@@ -1,22 +1,26 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { ExecutionContext, ForbiddenException, UnprocessableEntityException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { SubscriptionsController } from './subscriptions.controller';
 import { SubscriptionCoordinator } from './subscription.coordinator';
 import { BillingService } from '../billing/billing.service';
 import { Subscription, SubscriptionStatus } from '../billing/entities/subscription.entity';
 import { AuditService } from '../audit/audit.service';
-import { AuditAction, AuditResource } from '../audit/audit.types';
+import { AuditAction, AuditResource, AuditResult } from '../audit/audit.types';
+import { PaymentDeclinedException } from '../billing/simulated-payment';
+import { PaymentDto } from '../billing/billing.dto';
 import { RolesGuard } from '../iam/guards/roles.guard';
 import { ROLES_KEY } from '../iam/decorators/roles.decorator';
 import { Role } from '../iam/domain/enums';
 import { AuthUser } from '../iam/interfaces/auth-user.interface';
+import { AccountNotices } from '../iam/services/account-notices.service';
 
 describe('SubscriptionsController — Pruebas de contratos HTTP y RBAC (SPEC-302)', () => {
   let controller: SubscriptionsController;
   let coordinator: jest.Mocked<Partial<SubscriptionCoordinator>>;
   let billingService: jest.Mocked<Partial<BillingService>>;
   let audit: { logEvent: jest.Mock };
+  let planChanged: jest.Mock;
 
   const mockSubscription: Subscription = {
     id: 'sub-team-uuid',
@@ -49,6 +53,7 @@ describe('SubscriptionsController — Pruebas de contratos HTTP y RBAC (SPEC-302
     };
 
     audit = { logEvent: jest.fn().mockResolvedValue(undefined) };
+    planChanged = jest.fn().mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [SubscriptionsController],
@@ -56,6 +61,7 @@ describe('SubscriptionsController — Pruebas de contratos HTTP y RBAC (SPEC-302
         { provide: SubscriptionCoordinator, useValue: coordinator },
         { provide: BillingService, useValue: billingService },
         { provide: AuditService, useValue: audit },
+        { provide: AccountNotices, useValue: { planChanged } },
       ],
     }).compile();
 
@@ -67,7 +73,8 @@ describe('SubscriptionsController — Pruebas de contratos HTTP y RBAC (SPEC-302
       const response = await controller.renew({ user: tenantAdminUser });
 
       expect(billingService.renewSubscription).toHaveBeenCalledTimes(1);
-      expect(billingService.renewSubscription).toHaveBeenCalledWith('org-tenant-uuid');
+      expect(billingService.renewSubscription).toHaveBeenCalledWith('org-tenant-uuid', undefined);
+      expect(planChanged).toHaveBeenCalledWith('org-tenant-uuid');
       expect(response).toEqual({
         subscriptionId: 'sub-team-uuid',
         status: 'active',
@@ -86,6 +93,7 @@ describe('SubscriptionsController — Pruebas de contratos HTTP y RBAC (SPEC-302
       expect(coordinator.activateSubscription).toHaveBeenCalledWith(
         'org-tenant-uuid',
         'plan-team-uuid',
+        undefined,
       );
       expect(response).toEqual({
         subscriptionId: 'sub-team-uuid',
@@ -157,6 +165,98 @@ describe('SubscriptionsController — Pruebas de contratos HTTP y RBAC (SPEC-302
       audit.logEvent.mockImplementationOnce(async () => void order.push('audit'));
       await controller.activate({ user: tenantAdminUser }, { planId: 'plan-team-uuid' });
       expect(order).toEqual(['operation', 'audit']);
+    });
+  });
+
+  describe('SPEC-305: pago simulado y auditoría del rechazo', () => {
+    const approvedCard: PaymentDto = {
+      cardNumber: '4242424242424242',
+      holderName: 'Ana Pérez',
+      expiry: '12/99',
+      cvv: '987',
+    };
+    const declinedCard: PaymentDto = { ...approvedCard, cardNumber: '4000000000000002' };
+
+    const expectNoCardData = (value: unknown): void => {
+      const serialized = JSON.stringify(value) ?? '';
+      expect(serialized).not.toContain(approvedCard.cardNumber);
+      expect(serialized).not.toContain(declinedCard.cardNumber);
+      expect(serialized).not.toMatch(new RegExp(`(^|\\D)${approvedCard.cvv}(\\D|$)`));
+      expect(serialized).not.toMatch(/cvv|cardNumber|holderName/i);
+    };
+
+    const declinedEvent = {
+      organizationId: 'org-tenant-uuid',
+      actorId: 'user-admin-uuid',
+      action: AuditAction.PAYMENT_DECLINED,
+      resourceType: AuditResource.SUBSCRIPTION,
+      result: AuditResult.FAILURE,
+    };
+
+    it('activate pasa el payment al coordinador', async () => {
+      await controller.activate({ user: tenantAdminUser }, { planId: 'plan-team-uuid', payment: approvedCard });
+      expect(coordinator.activateSubscription).toHaveBeenCalledWith('org-tenant-uuid', 'plan-team-uuid', approvedCard);
+    });
+
+    it('renew pasa el payment a BillingService', async () => {
+      await controller.renew({ user: tenantAdminUser }, { payment: approvedCard });
+      expect(billingService.renewSubscription).toHaveBeenCalledWith('org-tenant-uuid', approvedCard);
+    });
+
+    it('Escenario 2: un rechazo en activate registra PAYMENT_DECLINED con resultado failure y responde 402', async () => {
+      const order: string[] = [];
+      jest.mocked(coordinator.activateSubscription).mockRejectedValueOnce(new PaymentDeclinedException());
+      audit.logEvent.mockImplementationOnce(async () => void order.push('audit'));
+
+      const error = await controller
+        .activate({ user: tenantAdminUser }, { planId: 'plan-team-uuid', payment: declinedCard })
+        .catch((err: unknown) => (order.push('thrown'), err));
+
+      expect(error).toBeInstanceOf(PaymentDeclinedException);
+      expect((error as PaymentDeclinedException).getStatus()).toBe(402);
+      expect(audit.logEvent).toHaveBeenCalledTimes(1);
+      expect(audit.logEvent).toHaveBeenCalledWith(declinedEvent);
+      expect(order).toEqual(['audit', 'thrown']);
+      expectNoCardData(audit.logEvent.mock.calls);
+      expectNoCardData((error as PaymentDeclinedException).getResponse());
+    });
+
+    it('Escenario 4: un rechazo en renew registra PAYMENT_DECLINED con resultado failure y responde 402', async () => {
+      jest.mocked(billingService.renewSubscription).mockRejectedValueOnce(new PaymentDeclinedException());
+
+      const error = await controller
+        .renew({ user: tenantAdminUser }, { payment: declinedCard })
+        .catch((err: unknown) => err);
+
+      expect(error).toBeInstanceOf(PaymentDeclinedException);
+      expect((error as PaymentDeclinedException).getStatus()).toBe(402);
+      expect(audit.logEvent).toHaveBeenCalledTimes(1);
+      expect(audit.logEvent).toHaveBeenCalledWith(declinedEvent);
+      expectNoCardData(audit.logEvent.mock.calls);
+    });
+
+    it('Escenario 3: TEST_CARD_REQUIRED (422) no se audita', async () => {
+      jest.mocked(coordinator.activateSubscription).mockRejectedValueOnce(
+        new UnprocessableEntityException({ code: 'TEST_CARD_REQUIRED', message: 'Solo se aceptan tarjetas de prueba.' }),
+      );
+
+      await expect(
+        controller.activate({ user: tenantAdminUser }, { planId: 'plan-team-uuid', payment: approvedCard }),
+      ).rejects.toBeInstanceOf(UnprocessableEntityException);
+      expect(audit.logEvent).not.toHaveBeenCalled();
+    });
+
+    it('Escenarios 1 y 4: un pago aprobado registra solo PLAN_ACTIVATED o PLAN_RENEWED, sin datos de la tarjeta', async () => {
+      const activated = await controller.activate(
+        { user: tenantAdminUser },
+        { planId: 'plan-team-uuid', payment: approvedCard },
+      );
+      const renewed = await controller.renew({ user: tenantAdminUser }, { payment: approvedCard });
+
+      const actions = audit.logEvent.mock.calls.map(([event]: [{ action: AuditAction }]) => event.action);
+      expect(actions).toEqual([AuditAction.PLAN_ACTIVATED, AuditAction.PLAN_RENEWED]);
+      expectNoCardData(audit.logEvent.mock.calls);
+      expectNoCardData([activated, renewed]);
     });
   });
 
