@@ -1008,6 +1008,9 @@ h1, h2, h3 { font-family: "Inter", Arial, sans-serif; }
 .services-scroll svg,
 .contact-form > .button svg { flex: 0 0 auto; margin-left: 5px; vertical-align: middle; }
 .billing-secondary-link svg { flex: 0 0 auto; }
+/* Botón con aspecto de enlace (p. ej. "Cancelar" al renovar): quita el estilo nativo de <button>. */
+button.billing-secondary-link { background: none; border: 0; padding: 0; cursor: pointer; font-family: inherit; }
+button.billing-secondary-link:disabled { cursor: default; opacity: 0.6; }
 .services-visual-list > i,
 .services-visual-list > span:last-child,
 .drive-notice > span,
