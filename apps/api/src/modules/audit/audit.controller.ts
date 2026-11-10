@@ -16,6 +16,7 @@ import {
   AuditEventsResponseDto,
   ListAuditEventsQueryDto,
 } from './dto/list-audit-events.dto';
+import { AuditVerificationDto } from './dto/verify-audit.dto';
 
 /**
  * AuditController
@@ -27,12 +28,22 @@ import {
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
+  @Get('verify')
+  @Roles(Role.TENANT_ADMIN)
+  verify(@Request() req: { user?: Partial<AuthUser> }): Promise<AuditVerificationDto> {
+    return this.auditService.verifyChain(this.requireOrganization(req));
+  }
+
   @Get('events')
   @Roles(Role.TENANT_ADMIN)
   async getEvents(
     @Request() req: { user?: Partial<AuthUser> },
     @Query() query: ListAuditEventsQueryDto,
   ): Promise<AuditEventsResponseDto> {
+    return this.auditService.listEvents(this.requireOrganization(req), query);
+  }
+
+  private requireOrganization(req: { user?: Partial<AuthUser> }): string {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
       throw new ForbiddenException(
@@ -40,6 +51,6 @@ export class AuditController {
       );
     }
 
-    return this.auditService.listEvents(organizationId, query);
+    return organizationId;
   }
 }
