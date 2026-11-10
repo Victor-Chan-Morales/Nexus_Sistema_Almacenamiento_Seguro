@@ -1365,3 +1365,53 @@ button.storage-model-card:hover { border-color: var(--brand); }
   font-size: 0.85rem;
   line-height: 1.5;
 }
+
+/* SPEC-217 · diálogo de compartir */
+.drive-modal > .share-dialog-title { padding-right: 34px; overflow-wrap: anywhere; }
+.drive-modal > .share-help { margin: 0 0 4px; color: #737a89; font-size: 10.5px; line-height: 1.6; }
+.drive-modal .share-form { gap: 8px; margin-top: 14px; }
+.share-expiry { min-width: 0; margin: 0 0 6px; padding: 0; border: 0; }
+.share-expiry legend { margin-bottom: 6px; padding: 0; }
+.share-expiry-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.share-expiry-option { display: inline-flex; min-height: 37px; align-items: center; gap: 7px; padding: 0 12px; border: 1px solid #dfe1e8; border-radius: 8px; color: #424959; cursor: pointer; font-size: 10.5px; }
+.share-expiry-option:has(input:checked) { border-color: var(--brand); background: var(--color-ice); color: var(--brand); font-weight: 700; }
+.share-expiry-option input { margin: 0; accent-color: var(--brand); }
+.share-field-help { color: #858b99; font-size: 9.45px; }
+.share-submit { justify-self: start; margin-top: 6px; }
+.share-created, .share-links { display: grid; gap: 8px; margin-top: 21px; }
+.share-created h3, .share-links h3 { margin: 0; color: #303645; font-size: 13.65px; }
+.share-links h3:focus { outline: 0; }
+.share-created { padding: 14px; border: 1px solid #d6cffa; border-radius: 12px; background: #fbfaff; }
+.share-created-warning { display: flex; align-items: flex-start; gap: 7px; margin: 0; color: #8a5a12; font-size: 10.5px; font-weight: 600; line-height: 1.6; }
+.share-created-warning svg { flex: none; margin-top: 2px; }
+.share-created-row { display: flex; gap: 8px; }
+.share-created-input { flex: 1; min-width: 0; font-family: ui-monospace, monospace; }
+.share-copy-status { min-height: 1em; margin: 0; color: #34784d; font-size: 10.5px; font-weight: 600; }
+.share-created-actions, .share-confirm-actions { margin-top: 4px; }
+.share-error { display: grid; gap: 10px; justify-items: start; margin: 0; padding: 12px 14px; border-radius: 10px; background: #fff0f1; color: #c34e60; font-size: 10.5px; line-height: 1.6; }
+.share-error p { margin: 0; }
+.drive-empty-state.share-empty { padding: 22px 12px; }
+.drive-empty-state.share-empty p { margin-bottom: 0; }
+.share-table { width: 100%; border-collapse: collapse; color: #424959; font-size: 10.5px; }
+.share-table th { padding: 6px 8px; border-bottom: 1px solid #eeeef3; color: #858b99; font-size: 9.45px; font-weight: 700; text-align: left; }
+.share-table td { padding: 8px; border-bottom: 1px solid #eeeef3; vertical-align: middle; }
+.share-row-action { text-align: right; }
+.share-row-action .drive-subtle-button { min-height: 32px; }
+.share-status { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 9.45px; font-weight: 700; white-space: nowrap; }
+.share-status-active { background: #edf8f1; color: #34784d; }
+.share-status-expired { background: #f3f3f6; color: #606777; }
+.share-status-revoked { background: #fff0f1; color: #c34e60; }
+.share-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.share-confirm { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid color-mix(in srgb, #c34e60 30%, transparent); border-radius: 10px; background: #fff7f8; }
+.share-confirm p { margin: 0; color: #9b1c2e; font-size: 10.5px; line-height: 1.6; }
+.share-confirm .share-confirm-detail { color: #737a89; font-size: 9.45px; }
+@media (max-width: 520px) {
+  .share-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .share-table, .share-table tbody, .share-table tr, .share-table td { display: block; width: 100%; }
+  .share-table tr { padding: 8px 0; border-bottom: 1px solid #eeeef3; }
+  .share-table td { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; border: 0; }
+  .share-table td[data-label]::before { content: attr(data-label); color: #858b99; font-size: 9.45px; font-weight: 700; }
+  .share-row-action { justify-content: flex-end; }
+  .share-row-action:empty { display: none; }
+  .share-created-row { flex-direction: column; }
+}
