@@ -1,11 +1,14 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuditModule } from '../audit/audit.module';
 import { BillingModule } from '../billing/billing.module';
 import { FilesModule } from '../files/files.module';
 import { IamModule } from '../iam/iam.module';
 import { InstallationRequest } from './entities/installation-request.entity';
 import { InstallationRequestsController } from './installation-requests.controller';
 import { InstallationRequestsService } from './installation-requests.service';
+import { OrganizationClosureService } from './organization-closure.service';
+import { OrganizationsController } from './organizations.controller';
 import { PlatformAdminService } from './platform-admin.service';
 import { PlatformController } from './platform.controller';
 import { StoragePolicyController } from './storage-policy.controller';
@@ -19,6 +22,7 @@ import { SubscriptionsController } from './subscriptions.controller';
  * Conecta Billing, Files e IAM mediante coordinadores (SubscriptionCoordinator, StoragePolicyService)
  * sin generar dependencias circulares entre los dominios y asegurando la validación atómica de contratos.
  * También aloja las consultas de plataforma del Super Admin (PlatformController, SPEC-501).
+ * Cierre de empresa (SPEC-114): OrganizationClosureService coordina IAM, Billing y Audit.
  */
 @Module({
   imports: [
@@ -26,19 +30,22 @@ import { SubscriptionsController } from './subscriptions.controller';
     FilesModule,
     IamModule, // SPEC-803: OrganizationRepository (modelo de despliegue) y el guard JWT
     TypeOrmModule.forFeature([InstallationRequest]), // SPEC-803: admin.installation_request
+    AuditModule, // SPEC-114: ORGANIZATION_CLOSED
   ],
   controllers: [
     SubscriptionsController,
     PlatformController,
     StoragePolicyController,
     InstallationRequestsController,
+    OrganizationsController,
   ],
   providers: [
     SubscriptionCoordinator,
     PlatformAdminService,
     StoragePolicyService,
     InstallationRequestsService,
+    OrganizationClosureService,
   ],
-  exports: [SubscriptionCoordinator, StoragePolicyService],
+  exports: [SubscriptionCoordinator, StoragePolicyService, OrganizationClosureService],
 })
 export class IntegrationModule {}
