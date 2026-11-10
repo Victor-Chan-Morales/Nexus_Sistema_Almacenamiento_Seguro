@@ -7,13 +7,14 @@ import { Suspense } from "react";
 import { ApiError } from "@/lib/api/client";
 import { activateSubscription, getBillingOperations, getPlans, renewSubscription } from "@/lib/api/billing";
 import { getDashboard } from "@/lib/api/dashboard";
-import type { ActivateSubscriptionResponse, BillingOperationsResponse, DashboardResponse, Plan } from "@/lib/api/types";
+import type { ActivateSubscriptionResponse, BillingOperationsResponse, DashboardResponse, PaymentCardPayload, Plan } from "@/lib/api/types";
 import { formatBytes, formatIsoDate, formatUsd, usagePercent } from "@/lib/format";
 import { RequireSession, useSession } from "@/lib/session";
 import { useLoad } from "@/lib/use-load";
 import { Brand } from "@/components/brand";
 import { LoadingIndicator } from "@/components/toast";
 import { Notice } from "@/components/notice";
+import { PaymentForm } from "@/components/payment-form";
 import { UiIcon } from "@/components/ui-icon";
 
 function BillingFrame({ title, subtitle, children, wide = false }: { title: string; subtitle: string; children: React.ReactNode; wide?: boolean }) {
@@ -34,6 +35,32 @@ function validity(plan: Plan) {
 
 function planRows(plan: Plan): Array<[string, string]> {
   return [["Almacenamiento", formatBytes(plan.storageLimitBytes)], ["Límite de usuarios", `Hasta ${plan.userLimit} usuarios`], ["Vigencia", validity(plan)]];
+}
+
+type ActivationOutcome = { formError: string } | { redirect: string };
+
+// Ramifica por code (no por status HTTP): los 409/422 ya no van todos a cambio-rechazado.
+function activationOutcome(err: unknown, planId: string): ActivationOutcome {
+  const id = encodeURIComponent(planId);
+  if (err instanceof ApiError) {
+    if (err.code === "VALIDATION_ERROR" || err.code === "TEST_CARD_REQUIRED") return { formError: err.message };
+    if (err.code === "PAYMENT_DECLINED") return { redirect: `/suscripcion/fallida?plan=${id}&motivo=tarjeta` };
+    if (err.code === "STORAGE_QUOTA_EXCEEDED") return { redirect: `/suscripcion/cambio-rechazado?plan=${id}` };
+  }
+  if (err instanceof ApiError && err.status === 409) return { redirect: `/suscripcion/cambio-rechazado?plan=${id}` };
+  return { redirect: `/suscripcion/fallida?plan=${id}` };
+}
+
+const alreadyActiveNote = "Este plan ya está activo: no se solicita tarjeta.";
+
+// Solo decide qué mostrar; el backend sigue siendo la autoridad sobre el pago.
+function useCurrentPlanId() {
+  const { session } = useSession();
+  const token = session?.accessToken;
+  const fetcher = useCallback((signal: AbortSignal) => getDashboard(token ?? "", { signal }), [token]);
+  const { state } = useLoad<DashboardResponse>(fetcher, Boolean(session), "No pudimos comprobar tu suscripción.");
+  const currentPlanId: string | null = state.status === "ready" ? state.data.plan?.id ?? null : null;
+  return { status: state.status, currentPlanId };
 }
 
 const catalogError = "No pudimos cargar el catálogo de planes. Inténtalo de nuevo.";
@@ -75,19 +102,21 @@ function ConfirmationContent() {
   const { session, failSession } = useSession();
   const planId = params.get("plan");
   const { state, reload, plan } = useSelectedPlan(planId);
+  const current = useCurrentPlanId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  async function confirm() {
+  async function confirm(payment?: PaymentCardPayload) {
     if (!plan || !session) return;
     setBusy(true); setError("");
     try {
-      const result: ActivateSubscriptionResponse = await activateSubscription(plan.id, session.accessToken);
+      const result: ActivateSubscriptionResponse = await activateSubscription(plan.id, session.accessToken, payment);
       router.push(`/suscripcion/exito?plan=${encodeURIComponent(plan.id)}&start=${encodeURIComponent(result.startDate)}&end=${encodeURIComponent(result.endDate ?? "")}`);
     } catch (err) {
       if (failSession(err)) return;
-      if (err instanceof ApiError && (err.status === 409 || err.status === 422)) router.push(`/suscripcion/cambio-rechazado?plan=${encodeURIComponent(plan.id)}`);
-      else router.push(`/suscripcion/fallida?plan=${encodeURIComponent(plan.id)}`);
+      const outcome = activationOutcome(err, plan.id);
+      if ("formError" in outcome) { setError(outcome.formError); setBusy(false); }
+      else router.push(outcome.redirect);
     }
   }
 
@@ -95,9 +124,12 @@ function ConfirmationContent() {
     {state.status !== "ready" ? <PlanState status={state.status} message={state.status === "error" ? state.message : undefined} onRetry={reload} /> : !plan ? <PlanState status="missing" /> : <>
       <BillingRows rows={[["Plan seleccionado", `Plan ${plan.name}`], ["Espacio incluido", formatBytes(plan.storageLimitBytes)], ["Límite de usuarios", `Hasta ${plan.userLimit} usuarios`], ["Vigencia", validity(plan)], ["Importe mensual", price(plan)]]} />
       <p className="billing-terms">Al confirmar, aceptas las condiciones generales del servicio. Este es un entorno de prueba y no se realizará ningún cobro real.</p>
-      <div className="billing-warning"><span aria-hidden="true">△</span><div><b>Contratación simulada</b><p>No se solicitan datos de tarjeta ni se procesa ningún cobro real.</p></div></div>
-      {error && <Notice title="No se pudo confirmar" message={error} />}
-      <button className="button button-primary billing-primary" onClick={confirm} disabled={busy}>{busy ? "Activando…" : "Confirmar activación simulada"}</button>
+      <div className="billing-warning"><span aria-hidden="true">△</span><div><b>Contratación simulada</b><p>Los pagos usan tarjetas de prueba y no se procesa ningún cobro real.</p></div></div>
+      {current.status === "loading"
+        ? <p className="billing-reference-note" role="status">Comprobando tu suscripción…</p>
+        : plan.priceMonthly > 0 && plan.id !== current.currentPlanId
+          ? <PaymentForm onSubmit={confirm} submitLabel="Confirmar activación simulada" disabled={busy} error={error} />
+          : <>{plan.priceMonthly > 0 && <p className="billing-reference-note">{alreadyActiveNote}</p>}{error && <Notice title="No se pudo confirmar" message={error} />}<button className="button button-primary billing-primary" onClick={() => confirm()} disabled={busy}>{busy ? "Activando…" : "Confirmar activación simulada"}</button></>}
       <Link className="billing-secondary-link" href={`/planes/${plan.id}`}>Cancelar</Link>
     </>}
   </BillingFrame>;
@@ -128,9 +160,12 @@ export function ContractSuccess() {
 function FailureContent() {
   const params = useSearchParams();
   const planId = params.get("plan");
+  const cardDeclined = params.get("motivo") === "tarjeta";
   return <BillingFrame title="No se pudo completar la contratación" subtitle="El servidor no pudo activar el plan.">
     <div className="billing-outcome-failure"><span><UiIcon name="warning" size={30} /></span></div>
-    <div className="billing-error-box"><b>La suscripción actual no cambió</b><p>No se realizó ningún cobro. Puedes revisar el plan e intentarlo de nuevo.</p></div>
+    {cardDeclined
+      ? <div className="billing-error-box"><b>Tarjeta de prueba rechazada</b><p>La tarjeta de prueba fue rechazada. No se realizó ningún cobro y tu suscripción no cambió. Inténtalo de nuevo con la tarjeta de prueba aprobada.</p></div>
+      : <div className="billing-error-box"><b>La suscripción actual no cambió</b><p>No se realizó ningún cobro. Puedes revisar el plan e intentarlo de nuevo.</p></div>}
     <Link className="button button-primary billing-primary" href={planId ? `/suscripcion/confirmar?plan=${encodeURIComponent(planId)}` : "/planes"}>Intentar de nuevo</Link>
     <Link className="billing-secondary-link" href="/planes">Volver al catálogo de planes</Link>
   </BillingFrame>;
@@ -180,16 +215,19 @@ function ActiveSubscription({ data, plan, isAdmin, token, onRenewed, historyKey 
   const pct = usagePercent(data.storageUsedBytes, data.storageLimitBytes);
   const [renewing, setRenewing] = useState(false);
   const [renewError, setRenewError] = useState("");
+  const [showRenewForm, setShowRenewForm] = useState(false);
 
-  async function renew() {
+  async function renew(payment: PaymentCardPayload) {
     if (!token) return;
     setRenewing(true); setRenewError("");
     try {
-      await renewSubscription(token);
+      await renewSubscription(token, payment);
+      setShowRenewForm(false);
       onRenewed();
     } catch (err) {
       if (failSession(err)) return;
-      if (err instanceof ApiError && err.code === "PLAN_NOT_RENEWABLE") setRenewError("Este plan no admite renovación.");
+      if (err instanceof ApiError && (err.code === "VALIDATION_ERROR" || err.code === "TEST_CARD_REQUIRED" || err.code === "PAYMENT_DECLINED")) setRenewError(err.message);
+      else if (err instanceof ApiError && err.code === "PLAN_NOT_RENEWABLE") setRenewError("Este plan no admite renovación.");
       else if (err instanceof ApiError && err.code === "NO_ACTIVE_SUBSCRIPTION") setRenewError("No hay una suscripción activa para renovar.");
       else setRenewError("No se pudo renovar la suscripción. Inténtalo de nuevo.");
     } finally { setRenewing(false); }
@@ -203,14 +241,16 @@ function ActiveSubscription({ data, plan, isAdmin, token, onRenewed, historyKey 
     {isAdmin ? <>
       <div className="billing-actions">
         <Link className="button button-primary billing-primary" href="/planes">Contratar o cambiar de plan</Link>
-        {plan.expiresAt && <button type="button" className="button button-secondary" onClick={renew} disabled={renewing}>{renewing ? "Renovando…" : "Renovar"}</button>}
+        {plan.expiresAt && <button type="button" className="button button-secondary" onClick={() => { setShowRenewForm(true); setRenewError(""); }} disabled={renewing || showRenewForm}>Renovar</button>}
       </div>
-      {renewError && <Notice title="No se pudo renovar la suscripción" message={renewError} />}
-      <p className="billing-reference-note">Suscripción simulada: no hay cobros ni datos de tarjeta.</p>
+      {showRenewForm && <PaymentForm onSubmit={renew} submitLabel="Confirmar renovación simulada" disabled={renewing} error={renewError} />}
+      {showRenewForm && <button type="button" className="billing-secondary-link" onClick={() => { setShowRenewForm(false); setRenewError(""); }} disabled={renewing}>Cancelar</button>}
+      {!showRenewForm && renewError && <Notice title="No se pudo renovar la suscripción" message={renewError} />}
+      <p className="billing-reference-note">Suscripción simulada: los pagos usan tarjetas de prueba.</p>
       <BillingHistoryTable key={historyKey} token={token} />
     </> : <>
       <p className="billing-reference-note">Solo los administradores gestionan la suscripción</p>
-      <p className="billing-reference-note">Suscripción simulada: no hay cobros ni datos de tarjeta.</p>
+      <p className="billing-reference-note">Suscripción simulada: los pagos usan tarjetas de prueba.</p>
     </>}
   </>;
 }
@@ -239,19 +279,23 @@ function ChangePlanContent() {
   const { session, failSession } = useSession();
   const [selected, setSelected] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const { state, reload } = useCatalog();
+  const current = useCurrentPlanId();
   const plans = state.status === "ready" ? state.data.items : [];
   const chosen = plans.find((item) => item.id === selected) ?? null;
 
-  async function submit() {
+  async function submit(payment?: PaymentCardPayload) {
     if (!chosen || !session) return;
-    setBusy(true);
+    setBusy(true); setError("");
     try {
-      const result = await activateSubscription(chosen.id, session.accessToken);
+      const result = await activateSubscription(chosen.id, session.accessToken, payment);
       router.push(`/suscripcion/exito?plan=${encodeURIComponent(chosen.id)}&start=${encodeURIComponent(result.startDate)}&end=${encodeURIComponent(result.endDate ?? "")}`);
     } catch (err) {
       if (failSession(err)) return;
-      router.push(`/suscripcion/cambio-rechazado?plan=${encodeURIComponent(chosen.id)}`);
+      const outcome = activationOutcome(err, chosen.id);
+      if ("formError" in outcome) { setError(outcome.formError); setBusy(false); }
+      else router.push(outcome.redirect);
     }
   }
 
@@ -260,10 +304,12 @@ function ChangePlanContent() {
     {state.status === "error" && <Notice title="No se pudo cargar el catálogo" message={state.message} onRetry={reload} />}
     {state.status === "ready" && (plans.length === 0 ? <Notice title="Catálogo vacío" message="Todavía no hay planes disponibles para contratar." /> : <>
       <label className="billing-select-label" htmlFor="target-plan">Nuevo plan</label>
-      <select className="billing-select" id="target-plan" value={selected} onChange={(event) => setSelected(event.target.value)}><option value="">Selecciona un plan</option>{plans.map((item) => <option key={item.id} value={item.id}>{item.name} · {formatBytes(item.storageLimitBytes)} · hasta {item.userLimit} usuarios</option>)}</select>
+      <select className="billing-select" id="target-plan" value={selected} onChange={(event) => { setSelected(event.target.value); setError(""); }}><option value="">Selecciona un plan</option>{plans.map((item) => <option key={item.id} value={item.id}>{item.name} · {formatBytes(item.storageLimitBytes)} · hasta {item.userLimit} usuarios</option>)}</select>
       {chosen && <BillingRows rows={[["Almacenamiento del plan nuevo", formatBytes(chosen.storageLimitBytes)], ["Precio", price(chosen)]]} />}
       <p className="billing-reference-note">El servidor valida el cambio frente al uso actual. Si el espacio ocupado supera el límite, la solicitud será rechazada.</p>
-      <button className="button button-primary billing-primary" onClick={submit} disabled={!chosen || busy}>{busy ? "Enviando…" : "Enviar solicitud de cambio"}</button>
+      {chosen && chosen.priceMonthly > 0 && current.status !== "loading" && chosen.id !== current.currentPlanId
+        ? <PaymentForm key={chosen.id} onSubmit={submit} submitLabel="Enviar solicitud de cambio" disabled={busy} error={error} />
+        : <>{chosen && chosen.priceMonthly > 0 && chosen.id === current.currentPlanId && <p className="billing-reference-note">{alreadyActiveNote}</p>}{error && <Notice title="No se pudo enviar la solicitud" message={error} />}<button className="button button-primary billing-primary" onClick={() => submit()} disabled={!chosen || busy || current.status === "loading"}>{busy ? "Enviando…" : "Enviar solicitud de cambio"}</button></>}
     </>)}
     <Link className="billing-secondary-link" href="/suscripcion">Cancelar</Link>
   </BillingFrame>;

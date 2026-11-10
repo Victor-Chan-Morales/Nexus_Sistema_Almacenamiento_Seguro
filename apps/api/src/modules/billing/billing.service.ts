@@ -15,6 +15,7 @@ import {
 } from './entities/billing-operation.entity';
 import { BillingOperationItemResponse } from './billing.dto';
 import { priceUsd, todayUtcDate } from './billing.utils';
+import { PaymentInput, resolveSimulatedPayment } from './simulated-payment';
 
 /**
  * BillingService — Lógica de dominio para planes, cuotas y persistencia de suscripciones.
@@ -87,12 +88,15 @@ export class BillingService implements OnModuleInit {
     subscription: Subscription,
     type: BillingOperationType,
     amount: number,
+    cardLast4: string | null = null,
   ): Promise<BillingOperation> {
+    // SPEC-305: solo se guardan los últimos 4 dígitos de la tarjeta de prueba aprobada
     const operation = manager.create(BillingOperation, {
       subscriptionId: subscription.id,
       type,
       amount: Number(amount),
       simulatedAt: new Date(),
+      cardLast4,
     });
     return manager.save(operation);
   }
@@ -113,6 +117,7 @@ export class BillingService implements OnModuleInit {
       planName: op.subscription?.plan?.name ?? '',
       amount: Number(op.amount ?? 0),
       simulated: true as const,
+      cardLast4: op.cardLast4 ?? null,
       occurredAt:
         op.simulatedAt instanceof Date
           ? op.simulatedAt.toISOString()
@@ -252,11 +257,13 @@ export class BillingService implements OnModuleInit {
    * Captura específicamente la colisión del índice único parcial
    * (uq_subscription_one_active_per_organization, código 23505)
    * y lo devuelve como ConflictException controlado.
+   * `cardLast4` llega ya resuelto por el pago simulado (SPEC-305); null en planes de US$0.
    */
   async persistSubscription(
     organizationId: string,
     targetPlan: Plan,
     transactionalManager?: EntityManager,
+    cardLast4: string | null = null,
   ): Promise<Subscription> {
     const execute = async (manager: EntityManager): Promise<Subscription> => {
       try {
@@ -296,7 +303,13 @@ export class BillingService implements OnModuleInit {
         const saved = await manager.save(newSubscription);
         saved.plan = targetPlan;
         const amountUsd = priceUsd(targetPlan);
-        await this.recordOperation(manager, saved, BillingOperationType.CHARGE, amountUsd);
+        await this.recordOperation(
+          manager,
+          saved,
+          BillingOperationType.CHARGE,
+          amountUsd,
+          cardLast4,
+        );
         return saved;
       } catch (error: any) {
         if (error?.code === '23505' || error?.driverError?.code === '23505') {
@@ -316,24 +329,14 @@ export class BillingService implements OnModuleInit {
   }
 
   /**
-   * Activa o cambia la suscripción para la organización.
-   * Sobrecarga directa que delega en persistSubscription.
-   */
-  async subscribe(
-    organizationId: string,
-    planId: string,
-    transactionalManager?: EntityManager,
-  ): Promise<Subscription> {
-    const targetPlan = await this.findPlanById(planId);
-    return this.persistSubscription(organizationId, targetPlan, transactionalManager);
-  }
-
-  /**
    * Extiende la vigencia de la suscripción activa en `validityDays` desde la fecha de fin actual
    * (o hoy si no tenía) y registra una operación simulada `renewal` en la misma transacción (SPEC-302).
+   * SPEC-305: el pago simulado se resuelve después de comprobar que el plan es renovable; si la tarjeta
+   * se rechaza o no es de prueba, la excepción revierte la transacción y la vigencia no cambia.
    */
   async renewSubscription(
     organizationId: string,
+    payment?: PaymentInput,
     transactionalManager?: EntityManager,
   ): Promise<Subscription> {
     const execute = async (manager: EntityManager): Promise<Subscription> => {
@@ -371,6 +374,9 @@ export class BillingService implements OnModuleInit {
         });
       }
 
+      // SPEC-305: 400 / 422 TEST_CARD_REQUIRED / 402 PAYMENT_DECLINED antes de escribir nada
+      const cardLast4 = resolveSimulatedPayment(plan, payment, new Date());
+
       const todayUtcMs = Date.parse(`${todayUtcStr}T00:00:00.000Z`);
       const currentEndMs = currentEndStr
         ? Date.parse(`${currentEndStr}T00:00:00.000Z`)
@@ -384,7 +390,13 @@ export class BillingService implements OnModuleInit {
       saved.plan = plan;
 
       const amountUsd = priceUsd(plan);
-      await this.recordOperation(manager, saved, BillingOperationType.RENEWAL, amountUsd);
+      await this.recordOperation(
+        manager,
+        saved,
+        BillingOperationType.RENEWAL,
+        amountUsd,
+        cardLast4,
+      );
 
       return saved;
     };

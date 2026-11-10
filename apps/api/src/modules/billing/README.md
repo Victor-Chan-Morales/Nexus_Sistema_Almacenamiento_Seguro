@@ -21,6 +21,8 @@ El catálogo de referencia es insertado por `database/migrations/20261019090100_
 
 Ejecuta las migraciones desde la raíz del repositorio con `npm run migration:run`. Para revertir la última migración: `npm run migration:revert`.
 
+`billing.billing_operation` guarda `card_last4` (`char(4)`, `NULL` en cargos de US$0 y renovaciones de planes gratuitos): solo los últimos cuatro dígitos de la tarjeta de prueba aprobada. Nunca se persisten el número completo ni el CVV (SPEC-305).
+
 La base impone una suscripción `active` como máximo por organización mediante `billing.uq_subscription_one_active_per_organization`. Billing y el coordinador de integración traducen una colisión concurrente a `409 CONCURRENT_SUBSCRIPTION_CONFLICT`.
 
 ## Endpoints
@@ -30,6 +32,6 @@ La base impone una suscripción `active` como máximo por organización mediante
 | `GET /api/plans` | Público / autenticado | Devuelve los planes del catálogo, con límites expresados en bytes y precios en USD. |
 | `POST /api/subscriptions/activate` | JWT, `tenant_admin` | Activa un plan para la organización del token; el coordinador valida cuotas con Files antes de persistir. |
 | `POST /api/subscriptions/renew` | JWT, `tenant_admin` | Extiende la vigencia de la suscripción actual. |
-| `GET /api/billing/operations` | JWT, `tenant_admin` | Historial de operaciones simuladas. |
+| `GET /api/billing/operations` | JWT, `tenant_admin` | Historial de operaciones simuladas; cada elemento incluye `cardLast4` (`string \| null`, SPEC-305). |
 
 `BillingService.getStorageLimitBytes(organizationId)` sirve a Files en proceso. Si no hay una suscripción vigente, devuelve cero bytes.

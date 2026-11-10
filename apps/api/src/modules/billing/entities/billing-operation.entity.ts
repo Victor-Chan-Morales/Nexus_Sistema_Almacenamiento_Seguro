@@ -59,6 +59,10 @@ export class BillingOperation {
   })
   amount!: number;
 
+  /** Last 4 digits of the approved test card (SPEC-305). Never the full number or the CVV. */
+  @Column({ name: 'card_last4', type: 'char', length: 4, nullable: true })
+  cardLast4!: string | null;
+
   @CreateDateColumn({ name: 'simulated_at', type: 'timestamptz' })
   simulatedAt!: Date;
 

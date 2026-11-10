@@ -1,11 +1,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { ConflictException, UnprocessableEntityException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { BillingService } from './billing.service';
 import { Plan, StorageLocation } from './entities/plan.entity';
 import { Subscription, SubscriptionStatus } from './entities/subscription.entity';
 import { BillingOperation, BillingOperationType } from './entities/billing-operation.entity';
+import { PaymentDeclinedException, PaymentInput } from './simulated-payment';
 
 describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
   let service: BillingService;
@@ -39,6 +44,15 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
     active: true,
     createdAt: new Date(),
   };
+
+  // Tarjetas de prueba de SPEC-305; el vencimiento queda en el futuro respecto de los relojes fijados
+  const approvedCard: PaymentInput = {
+    cardNumber: '4242 4242 4242 4242',
+    holderName: 'Ana Pérez',
+    expiry: '12/30',
+    cvv: '123',
+  };
+  const declinedCard: PaymentInput = { ...approvedCard, cardNumber: '4000 0000 0000 0002' };
 
   beforeEach(async () => {
     planRepo = {
@@ -208,7 +222,7 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
 
       (dataSource.transaction as jest.Mock).mockImplementation((cb: any) => cb(mockManager));
 
-      const result = await service.subscribe('org-123', mockTeamPlan.id);
+      const result = await service.persistSubscription('org-123', mockTeamPlan);
       expect(result.id).toBe('current-team-sub');
       expect(mockManager.save).not.toHaveBeenCalled();
     });
@@ -227,7 +241,37 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
 
       (dataSource.transaction as jest.Mock).mockImplementation((cb: any) => cb(mockManager));
 
-      await expect(service.subscribe('org-123', mockTeamPlan.id)).rejects.toThrow(ConflictException);
+      await expect(service.persistSubscription('org-123', mockTeamPlan)).rejects.toThrow(ConflictException);
+    });
+
+    it('SPEC-305 Escenario 1: la operación charge guarda el cardLast4 recibido', async () => {
+      const mockManager = {
+        findOne: jest.fn().mockResolvedValue(null),
+        create: jest.fn((_cls: unknown, entity: unknown) => entity),
+        save: jest.fn((entity: unknown) => Promise.resolve({ id: 'sub-new', ...(entity as object) })),
+      };
+
+      await service.persistSubscription('org-123', mockTeamPlan, mockManager as never, '4242');
+
+      expect(mockManager.create).toHaveBeenCalledWith(
+        BillingOperation,
+        expect.objectContaining({ type: BillingOperationType.CHARGE, amount: 19.99, cardLast4: '4242' }),
+      );
+    });
+
+    it('SPEC-305 Escenario 5: sin cardLast4 la operación guarda null', async () => {
+      const mockManager = {
+        findOne: jest.fn().mockResolvedValue(null),
+        create: jest.fn((_cls: unknown, entity: unknown) => entity),
+        save: jest.fn((entity: unknown) => Promise.resolve({ id: 'sub-new', ...(entity as object) })),
+      };
+
+      await service.persistSubscription('org-123', mockDemoPlan, mockManager as never);
+
+      expect(mockManager.create).toHaveBeenCalledWith(
+        BillingOperation,
+        expect.objectContaining({ type: BillingOperationType.CHARGE, amount: 0, cardLast4: null }),
+      );
     });
   });
 
@@ -296,6 +340,16 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
             amount: '19.99' as unknown as number,
             simulatedAt: new Date('2026-10-29T18:00:00.000Z'),
             subscription: { id: 'sub-team', organizationId: 'org-123', plan: mockTeamPlan },
+            cardLast4: '4242',
+          },
+          {
+            id: 'op-demo-uuid',
+            subscriptionId: 'sub-demo',
+            type: BillingOperationType.CHARGE,
+            amount: '0.00' as unknown as number,
+            simulatedAt: new Date('2026-10-01T18:00:00.000Z'),
+            subscription: { id: 'sub-demo', organizationId: 'org-123', plan: mockDemoPlan },
+            cardLast4: null,
           },
         ]),
       };
@@ -315,7 +369,17 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
           planName: 'Team',
           amount: 19.99,
           simulated: true,
+          cardLast4: '4242',
           occurredAt: '2026-10-29T18:00:00.000Z',
+        },
+        {
+          id: 'op-demo-uuid',
+          type: 'charge',
+          planName: 'Demo',
+          amount: 0,
+          simulated: true,
+          cardLast4: null,
+          occurredAt: '2026-10-01T18:00:00.000Z',
         },
       ]);
     });
@@ -349,7 +413,7 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
       };
       (dataSource.transaction as jest.Mock).mockImplementation((cb: (m: unknown) => Promise<unknown>) => cb(mockManager));
 
-      const renewed = await service.renewSubscription('org-123');
+      const renewed = await service.renewSubscription('org-123', approvedCard);
 
       expect(mockManager.findOne).toHaveBeenCalledWith(Subscription, {
         where: { organizationId: 'org-123', status: SubscriptionStatus.ACTIVE },
@@ -364,6 +428,7 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
           subscriptionId: 'sub-team-active',
           type: BillingOperationType.RENEWAL,
           amount: 19.99,
+          cardLast4: '4242',
         }),
       );
       expect(mockManager.save).toHaveBeenCalledTimes(2);
@@ -462,8 +527,8 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
       };
       (dataSource.transaction as jest.Mock).mockImplementation((cb: (m: unknown) => Promise<unknown>) => cb(mockManager));
 
-      await service.renewSubscription('org-123');
-      const second = await service.renewSubscription('org-123');
+      await service.renewSubscription('org-123', approvedCard);
+      const second = await service.renewSubscription('org-123', approvedCard);
 
       const lockedQuery = {
         where: { organizationId: 'org-123', status: SubscriptionStatus.ACTIVE },
@@ -479,6 +544,111 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
       expect(second.expiresAt?.toISOString()).toBe('2027-01-09T00:00:00.000Z');
       expect(operations).toHaveLength(2);
       expect(operations.every((op) => op.type === BillingOperationType.RENEWAL && op.amount === 19.99)).toBe(true);
+    });
+  });
+
+  describe('7. Pago simulado en la renovación (SPEC-305 Escenarios 4 y 6, spec §8)', () => {
+    const buildActiveTeam = (): Subscription => ({
+      id: 'sub-team-active',
+      organizationId: 'org-123',
+      planId: mockTeamPlan.id,
+      plan: mockTeamPlan,
+      status: SubscriptionStatus.ACTIVE,
+      simulated: true,
+      startDate: new Date('2026-10-11T00:00:00.000Z'),
+      expiresAt: new Date('2026-11-10T00:00:00.000Z'),
+      createdAt: new Date('2026-10-11T00:00:00.000Z'),
+    });
+
+    beforeEach(() => {
+      jest.useFakeTimers({ now: new Date('2026-10-29T12:00:00.000Z') });
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('Escenario 4: con la tarjeta rechazada responde 402, no guarda nada y la vigencia no cambia', async () => {
+      const activeTeam = buildActiveTeam();
+      const mockManager = {
+        findOne: jest.fn().mockResolvedValue(activeTeam),
+        create: jest.fn(),
+        save: jest.fn(),
+      };
+      (dataSource.transaction as jest.Mock).mockImplementation((cb: (m: unknown) => Promise<unknown>) => cb(mockManager));
+
+      const error = await service.renewSubscription('org-123', declinedCard).catch((err: unknown) => err);
+
+      expect(error).toBeInstanceOf(PaymentDeclinedException);
+      expect((error as PaymentDeclinedException).getStatus()).toBe(402);
+      expect((error as PaymentDeclinedException).getResponse()).toMatchObject({ code: 'PAYMENT_DECLINED' });
+      expect(mockManager.save).not.toHaveBeenCalled();
+      expect(mockManager.create).not.toHaveBeenCalled();
+      expect(activeTeam.expiresAt?.toISOString()).toBe('2026-11-10T00:00:00.000Z');
+    });
+
+    it('Escenario 4: con la tarjeta aprobada renueva y la operación renewal guarda cardLast4 = 4242', async () => {
+      const mockManager = {
+        findOne: jest.fn().mockResolvedValue(buildActiveTeam()),
+        create: jest.fn((_cls: unknown, entity: unknown) => entity),
+        save: jest.fn((entity: unknown) => Promise.resolve(entity)),
+      };
+      (dataSource.transaction as jest.Mock).mockImplementation((cb: (m: unknown) => Promise<unknown>) => cb(mockManager));
+
+      const renewed = await service.renewSubscription('org-123', approvedCard);
+
+      expect(renewed.expiresAt?.toISOString()).toBe('2026-12-10T00:00:00.000Z');
+      expect(mockManager.create).toHaveBeenCalledWith(
+        BillingOperation,
+        expect.objectContaining({ type: BillingOperationType.RENEWAL, cardLast4: '4242' }),
+      );
+      // Solo se guardan los últimos 4 dígitos
+      const written = JSON.stringify([mockManager.create.mock.calls, mockManager.save.mock.calls]);
+      expect(written).not.toContain('4242 4242 4242 4242');
+      expect(written).not.toContain('4242424242424242');
+      expect(written).not.toMatch(/cvv|cardNumber/);
+    });
+
+    it('Escenario 6: renovar un plan de pago sin tarjeta responde 400 VALIDATION_ERROR sin guardar', async () => {
+      const mockManager = {
+        findOne: jest.fn().mockResolvedValue(buildActiveTeam()),
+        create: jest.fn(),
+        save: jest.fn(),
+      };
+      (dataSource.transaction as jest.Mock).mockImplementation((cb: (m: unknown) => Promise<unknown>) => cb(mockManager));
+
+      const error = await service.renewSubscription('org-123').catch((err: unknown) => err);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).getResponse()).toMatchObject({ code: 'VALIDATION_ERROR' });
+      expect(mockManager.save).not.toHaveBeenCalled();
+    });
+
+    it('spec §8: PLAN_NOT_RENEWABLE se devuelve antes de evaluar la tarjeta', async () => {
+      const activeDemo: Subscription = {
+        id: 'sub-demo-active',
+        organizationId: 'org-123',
+        planId: mockDemoPlan.id,
+        plan: mockDemoPlan,
+        status: SubscriptionStatus.ACTIVE,
+        simulated: true,
+        expiresAt: null,
+        createdAt: new Date(),
+      };
+      const mockManager = {
+        findOne: jest.fn().mockResolvedValue(activeDemo),
+        create: jest.fn(),
+        save: jest.fn(),
+      };
+      (dataSource.transaction as jest.Mock).mockImplementation((cb: (m: unknown) => Promise<unknown>) => cb(mockManager));
+
+      // Con la tarjeta rechazada, la respuesta sigue siendo PLAN_NOT_RENEWABLE: la tarjeta no se evaluó
+      const error = await service.renewSubscription('org-123', declinedCard).catch((err: unknown) => err);
+
+      expect(error).not.toBeInstanceOf(PaymentDeclinedException);
+      expect(error).toBeInstanceOf(UnprocessableEntityException);
+      expect((error as UnprocessableEntityException).getResponse()).toMatchObject({ code: 'PLAN_NOT_RENEWABLE' });
+      expect(mockManager.save).not.toHaveBeenCalled();
     });
   });
 });
