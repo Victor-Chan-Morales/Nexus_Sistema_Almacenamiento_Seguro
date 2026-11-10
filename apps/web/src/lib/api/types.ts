@@ -307,6 +307,14 @@ export type AuditEventsResponse = {
   nextBefore: ISODateTime | null;
 };
 
+export type AuditVerification = {
+  valid: boolean;
+  checkedEvents: number;
+  firstBrokenEventId: string | null;
+  reason: "SEQUENCE_GAP" | "PREV_HASH_MISMATCH" | "HASH_MISMATCH" | null;
+  verifiedAt: ISODateTime;
+};
+
 export type AuditEventsQuery = {
   limit?: number;
   before?: ISODateTime;

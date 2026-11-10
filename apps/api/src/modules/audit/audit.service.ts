@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { DataSource } from 'typeorm';
+import { DataSource, MoreThan } from 'typeorm';
 import { AuditChainWriter } from './audit-chain-writer';
+import { computeRecordHash } from './audit-hash';
 import { errorCode, isPermanentError } from './audit-error-code';
 import { AuditOutboxService } from './audit-outbox.service';
 import { AuditEventInput } from './audit.types';
@@ -11,6 +12,9 @@ import {
   ListAuditEventsQueryDto,
 } from './dto/list-audit-events.dto';
 import { AuditActorType, AuditEvent } from './entities/audit-event.entity';
+import { AuditVerificationDto, AuditVerificationReason } from './dto/verify-audit.dto';
+
+const VERIFICATION_BATCH_SIZE = 500;
 
 /**
  * Registro síncrono de eventos de auditoría con cadena de hashes por organización.
@@ -70,6 +74,46 @@ export class AuditService {
       if (isPermanentError(code)) await this.outbox.enqueue(queued, code);
       else await this.outbox.enqueue(queued);
     }
+  }
+
+  /** SPEC-404: recorre una instantánea de la cadena sin bloquear a los escritores. */
+  async verifyChain(organizationId: string): Promise<AuditVerificationDto> {
+    return this.dataSource.transaction('REPEATABLE READ', async (manager) => {
+      const repository = manager.getRepository(AuditEvent);
+      let lastSeq = 0n;
+      let previousHash: string | null = null;
+      let checkedEvents = 0;
+      for (;;) {
+        const events = await repository.find({
+          where: { organizationId, chainSeq: MoreThan(String(lastSeq)) },
+          order: { chainSeq: 'ASC' },
+          take: VERIFICATION_BATCH_SIZE,
+        });
+        for (const event of events) {
+          const sequence = BigInt(event.chainSeq);
+          let reason: AuditVerificationReason | null = null;
+          if (sequence !== lastSeq + 1n) reason = 'SEQUENCE_GAP';
+          else if (event.prevHash !== previousHash) reason = 'PREV_HASH_MISMATCH';
+          else if (computeRecordHash(event) !== event.recordHash) reason = 'HASH_MISMATCH';
+
+          checkedEvents++;
+          if (reason) {
+            return {
+              valid: false, checkedEvents, firstBrokenEventId: event.eventId,
+              reason, verifiedAt: new Date().toISOString(),
+            };
+          }
+          lastSeq = sequence;
+          previousHash = event.recordHash;
+        }
+        if (events.length < VERIFICATION_BATCH_SIZE) {
+          return {
+            valid: true, checkedEvents, firstBrokenEventId: null,
+            reason: null, verifiedAt: new Date().toISOString(),
+          };
+        }
+      }
+    });
   }
 
   /**

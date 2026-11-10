@@ -4,9 +4,9 @@ import { useCallback, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { LoadingIndicator } from "@/components/toast";
 import { Notice } from "@/components/notice";
-import { getAuditEvents } from "@/lib/api/audit";
+import { getAuditEvents, verifyAuditChain } from "@/lib/api/audit";
 import { getMembers } from "@/lib/api/members";
-import type { AuditEvent } from "@/lib/api/types";
+import type { AuditEvent, AuditVerification } from "@/lib/api/types";
 import { formatIsoDate } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { useLoad } from "@/lib/use-load";
@@ -72,8 +72,40 @@ export function AuditLog() {
   const isAdmin = session?.role === "tenant_admin";
   return <AppShell active="/auditoria">
     <div className="page-heading"><p className="eyebrow">ESPACIO DE TRABAJO</p><h1>Auditoría</h1><p>Registro de actividad relevante de la organización.</p></div>
-    {isAdmin && session ? <AuditLogContent token={session.accessToken} /> : <section className="panel"><p className="muted">Solo los administradores consultan la auditoría</p></section>}
+    {isAdmin && session ? <>
+      <AuditVerificationPanel token={session.accessToken} />
+      <AuditLogContent token={session.accessToken} />
+    </> : <section className="panel"><p className="muted">Solo los administradores consultan la auditoría</p></section>}
   </AppShell>;
+}
+
+const VERIFICATION_REASONS: Record<NonNullable<AuditVerification["reason"]>, string> = {
+  SEQUENCE_GAP: "Falta un evento en la secuencia.",
+  PREV_HASH_MISMATCH: "El enlace con el evento anterior no coincide.",
+  HASH_MISMATCH: "El sello del evento no coincide con su contenido.",
+};
+
+function AuditVerificationPanel({ token }: { token: string }) {
+  const { failSession } = useSession();
+  const [state, setState] = useState<"idle" | "loading" | "error" | AuditVerification>("idle");
+
+  async function verify() {
+    setState("loading");
+    try {
+      setState(await verifyAuditChain(token));
+    } catch (error) {
+      if (!failSession(error)) setState("error");
+    }
+  }
+
+  return <section className="panel" aria-label="Integridad de la auditoría">
+    <button className="button button-secondary" type="button" onClick={verify} disabled={state === "loading"}>Verificar integridad</button>
+    {state === "loading" && <LoadingIndicator>Verificando integridad…</LoadingIndicator>}
+    {state === "error" && <Notice title="No se pudo verificar la auditoría" message="Inténtalo de nuevo." />}
+    {typeof state === "object" && (state.valid
+      ? <p role="status">Cadena íntegra. Eventos comprobados: {state.checkedEvents}.</p>
+      : <Notice title="La cadena presenta una inconsistencia" message={`${state.reason ? VERIFICATION_REASONS[state.reason] : ""} Evento afectado: ${state.firstBrokenEventId}.`} />)}
+  </section>;
 }
 
 function AuditLogContent({ token }: { token: string }) {

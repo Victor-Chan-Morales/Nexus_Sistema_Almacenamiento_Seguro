@@ -22,6 +22,7 @@ describe('AuditController (SPEC-402)', () => {
         {
           provide: AuditService,
           useValue: {
+            verifyChain: jest.fn().mockResolvedValue({ valid: true, checkedEvents: 0 }),
             listEvents: jest
               .fn()
               .mockResolvedValue({ events: [], nextBefore: null }),
@@ -37,9 +38,12 @@ describe('AuditController (SPEC-402)', () => {
   });
 
   /** Contexto HTTP mínimo para ejecutar el RolesGuard real sobre getEvents con el rol indicado. */
-  const contextFor = (role: Role): ExecutionContext =>
+  const contextFor = (
+    role: Role,
+    handler: AuditController['getEvents' | 'verify'] = controller.getEvents,
+  ): ExecutionContext =>
     ({
-      getHandler: () => controller.getEvents,
+      getHandler: () => handler,
       getClass: () => AuditController,
       switchToHttp: () => ({
         getRequest: () => ({
@@ -75,6 +79,14 @@ describe('AuditController (SPEC-402)', () => {
     const guard = new RolesGuard(reflector);
 
     expect(guard.canActivate(contextFor(Role.TENANT_ADMIN))).toBe(true);
+  });
+
+  it('SPEC-404: verifica la organización de la sesión y rechaza colaboradores', async () => {
+    const guard = new RolesGuard(reflector);
+    expect(guard.canActivate(contextFor(Role.TENANT_ADMIN, controller.verify))).toBe(true);
+    expect(() => guard.canActivate(contextFor(Role.COLABORADOR, controller.verify))).toThrow(ForbiddenException);
+    await expect(controller.verify({ user: { organizationId: 'org-456' } })).resolves.toMatchObject({ valid: true });
+    expect(service.verifyChain).toHaveBeenCalledWith('org-456');
   });
 
   it('Delega la consulta al servicio con el organizationId de la sesión', async () => {

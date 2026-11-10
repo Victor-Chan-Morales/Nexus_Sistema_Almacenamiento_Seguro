@@ -1,5 +1,9 @@
 import { apiRequest } from "./client";
-import type { ApiRequestOptions, AuditEventsQuery, AuditEventsResponse } from "./types";
+import type { ApiRequestOptions, AuditEventsQuery, AuditEventsResponse, AuditVerification } from "./types";
+
+export function verifyAuditChain(accessToken: string) {
+  return apiRequest<AuditVerification>("/audit/verify", { method: "GET" }, { accessToken });
+}
 
 /** SPEC-403: bitácora de la organización (GET /audit/events, solo tenant_admin). */
 export function getAuditEvents(accessToken: string, { limit, before }: AuditEventsQuery = {}, options?: Omit<ApiRequestOptions, "accessToken">) {
