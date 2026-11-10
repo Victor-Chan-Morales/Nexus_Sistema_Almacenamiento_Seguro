@@ -245,3 +245,14 @@ Se aprobaron las propuestas 1 a 12: correo mediante EmailService, sesiones con a
   - Pre-vuelo TLS: comprobar con `openssl s_client -starttls postgres` que el certificado de Render valida con las autoridades del sistema. Si no valida, usar `POSTGRES_SSL_CA` con ruta absoluta.
   - Escenario 10: `npm run seed:super-admin` contra la base externa de Render con `POSTGRES_SSL=true`. No ejecutado.
 - Pendiente de decisión: PR a `main` y paso de la fila de `specs/README.md` a ✅ Hecho tras el merge.
+
+## 2026-11-10 — SPEC-306: comprobantes descargables
+
+- Implementado en `feat/306-comprobantes`, desde `origin/main` (`100e7ed`), que ya contiene SPEC-305 (PR #75). Base de la rama: `origin/main`, no el `main` local ni `feat/109-114`.
+- Backend: `GET /api/billing/operations/:id/receipt` (`BillingService.getReceipt`, DTO `BillingReceiptResponse`). Frontend: ruta `/suscripcion/comprobante/[id]` (`ReceiptScreen`), columna "Comprobante" en el historial y reglas `@media print`.
+- Decisiones confirmadas el 2026-11-10: D2, `receiptNumber` = `NX-` + UUID sin guiones en mayúsculas; D3, un `:id` que no es UUID responde `404 NOT_FOUND` sin consultar la base. Ambas están en `CONTRACTS.md` (Alcance final [v0.6], SPEC-306).
+- Sin frame de Figma para el comprobante: se implementó con los tokens y clases existentes de billing. Queda pendiente el cotejo visual si aparece un frame (`docs/FIGMA_MAP.md`).
+- Verificación automática: `npm run test:api` con 64 suites y 1163 pruebas en verde (1155 de la línea base más 8 de SPEC-306). `build:api` y `build:web` correctos. Lint sin errores y sin avisos nuevos: 61 en API y 1 previo en web.
+- Verificación en ejecución: base local dedicada `nexus_qa_306`, con migraciones aplicadas con dbmate y seed demo. HTTP 16/16 y navegador 22/22, incluidos aislamiento entre organizaciones y el 403 del colaborador. La base `nexus_dev` no se tocó.
+- Impresión verificada con emulación de medios `print` (captura). Ctrl+P real queda como prueba manual de Víctor.
+- PR abierta contra `main` desde `feat/306-comprobantes`, sin merge: la fusiona Víctor. Tras el merge, pasar SPEC-306 a ✅ en `Orden de ejecucion specs` y a "Hecho" en `specs/README.md`.
