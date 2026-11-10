@@ -36,7 +36,7 @@ type VersionRow = Omit<FileVersion, 'fileRecord'>;
 
 /** Clave de cifrado real: la misma configuración que files-crypto.service.spec.ts. */
 const MASTER_KEY = randomBytes(32).toString('base64');
-const crypto = new FilesCryptoService({ get: () => MASTER_KEY } as unknown as ConfigService);
+const crypto = new FilesCryptoService(new ConfigService({ FILES_MASTER_KEY: MASTER_KEY }));
 
 const versionRow = (id: string, fileId: string, versionNumber: number, sizeBytes: number): VersionRow => ({
   id,
@@ -116,6 +116,7 @@ const buildFixture = (overrides: { file?: Partial<typeof FILE>; folder?: Partial
   const dataSource = { getRepository: jest.fn((entity: unknown) => repositories.get(entity)) };
 
   const versionRepository = {
+    manager: { findOneBy: jest.fn().mockResolvedValue({ externalReference: crypto.externalKeyReference(ORG) }) },
     findOne: jest.fn(({ where }: { where: { id: string; fileId?: string } }) =>
       Promise.resolve(
         versions.find((version) => version.id === where.id && (where.fileId === undefined || version.fileId === where.fileId)) ?? null,

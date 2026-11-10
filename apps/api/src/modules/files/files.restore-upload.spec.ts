@@ -23,7 +23,7 @@ const PDF = Buffer.from('%PDF-1.4 contenido restaurado');
 const PDF_SHA = createHash('sha256').update(PDF).digest('hex');
 
 const MASTER_KEY = randomBytes(32).toString('base64');
-const crypto = new FilesCryptoService({ get: () => MASTER_KEY } as unknown as ConfigService);
+const crypto = new FilesCryptoService(new ConfigService({ FILES_MASTER_KEY: MASTER_KEY }));
 
 interface Fixture {
   /** Fila del archivo tal como la devuelve la base; `null` simula papelera o archivo ajeno. */
@@ -94,7 +94,9 @@ const buildService = (fixture: Fixture) => {
     access: { drive: { id: 'drive-1' } as never, level: 'owner' },
   });
   jest.spyOn(internals as never, 'reserveUpload' as never).mockResolvedValue({ uploadId: 'up-1', reservationId: 'res-1' } as never);
-  jest.spyOn(internals as never, 'ensureTenantResources' as never).mockResolvedValue({ destination: { id: 'dest-1' }, key: { id: 'kek-1' } } as never);
+  jest.spyOn(internals as never, 'ensureTenantResources' as never).mockResolvedValue({
+    destination: { id: 'dest-1' }, key: { id: 'kek-1', externalReference: crypto.externalKeyReference(ORG) },
+  } as never);
   jest.spyOn(internals as never, 'readStorageUsage' as never).mockResolvedValue({ usedBytes: 0n, reservedBytes: 0n, totalBytes: 0n } as never);
   jest.spyOn(internals as never, 'writeQuotaCounters' as never).mockResolvedValue(undefined as never);
   jest.spyOn(internals as never, 'lockTenantQuota' as never).mockResolvedValue(undefined as never);

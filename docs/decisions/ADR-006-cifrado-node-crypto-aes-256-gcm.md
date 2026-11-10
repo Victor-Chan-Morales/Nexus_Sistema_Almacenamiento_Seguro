@@ -26,8 +26,8 @@ Se adopta **AES-256-GCM de `node:crypto`** con envelope encryption de tres nivel
 
 | Nivel | Qué es | Dónde vive |
 |---|---|---|
-| **Llave maestra** | 32 bytes aleatorios en Base64 en la variable de entorno `FILES_MASTER_KEY` | Solo en el entorno del proceso. Nunca en BD, repositorio ni respuestas. Si falta o no mide 32 bytes, la API rechaza cifrar y descifrar. |
-| **KEK por tenant** | `HKDF-SHA256(llave maestra, salt = organizationId, info = "nexus/files/tenant-kek/v1")`, 32 bytes | **No se almacena**: se deriva en cada operación. |
+| **Llave maestra** | 32 bytes aleatorios en Base64 por versión. V1 usa `FILES_MASTER_KEY`. Las siguientes usan `FILES_MASTER_KEY_V<n>`. | Solo en el entorno del proceso. Nunca en BD, repositorio ni respuestas. |
+| **KEK por tenant** | `HKDF-SHA256(llave maestra, salt = organizationId, info = "nexus/files/tenant-kek/v<n>")`, 32 bytes | Se deriva en cada operación a partir de la versión indicada por la referencia externa. |
 | **DEK por versión de archivo** | 32 bytes de `randomBytes`, generados en cada subida | Cifrada con la KEK del tenant y guardada en `files.file_version.encrypted_dek`. |
 
 La tabla `files.tenant_encryption_key` guarda únicamente una **referencia** (`external_reference = hkdf-sha256://env/FILES_MASTER_KEY/<organizationId>/v1`) y su estado; no contiene material criptográfico.
@@ -54,7 +54,18 @@ La DEK se cifra con AES-256-GCM bajo la KEK del tenant (nonce de 12 bytes, AAD `
 - **Destino de entorno** (creado con la configuración `S3_*`): contiene solo referencias `environment:*` a variables de entorno, no credenciales.
 - **Destino propio** (SPEC-802): contiene `{ endpoint, bucket, region, accessKey, secretKey, useSsl }`. Las credenciales se descifran solo en memoria, dentro de `StorageRouter`, para construir el cliente S3 del destino. Ninguna respuesta, log ni evento de auditoría las incluye.
 
-Consecuencias: la rotación de la llave maestra (SPEC-005) debe volver a cifrar también estos valores, y `FilesCryptoService.readDestinationDetails` es el único punto que los descifra y distingue ambos casos.
+El prefijo `v1.` identifica los valores existentes cifrados con la llave v1. A partir de v2, el prefijo `k<n>.` identifica la llave maestra. La rotación vuelve a cifrar ambos tipos de destino con el mismo AAD.
+
+### 2.6 Rotación de la llave maestra (SPEC-005)
+
+1. Haz una copia de seguridad y conserva las llaves que corresponden a los datos y respaldos existentes. Genera la nueva llave en el gestor de secretos. Para v2 usa `FILES_MASTER_KEY_V2` y conserva la llave v1 en `FILES_MASTER_KEY`.
+2. Despliega esta versión de la API con las dos llaves en todas las instancias. Confirma que ninguna instancia anterior siga atendiendo solicitudes.
+3. En `apps/api`, ejecuta `npm run keys:rotate -- --to 2 --dry-run`. La simulación valida las DEK y los destinos que requieren cambios y reporta conteos. Si falla, corrige la configuración antes de continuar.
+4. Configura `FILES_MASTER_KEY_CURRENT_VERSION=2` en todas las instancias y en el entorno de operación. Las organizaciones nuevas nacen en v2. Las existentes usan su KEK activa para escribir hasta que termina su propia transacción de rotación.
+5. Ejecuta `npm run keys:rotate -- --to 2` desde el código de `apps/api` con las dependencias de desarrollo instaladas. La rotación confirma una organización a la vez. Si se interrumpe, vuelve a ejecutar el mismo comando con ambas llaves disponibles.
+6. Repite la simulación y comprueba que indique cero KEK nuevas, cero versiones y cero destinos pendientes. Verifica descargas, historial y conexiones de los destinos. Deja terminar las lecturas que pudieron empezar antes del cambio y guarda la llave anterior para los respaldos que aún la requieran.
+
+La transacción de cada organización actualiza `kek_id`, `encrypted_dek` y los datos cifrados de los destinos. El candado de esa organización coordina la rotación con nuevas cargas y cambios de credenciales. El script conserva las claves de objeto, el tamaño, los checksums y los bytes almacenados. Las descargas usan la referencia guardada en cada versión del archivo, incluso si su KEK ya no es la activa.
 
 ---
 
@@ -69,9 +80,9 @@ Consecuencias: la rotación de la llave maestra (SPEC-005) debe volver a cifrar 
 
 ### Negativas y limitaciones conocidas
 - **No es streaming.** El archivo completo se carga en memoria al cifrar y al descifrar (pico de hasta ~100 MB por carga; mitigado con el límite de 3 cargas simultáneas por usuario). Pasar a streaming exigiría un formato por bloques (`formatVersion = 2`), y queda fuera de alcance (ADR-008 §2).
-- **No hay rotación de llaves implementada.** El esquema tiene `kek_id` y el estado `rotated`, pero el descifrado **siempre deriva la KEK de la llave maestra actual e ignora `kek_id`**. Cambiar `FILES_MASTER_KEY` volvería ilegibles todos los archivos existentes. La rotación requiere re-cifrar las DEK (reenvolver); la implementa SPEC-005.
+- **Rotación operada por comando.** Las lecturas necesitan acceso a las versiones de llave que referencian sus datos. Una rotación interrumpida puede dejar organizaciones con versiones activas distintas hasta que se complete el proceso.
 - **Un solo punto de compromiso:** quien obtenga `FILES_MASTER_KEY` puede derivar la KEK de cualquier tenant. Se mitiga guardándola en el gestor de secretos del entorno, fuera del repositorio y de `JWT_SECRET`.
-- **Pruebas:** `files-crypto.service.spec.ts` (SPEC-006) cubre la ida y vuelta, la manipulación del objeto y el contexto cruzado entre organizaciones, archivos y versiones, con 100 % de líneas de `files-crypto.service.ts`. Son unitarias: el cifrado contra SeaweedFS real sigue sin prueba automatizada.
+- **Pruebas:** `files-crypto.service.spec.ts` cubre la ida y vuelta, la manipulación del objeto, el aislamiento por contexto y el reenvoltorio de la DEK. `rotate-keys.spec.ts` comprueba la simulación y la reanudación. La evidencia de SPEC-005 incluye PostgreSQL y SeaweedFS.
 
 ---
 
@@ -88,4 +99,4 @@ Consecuencias: la rotación de la llave maestra (SPEC-005) debe volver a cifrar 
 |---|---|---|
 | libsodium | `node:crypto` AES-256-GCM | AEAD equivalente, sin dependencia nativa; decisión consciente documentada aquí. |
 | Cifrado **en streaming** | Cifrado en memoria, archivo completo (≤ 100 MB) | No llamarlo "streaming". Es una limitación declarada con mitigación y camino de evolución. |
-| Gestión de KEK (RF-005) | KEK derivada por tenant con HKDF; sin rotación | La jerarquía DEK/KEK existe; la rotación la implementa SPEC-005. |
+| Gestión de KEK (RF-005) | KEK versionada derivada por tenant con HKDF | La rotación de SPEC-005 reenvuelve las DEK mediante el comando de operador. |

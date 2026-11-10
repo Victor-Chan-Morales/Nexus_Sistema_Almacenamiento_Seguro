@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { lookup } from 'dns/promises';
 import { isIP } from 'net';
-import { DataSource, IsNull, Repository } from 'typeorm';
+import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
 import { AuditService } from '../audit/audit.service';
 import { AuditResult } from '../audit/entities/audit-event.entity';
 import { AuditAction, AuditResource } from '../audit/audit.types';
@@ -17,7 +17,8 @@ import {
 } from './dto/destination.dto';
 import { Destination } from './entities/destination.entity';
 import { Folder } from './entities/folder.entity';
-import { DestinationConnectionDetails, FilesCryptoService } from './files-crypto.service';
+import { DestinationConnectionDetails, FilesCryptoService, lockTenantEncryption } from './files-crypto.service';
+import { TenantEncryptionKey } from './entities/tenant-encryption-key.entity';
 
 /** Misma forma que los errores de negocio de Files: { statusCode, error, code, message }. */
 function businessError(status: HttpStatus, code: string, message: string): HttpException {
@@ -193,8 +194,10 @@ export class DestinationsService {
       secretKey: dto.secretKey,
       useSsl: dto.useSsl,
     };
-    const saved = await this.destinations.save(
-      this.destinations.create({
+    const saved = await this.dataSource.transaction(async (manager) => {
+      await lockTenantEncryption(manager, actor.organizationId);
+      const keyVersion = await this.keyVersionForWrite(manager, actor.organizationId);
+      return manager.save(Destination, manager.create(Destination, {
         organizationId: actor.organizationId,
         name: dto.name,
         location: dto.location,
@@ -203,9 +206,9 @@ export class DestinationsService {
         isEnabled: true,
         isDefault: false,
         bucketOrPrefix: dto.bucket,
-        connectionDetailsEncrypted: this.encrypt(actor.organizationId, details),
-      }),
-    );
+        connectionDetailsEncrypted: this.crypto.encryptConnectionDetails(actor.organizationId, JSON.stringify(details), keyVersion),
+      }));
+    });
 
     this.audit(AuditAction.DESTINATION_CREATED, saved.id, actor);
     return this.toDto(saved, details);
@@ -222,6 +225,7 @@ export class DestinationsService {
     const changesConnection = CONNECTION_FIELDS.some((field) => dto[field] !== undefined);
 
     const { row, details } = await this.dataSource.transaction(async (manager) => {
+      await lockTenantEncryption(manager, actor.organizationId);
       const current = await manager.findOne(Destination, {
         where: { id, organizationId: actor.organizationId },
         lock: { mode: 'pessimistic_write' },
@@ -258,7 +262,10 @@ export class DestinationsService {
       current.connectionStatus = 'Sin comprobar';
       if (nextDetails && changesConnection) {
         current.bucketOrPrefix = nextDetails.bucket;
-        current.connectionDetailsEncrypted = this.encrypt(actor.organizationId, nextDetails);
+        const keyVersion = await this.keyVersionForWrite(manager, actor.organizationId);
+        current.connectionDetailsEncrypted = this.crypto.encryptConnectionDetails(
+          actor.organizationId, JSON.stringify(nextDetails), keyVersion,
+        );
       }
 
       const saved = await manager.save(Destination, current);
@@ -285,14 +292,13 @@ export class DestinationsService {
     const details = this.readDetails(row);
     if (details) await assertEndpointAllowed(details.endpoint, this.allowPrivate());
 
-    row.connectionStatus = 'Comprobando';
-    await this.destinations.save(row);
+    const criteria = { id, organizationId: actor.organizationId };
+    await this.destinations.update(criteria, { connectionStatus: 'Comprobando' });
 
     const result = await this.router.probe(actor.organizationId, id);
     const checkedAt = new Date();
     const status = result.ok ? ('Conectado' as const) : ('Sin conexión' as const);
-    row.connectionStatus = status;
-    await this.destinations.save(row);
+    await this.destinations.update(criteria, { connectionStatus: status });
 
     // El resultado de la conexión queda en la auditoría: un fallo se registra como `failure` con su causa segura.
     const reason = 'reason' in result ? result.reason : null;
@@ -303,8 +309,9 @@ export class DestinationsService {
     return { status, checkedAt: checkedAt.toISOString(), reason };
   }
 
-  private encrypt(organizationId: string, details: ConnectionDetails): string {
-    return this.crypto.encryptConnectionDetails(organizationId, JSON.stringify(details));
+  private async keyVersionForWrite(manager: EntityManager, organizationId: string): Promise<number> {
+    const key = await manager.findOneBy(TenantEncryptionKey, { organizationId, status: 'active' });
+    return key ? this.crypto.keyVersionFromReference(key.externalReference, organizationId) : this.crypto.currentKeyVersion();
   }
 
   /** Devuelve los datos propios, o null si el destino usa la configuración del servidor. */
