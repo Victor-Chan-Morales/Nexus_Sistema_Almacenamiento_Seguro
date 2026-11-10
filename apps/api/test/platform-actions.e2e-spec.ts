@@ -6,7 +6,7 @@ import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
 import { ApiExceptionFilter } from '../src/common/filters/api-exception.filter';
 import { BillingService } from '../src/modules/billing/billing.service';
-import { Role } from '../src/modules/iam/domain/enums';
+import { DeploymentModel, Role } from '../src/modules/iam/domain/enums';
 import { EmailOutboxService } from '../src/modules/iam/services/email-outbox.service';
 import { VerificationMailer } from '../src/modules/iam/ports/verification-mailer';
 
@@ -325,6 +325,78 @@ describe('Acciones de plataforma (e2e) — SPEC-503 escenarios 1 y 2', () => {
         [target.organizationId],
       );
       expect(rows).toHaveLength(0);
+    });
+  });
+
+  describe('Lista de solicitudes con instalación (SPEC-502)', () => {
+    it('tras aprobar, la lista devuelve installationId y estado Pendiente, y ese id sirve para PATCH de la instalación', async () => {
+      const superAdmin = await createSuperAdmin('s502a');
+      const tenant = await registerTenant('s502a');
+      const created = await request(server())
+        .post('/api/organizations/installation-requests')
+        .set('Authorization', `Bearer ${tenant.accessToken}`)
+        .send({ requestedModel: DeploymentModel.ON_PREMISES })
+        .expect(201);
+      const requestId = created.body.id as string;
+
+      const approved = await request(server())
+        .post(`/api/platform/installation-requests/${requestId}/approve`)
+        .set('Authorization', `Bearer ${superAdmin.accessToken}`)
+        .send({ operatorName: `Operador ${runId}`, hostReference: `srv-${runId}.test` })
+        .expect(200);
+      const installationId = approved.body.installationId as string;
+
+      const listed = await request(server())
+        .get('/api/platform/installation-requests?status=Aprobada')
+        .set('Authorization', `Bearer ${superAdmin.accessToken}`)
+        .expect(200);
+      const item = listed.body.items.find((i: { id: string }) => i.id === requestId);
+      expect(item).toMatchObject({
+        id: requestId,
+        status: 'Aprobada',
+        installationId,
+        installationStatus: 'Pendiente',
+        operatorName: `Operador ${runId}`,
+        hostReference: `srv-${runId}.test`,
+      });
+
+      await request(server())
+        .patch(`/api/platform/installations/${installationId}`)
+        .set('Authorization', `Bearer ${superAdmin.accessToken}`)
+        .send({ status: 'En proceso' })
+        .expect(200);
+
+      const relisted = await request(server())
+        .get('/api/platform/installation-requests?status=Aprobada')
+        .set('Authorization', `Bearer ${superAdmin.accessToken}`)
+        .expect(200);
+      const updated = relisted.body.items.find((i: { id: string }) => i.id === requestId);
+      expect(updated).toMatchObject({ installationId, installationStatus: 'En proceso' });
+    });
+
+    it('una solicitud Pendiente aparece con los cuatro campos de instalación en null', async () => {
+      const superAdmin = await createSuperAdmin('s502b');
+      const tenant = await registerTenant('s502b');
+      const created = await request(server())
+        .post('/api/organizations/installation-requests')
+        .set('Authorization', `Bearer ${tenant.accessToken}`)
+        .send({ requestedModel: DeploymentModel.HYBRID })
+        .expect(201);
+      const requestId = created.body.id as string;
+
+      const listed = await request(server())
+        .get('/api/platform/installation-requests?status=Pendiente')
+        .set('Authorization', `Bearer ${superAdmin.accessToken}`)
+        .expect(200);
+      const item = listed.body.items.find((i: { id: string }) => i.id === requestId);
+      expect(item).toMatchObject({
+        id: requestId,
+        status: 'Pendiente',
+        installationId: null,
+        installationStatus: null,
+        operatorName: null,
+        hostReference: null,
+      });
     });
   });
 });

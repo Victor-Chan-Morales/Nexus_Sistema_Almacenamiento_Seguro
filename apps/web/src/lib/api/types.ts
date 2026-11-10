@@ -433,8 +433,8 @@ export type CreateInstallationRequestResponse = {
 export type PlatformOrganization = {
   id: UUID;
   name: string;
-  status: string;
-  deploymentModel: string;
+  status: "active" | "suspended" | "cancelled";
+  deploymentModel: DeploymentModel;
   planName: string | null;
   usedBytes: number;
   storageLimitBytes: number | null;
@@ -452,6 +452,63 @@ export type PlatformMetrics = {
   activeUsers: number;
   usedBytes: number;
   subscriptionsByPlan: { planName: string; count: number }[];
+};
+
+/** SPEC-502: respuesta de `POST /platform/organizations/:id/suspend|reactivate`. */
+export type PlatformStatusChange = {
+  id: UUID;
+  status: PlatformOrganization["status"];
+};
+
+/** SPEC-502: estado de la instalación aprovisionada para una solicitud. */
+export type PlatformInstallationStatus = "No solicitada" | "Pendiente" | "En proceso" | "Operativa" | "Fallida";
+
+/** SPEC-502: solicitud de instalación vista desde la plataforma (`GET /platform/installation-requests`). */
+export type PlatformInstallationRequest = {
+  id: UUID;
+  organizationId: UUID;
+  organizationName: string;
+  requestedModel: DeploymentModel;
+  status: InstallationRequestStatus;
+  createdAt: ISODateTime;
+  reviewedAt: ISODateTime | null;
+  installationId: UUID | null;
+  installationStatus: PlatformInstallationStatus | null;
+  operatorName: string | null;
+  hostReference: string | null;
+};
+
+export type PlatformInstallationRequestsResponse = {
+  items: PlatformInstallationRequest[];
+};
+
+/** SPEC-502: cuerpo de `POST /platform/installation-requests/:id/approve`. */
+export type ApprovePlatformInstallationInput = {
+  operatorName: string;
+  hostReference?: string;
+};
+
+/** SPEC-502: respuesta de `POST /platform/installation-requests/:id/approve`. */
+export type ApprovePlatformInstallationResponse = {
+  requestId: UUID;
+  installationId: UUID;
+};
+
+/** SPEC-502: respuesta de `POST /platform/installation-requests/:id/reject`. */
+export type RejectPlatformInstallationResponse = {
+  requestId: UUID;
+  status: "Rechazada";
+};
+
+/** SPEC-502: cuerpo de `PATCH /platform/installations/:id`. */
+export type UpdatePlatformInstallationInput = {
+  status: PlatformInstallationStatus;
+};
+
+/** SPEC-502: respuesta de `PATCH /platform/installations/:id` (la respuesta usa `id`, no `installationId`). */
+export type UpdatePlatformInstallationResponse = {
+  id: UUID;
+  status: PlatformInstallationStatus;
 };
 
 // SPEC-114: Cierre de empresa
