@@ -350,6 +350,11 @@ Cada spec agrega aquí sus rutas, campos y códigos de error antes de programar.
 - **[v0.7, SPEC-504]** `PATCH /platform/plans/:id` emite `PLAN_UPDATED` (recurso `plan`) después del commit. No hay organización afectada, así que el evento queda en la organización del Super Admin. Un fallo al registrar la auditoría se avisa en el log y no cambia la respuesta.
 - **[v0.6, SPEC-501]** `POST /auth/login`, `POST /auth/refresh` y `GET /auth/me` añaden `isSuperAdmin: boolean` a su respuesta. El valor se lee de `iam.user.is_super_admin` en cada solicitud y nunca viaja en el token de acceso.
 
+### Perfil y contraseña [v0.6, SPEC-113]
+
+- **[v0.6, SPEC-113]** `PATCH /auth/me` con `{ fullName }` (2–120 caracteres, sin espacios sobrantes) → `200 MeResponse`, igual que `GET /auth/me`. Campos adicionales → `400 VALIDATION_ERROR`.
+- **[v0.6, SPEC-113]** `POST /auth/change-password` con `{ currentPassword, newPassword }` → `204`. Revoca todas las sesiones del usuario y borra la cookie `nexus_refresh`. Los access tokens ya emitidos siguen válidos hasta su vencimiento (15 min), igual que tras SPEC-103 y ADR-003: limitación conocida, no hay revocación inmediata de access tokens. Contraseña actual incorrecta o cuenta bloqueada → `401 INVALID_CREDENTIALS` y cuenta el fallo (SPEC-112). Nueva contraseña fuera de la política → `400 VALIDATION_ERROR`. Emite `AUTH_PASSWORD_CHANGED`.
+
 ### Comprobantes [v0.6, SPEC-306]
 
 - **[v0.6, SPEC-306]** `GET /billing/operations/:id/receipt` (solo `tenant_admin`) → `200 { "receiptNumber", "organizationName", "planName", "type", "amount", "currency": "USD", "cardLast4", "occurredAt", "simulated": true }`. `type` es `"charge"` o `"renewal"`. `cardLast4` es `string | null`: `null` en cargos de US$0 y en renovaciones de planes gratuitos. Las claves son exactamente estas: no hay número de tarjeta, CVV, titular ni vencimiento.

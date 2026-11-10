@@ -79,6 +79,15 @@ export class TypeOrmUserRepository implements UserRepository {
     await tx.update(User, { id: userId }, { passwordHash, emailVerified: true });
   }
 
+  async updateFullName(tx: TransactionContext, userId: string, fullName: string): Promise<void> {
+    await tx.update(User, { id: userId }, { fullName });
+  }
+
+  /** SPEC-113. Solo cambia el hash: `email_verified` queda como estaba. */
+  async setPassword(tx: TransactionContext, userId: string, passwordHash: string): Promise<void> {
+    await tx.update(User, { id: userId }, { passwordHash });
+  }
+
   /**
    * SPEC-112. Con n = intentos tras este fallo: n < 5 → sin bloqueo; n >= 5 → bloqueo de
    * min(60 s × 2^(n − 5), 30 min) contados desde `now`. El exponente se acota en 10 para que nunca desborde y el

@@ -17,6 +17,7 @@ type ActionFamily = "auth" | "files" | "team" | "plan";
 const ACTIONS: Partial<Record<string, { label: string; family: ActionFamily }>> = {
   AUTH_LOGIN: { label: "Inicio de sesión", family: "auth" },
   AUTH_PASSWORD_RESET: { label: "Contraseña restablecida", family: "auth" },
+  AUTH_PASSWORD_CHANGED: { label: "Contraseña cambiada", family: "auth" },
   MEMBER_ADDED: { label: "Miembro agregado", family: "team" },
   FILE_UPLOAD: { label: "Archivo subido", family: "files" },
   FILE_DOWNLOAD: { label: "Archivo descargado", family: "files" },

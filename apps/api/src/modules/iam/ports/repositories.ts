@@ -34,6 +34,13 @@ export abstract class UserRepository {
   abstract clearFailedLogins(userId: string, tx?: TransactionContext): Promise<void>;
   /** Estado de la cuenta (SPEC-108: eliminar a un miembro la deja `inactive`; sus archivos no se tocan). */
   abstract setStatus(tx: TransactionContext, userId: string, status: UserStatus): Promise<void>;
+  /** SPEC-113: cambio de nombre desde la sesión. No toca el correo ni `email_verified`. */
+  abstract updateFullName(tx: TransactionContext, userId: string, fullName: string): Promise<void>;
+  /**
+   * SPEC-113: cambio de contraseña con sesión iniciada (el hash ya viene calculado). A diferencia de
+   * setPasswordAndVerifyEmail, no marca el correo como verificado.
+   */
+  abstract setPassword(tx: TransactionContext, userId: string, passwordHash: string): Promise<void>;
 }
 
 export abstract class OrganizationRepository {
