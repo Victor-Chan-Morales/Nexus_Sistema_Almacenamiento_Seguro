@@ -1,4 +1,4 @@
-# SPEC-117: CORREO REAL CON GMAIL SMTP
+# SPEC-117: CORREO REAL CON LA API DE GMAIL
 
 ## 1. Metadatos
 
@@ -13,21 +13,19 @@
 | **Prioridad** | P1 |
 | **Estimación** | 5 h |
 | **Hito Objetivo** | Entrega final del curso |
-| **Estado** | Aprobada (2026-11-10) |
+| **Estado** | Revisión del transporte pendiente de aprobación |
 
 ---
 
 ## 2. Objetivo
 
-Hoy los correos de verificación, recuperación e invitación solo llegan a Mailpit, un buzón local: nadie fuera de la máquina los recibe. El instructivo de despliegue usa `sandbox.smtp.mailtrap.io`, que es el buzón de pruebas de Mailtrap y tampoco entrega a cuentas reales.
-
-Esta spec cambia el envío a **Gmail SMTP**, con una cuenta de Gmail del proyecto, para que verificación, recuperación e invitación lleguen a cualquier buzón sin costo. Gmail firma sus propios correos con SPF y DKIM del dominio `gmail.com` y cumple DMARC, así que el equipo no necesita dominio propio. Además, el registro y el alta de miembros comprueban que el dominio del destinatario pueda recibir correo.
+Nexus enviará correos de verificación, recuperación, invitación y avisos de cuenta a buzones reales mediante la **API de Gmail por HTTPS (puerto 443)**. La API de Nexus está en Render Free, que bloquea la salida SMTP por los puertos `25`, `465` y `587`. El envío usará la cuenta Gmail dedicada del proyecto y la autenticación del dominio `gmail.com`. Registro y alta de miembros validarán el dominio del destinatario. [Restricciones de Render Free](https://render.com/docs/free#other-limitations) y [envío con la API de Gmail](https://developers.google.com/workspace/gmail/api/guides/sending).
 
 ---
 
 ## 3. Fuera de Alcance (YAGNI)
 
-- No se cambia el transporte: sigue siendo SMTP con nodemailer (`EmailService`). No se usa la API de Gmail ni OAuth, solo SMTP con contraseña de aplicación.
+- OAuth se usa exclusivamente para autorizar al remitente del proyecto. El inicio de sesión de Nexus y las cuentas de los destinatarios quedan fuera de ese flujo.
 - No se procesan rebotes, quejas ni eventos de entrega. Se revisan en la bandeja de la cuenta de Gmail.
 - No se comprueba que el buzón exista antes de enviar. Esa prueba la da el enlace de verificación, que solo funciona si la persona lo abre.
 - No se limita el registro a dominios corporativos de cada organización (por ejemplo, solo `@empresa.com`). Decidido (§12, punto 5).
@@ -43,29 +41,29 @@ Esta spec cambia el envío a **Gmail SMTP**, con una cuenta de Gmail del proyect
 ```gherkin
 Escenario 1: Producción no arranca con correo local o mal configurado
   Dado que NODE_ENV es "production"
-  Y que MAIL_HOST es "localhost" o "mailpit", o que MAIL_FROM es distinto de MAIL_USER
+  Y que MAIL_TRANSPORT no es "gmail-api", falta una credencial OAuth o GMAIL_SENDER no es una dirección gmail.com válida
   Cuando arranca la API
   Entonces el arranque falla con el código MAIL_CONFIG_INVALID
-  Y el mensaje nombra la variable incorrecta sin mostrar su valor ni el de MAIL_PASS
+  Y el mensaje nombra la variable incorrecta sin mostrar valores ni credenciales
 
-Escenario 2: TLS obligatorio
-  Dado que MAIL_REQUIRE_TLS es "true" y MAIL_HOST es smtp.gmail.com en el puerto 587
+Escenario 2: Envío por HTTPS desde Render Free
+  Dado que la API publicada usa MAIL_TRANSPORT="gmail-api"
   Cuando se envía un correo de verificación
-  Entonces la conexión usa STARTTLS
-  Y si el servidor no lo ofrece, el envío falla sin transmitir el contenido en claro
-  Y el mensaje queda en iam.email_outbox para reintento
+  Entonces el transporte obtiene o reutiliza un token de acceso OAuth y envía el mensaje por HTTPS a la API de Gmail
+  Y solo se marca el mensaje como enviado en la outbox después de que Google lo acepte
+  Y si falla la conexión o la validación TLS, el mensaje queda pendiente para reintento
 
 Escenario 3: Configuración verificada
-  Dado que MAIL_USER y MAIL_FROM son la cuenta Gmail del proyecto, con verificación en dos pasos y contraseña de aplicación
+  Dado que las credenciales OAuth autorizan el envío desde la cuenta Gmail del proyecto
   Cuando se ejecuta "npm run mail:check -- --to <buzón real>"
-  Entonces el script confirma que el inicio de sesión SMTP funciona
-  Y envía un correo de prueba
+  Entonces el script envía un correo de prueba con el transporte de Gmail
+  Y muestra el identificador que devuelve la API de Gmail
   Y termina con código 0
 
 Escenario 4: Credenciales incorrectas
-  Dado que MAIL_PASS es la contraseña normal de Gmail, o una contraseña de aplicación revocada
+  Dado que el token de renovación OAuth es inválido o fue revocado
   Cuando se ejecuta "npm run mail:check -- --to <buzón real>"
-  Entonces el script indica un error de autenticación sin mostrar la contraseña
+  Entonces el script indica un error de autenticación sin mostrar credenciales
   Y no envía el correo de prueba
   Y termina con código 2
 
@@ -73,11 +71,11 @@ Escenario 5: Autenticidad comprobada en el buzón
   Dado el correo de prueba recibido en un buzón real
   Cuando se revisa su encabezado Authentication-Results
   Entonces aparecen spf=pass, dkim=pass y dmarc=pass
-  Y el dominio del remitente es gmail.com y coincide con la cuenta de MAIL_USER
+  Y la dirección del remitente coincide con GMAIL_SENDER
   (Verificación manual. La captura del encabezado va en el PR.)
 
 Escenario 6: Dominio del destinatario sin correo
-  Dado un alta con un correo cuyo dominio no tiene registros MX ni A
+  Dado un alta con un correo cuyo dominio no tiene registros MX, A ni AAAA
   Cuando se envía POST /auth/register
   Entonces el sistema responde 400 con código EMAIL_DOMAIN_INVALID
   Y no crea organización, usuario, membresía ni mensaje en la outbox
@@ -111,13 +109,18 @@ Escenario 11: Rutas públicas sin consulta DNS
   Y no se realiza ninguna consulta DNS
 
 Escenario 12: Sin datos sensibles
-  Entonces ni los logs del envío ni la salida de mail:check muestran MAIL_PASS, tokens ni enlaces de verificación
+  Entonces los logs del envío y la salida de mail:check omiten credenciales, tokens OAuth, contenido y enlaces de verificación
 
 Escenario 13: Límite diario de Gmail
   Dado que la cuenta alcanzó el límite diario de envíos de Gmail
   Cuando se intenta enviar un correo de verificación
   Entonces el envío falla y el mensaje queda en iam.email_outbox para reintento
   Y no se pierde la operación de origen (registro, recuperación o invitación)
+
+Escenario 14: Correo local en Mailpit
+  Dado un entorno de desarrollo con Mailpit y sin credenciales OAuth
+  Cuando Nexus envía un correo de verificación
+  Entonces el mensaje llega a Mailpit por SMTP local
 ```
 
 ---
@@ -128,7 +131,7 @@ No se agregan rutas. Cambia el error posible de dos rutas existentes:
 
 | Ruta | Error nuevo | Causa |
 |---|---|---|
-| `POST /auth/register` | `400 EMAIL_DOMAIN_INVALID` | El dominio del correo no tiene registros MX ni A, o su MX es nulo. El correo no se puede entregar. |
+| `POST /auth/register` | `400 EMAIL_DOMAIN_INVALID` | El dominio del correo carece de MX, A y AAAA, o su MX es nulo. |
 | `POST /organizations/members` | `400 EMAIL_DOMAIN_INVALID` | Mismo caso. |
 
 - Las respuestas de éxito no cambian.
@@ -157,40 +160,27 @@ No se agregan rutas. Cambia el error posible de dos rutas existentes:
 
 ### 8.1 Proveedor, cuenta y remitente
 
-- **Proveedor.** Decidido: **Gmail SMTP** (2026-11-10), con `smtp.gmail.com`, puerto `587` y STARTTLS. Es gratis y no necesita dominio propio. Así `EmailService` no cambia de transporte.
-  - **Brevo queda descartado:** sin dominio propio reescribe el remitente a `brevosend.com`, y según su documentación el correo puede caer en spam o ser rechazado.
-  - **Resend queda descartado:** sin dominio verificado solo entrega a la dirección de la cuenta dueña.
-- **Cuenta de Gmail.** Antes de T1 el equipo elige una de estas dos opciones:
-  - **Opción A (recomendada): cuenta nueva del proyecto.** Una cuenta de Gmail creada para el equipo. Si una persona deja el proyecto, el envío sigue funcionando.
-  - **Opción B: cuenta personal existente** de un integrante. Funciona igual, pero el correo sale con esa persona. Si cambia su contraseña de Gmail, la contraseña de aplicación se revoca y el envío se detiene.
-  - **Requisitos en cualquiera de las dos:** verificación en dos pasos activa, una contraseña de aplicación de 16 caracteres generada para la API, y esa contraseña guardada solo en variables de entorno, nunca en Git ni en logs.
-- **Remitente.** `MAIL_FROM` debe ser la misma dirección que `MAIL_USER`. Gmail reemplaza cualquier otro remitente por la cuenta autenticada.
-- **Autenticación.** Gmail firma sus correos con SPF y DKIM del dominio `gmail.com`, y DMARC se cumple. No hay registros DNS que configurar.
-- **Límite.** Una cuenta personal de Gmail envía unos 500 correos al día. Esa cifra viene de fuentes de terceros, no de la documentación de Google. Para el curso es suficiente. Si se supera, el envío se reintenta desde la outbox (Escenario 13).
-- **Clave SMTP.** Es la contraseña de aplicación, no la contraseña normal de la cuenta.
+- El remitente elegido es la cuenta dedicada `nexuscorreoprueba@gmail.com`. Un responsable del equipo habilita Gmail API en Google Cloud y autoriza esa cuenta una vez con OAuth 2.0 y acceso sin conexión (`access_type=offline`). El alcance `https://www.googleapis.com/auth/gmail.send` permite enviar correo. Los destinatarios reciben mensajes sin participar en la autorización. [Alcances de Gmail](https://developers.google.com/workspace/gmail/api/auth/scopes) y [OAuth para aplicaciones de servidor](https://developers.google.com/identity/protocols/oauth2/web-server).
+- Para el envío continuo, el equipo debe confirmar en Google Cloud que el cliente OAuth puede operar con el alcance sensible y completar la verificación si Google la exige. Un proyecto con audiencia externa y estado **Testing** emite tokens de renovación que caducan a los siete días para este alcance. Usar ese estado para pruebas y confirmar una configuración apta para uso continuo antes de activar producción. [Estado de publicación OAuth](https://support.google.com/cloud/answer/15549945) y [caducidad de tokens](https://developers.google.com/identity/protocols/oauth2#expiration).
 
 ### 8.2 Variables de entorno
 
 | Variable | Ejemplo | Función |
 |---|---|---|
-| `MAIL_HOST` | `smtp.gmail.com` | Servidor de Gmail. En producción no puede ser `localhost` ni `mailpit`. |
-| `MAIL_PORT` | `587` | Puerto con STARTTLS. |
-| `MAIL_SECURE` | `false` | `true` solo para el puerto 465. |
-| `MAIL_REQUIRE_TLS` | `true` | Obliga STARTTLS (opción `requireTLS` de nodemailer). Por defecto `true` si `NODE_ENV` es `production`. |
-| `MAIL_USER` | `<cuenta>@gmail.com` | Cuenta de Gmail del proyecto (o la personal elegida). |
-| `MAIL_PASS` | contraseña de aplicación de 16 caracteres | No es la contraseña normal de Gmail. |
-| `MAIL_FROM` | `Nexus <<cuenta>@gmail.com>` | Igual que `MAIL_USER`. |
+| `MAIL_TRANSPORT` | `gmail-api` | Obligatorio en producción. En desarrollo el transporte predeterminado es el SMTP local de Mailpit. |
+| `GMAIL_SENDER` | `nexuscorreoprueba@gmail.com` | Cuenta autorizada. Se usa para la ruta de Gmail y el encabezado `From`. |
+| `GMAIL_CLIENT_ID` | Identificador del cliente OAuth | Cliente OAuth de Google Cloud que obtuvo el permiso. |
+| `GMAIL_CLIENT_SECRET` | Secreto del cliente OAuth | Se guarda en los secretos de Render. |
+| `GMAIL_REFRESH_TOKEN` | Token de renovación de la cuenta remitente | Se guarda en los secretos de Render. |
+| `WEB_URL` | URL HTTPS de Nexus | Origen que se usa para los enlaces incluidos en los correos. |
 | `IAM_CHECK_EMAIL_DOMAIN` | `true` | Activa la validación de dominio en registro y alta de miembros. `false` solo en pruebas. |
 
 ### 8.3 Configuración segura
 
-- **`apps/api/src/modules/iam/infrastructure/mail-config.ts` (nuevo):** función pura `assertMailConfig(env)`. Lanza `MAIL_CONFIG_INVALID` en producción si se cumple alguna de estas condiciones:
-  - `MAIL_HOST` es `localhost`, `127.0.0.1` o `mailpit`.
-  - `MAIL_FROM` es distinto de `MAIL_USER`. Gmail reemplazaría el remitente.
-  - `MAIL_REQUIRE_TLS` no es `true`.
-  - Faltan `MAIL_USER` o `MAIL_PASS`.
-- **`infrastructure/mail-transport.ts` (nuevo):** extrae `createMailTransport(config)` de `EmailService`. Lo usan la API y `mail:check`, así ambos envían igual.
-- **`EmailService`:** llama a `assertMailConfig` en el constructor, así la API no arranca con una configuración inválida. Pasa `requireTLS` a nodemailer.
+- `infrastructure/mail-config.ts` valida el modo, la dirección remitente y la presencia de credenciales OAuth. `EmailService` llama a la validación al arrancar. La comprobación de credenciales contra Google se hace con `mail:check` y durante el envío.
+- `infrastructure/mail-transport.ts` selecciona el transporte usado por `EmailService` y `mail:check`. Para Gmail, obtiene tokens de acceso en `https://oauth2.googleapis.com/token` mediante el token de renovación. Reutiliza el token de acceso en memoria hasta antes de su vencimiento y comparte la renovación entre envíos simultáneos del mismo proceso.
+- El transporte compone MIME con Nodemailer, codifica el resultado en base64url y lo envía mediante `POST https://gmail.googleapis.com/gmail/v1/users/{userId}/messages/send`, con la dirección autorizada de `GMAIL_SENDER` como `userId` y `From`. Las peticiones tienen tiempo límite, validación TLS y destinos fijos de Google. El SMTP de Mailpit se conserva para desarrollo. [Método `users.messages.send`](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/send).
+- La outbox conserva la política actual de reintentos y expiración. Una respuesta `429`, un límite de cuota, un fallo de red o un fallo de autorización se registra con una categoría segura y deja el mensaje pendiente según esa política. Solo una respuesta satisfactoria de Gmail marca el mensaje como enviado. Una respuesta perdida después de que Gmail acepte el mensaje puede causar un duplicado al reintentar. [Errores de Gmail API](https://developers.google.com/workspace/gmail/api/guides/handle-errors).
 
 ### 8.4 Validación del dominio del destinatario
 
@@ -219,37 +209,34 @@ export abstract class EmailDomainChecker {
 
 Script `apps/api/src/scripts/mail-check.ts`, expuesto como `mail:check` en `package.json`. No corre dentro de la API. Pasos:
 
-1. Lee `MAIL_HOST`, `MAIL_USER` y `MAIL_FROM`, y aplica las reglas de §8.3. Si falla, termina con código `2`.
-2. Abre una conexión SMTP con `transporter.verify()`, que comprueba el usuario y la contraseña de aplicación. Si falla, muestra el error de autenticación sin mostrar la contraseña y termina con código `2`.
-3. Envía un correo de prueba con `createMailTransport` a `--to`. Imprime el `messageId` y la respuesta del servidor.
-4. Indica revisar `Authentication-Results` en el buzón recibido (Escenario 5). Termina con código `0`.
+1. Valida `--to` y aplica las reglas de producción de §8.3.
+2. Usa el transporte de Gmail para obtener un token de acceso y enviar un correo de prueba al destinatario indicado. Si falla, imprime una categoría segura del error y termina con código `2`.
+3. Si Gmail acepta el envío, imprime el identificador del mensaje, indica revisar `Authentication-Results` en el buzón recibido y termina con código `0`.
 
 - **Códigos de salida:** `0` correcto, `2` configuración inválida, autenticación fallida o envío fallido.
-- **Función pura** `checkSenderMatches(config)`, que se prueba sin red.
 
 ### 8.6 Riesgos y mitigaciones
 
 | Riesgo | Mitigación |
 |---|---|
-| Gmail bloquea la cuenta por actividad automatizada. | Usar una cuenta dedicada (Opción A), con volumen bajo. Revisar los avisos que Google envía a la cuenta. |
-| Se alcanza el límite diario de envíos (unos 500). | La outbox reintenta con espera creciente (Escenario 13). En el curso el volumen es bajo. |
-| Con la Opción B, si la persona cambia su contraseña, el envío se detiene. | Recomendar la Opción A. Si se usa la B, documentar la dependencia. |
-| El guard de producción impide arrancar si el despliegue tiene `MAIL_HOST=localhost` (como el instructivo con Mailpit). | Actualizar las variables antes del despliegue y ejecutar `mail:check` antes. |
-| El instructivo usa `sandbox.smtp.mailtrap.io`, que no entrega a buzones reales. | Reemplazar `MAIL_HOST`, `MAIL_PORT` y las credenciales por las de Gmail (§11). |
+| Expira o se revoca la autorización OAuth. | Reautorizar la cuenta del proyecto, reemplazar el secreto en Render y ejecutar `mail:check`. |
+| Google limita los envíos o el servicio no está disponible. | La outbox reintenta con espera creciente dentro de su plazo vigente. |
+| Render Free suspende el servicio por inactividad. | Comprobar los reintentos con la instancia activa. La outbox los retoma cuando la API vuelve a arrancar, dentro del plazo de cada mensaje. [Suspensión de instancias Free](https://render.com/docs/free#spinning-down-on-idle). |
+| Faltan variables al desplegar. | Cargar los secretos de Render y verificar el transporte antes de activar la revisión en el servicio publicado. |
 
 ---
 
 ## 9. Plan de Tareas (≤ 2 horas cada una)
 
-- [ ] **T1 (30 min, equipo, sin código):** elegir la cuenta (Opción A o B de §8.1), activar la verificación en dos pasos y generar la contraseña de aplicación.
-- [ ] **T2 (1.5 h):** `mail-config.ts` con las reglas de §8.3, `mail-transport.ts` y `requireTLS` en `EmailService`. Pruebas unitarias.
-- [ ] **T3 (1 h):** `mail-check.ts` con `checkSenderMatches`, la verificación SMTP y el envío de prueba. Pruebas de la función pura.
+- [ ] **T1 (equipo):** habilitar Gmail API, autorizar la cuenta del proyecto con el alcance `gmail.send` y guardar las credenciales OAuth en los secretos del entorno.
+- [ ] **T2 (1.5 h):** implementar la validación de configuración, el transporte HTTPS con OAuth y la composición MIME. Probar el arranque y el transporte local.
+- [ ] **T3 (1 h):** actualizar `mail:check`, simular errores de autenticación y probar el envío real desde el servicio Render Free.
 - [ ] **T4 (1.5 h):** `EmailDomainChecker`, adaptador DNS con tiempo límite, `IamSettings.checkEmailDomain`, integración en registro y alta de miembros, y pruebas.
-- [ ] **T5 (0.5 h):** actualizar `CONTRACTS.md`, la enmienda de ADR-003, `.env.example`, `specs/README.md` y las líneas de Mailtrap del instructivo.
+- [ ] **T5 (0.5 h):** actualizar `CONTRACTS.md`, el ADR-003, `.env.example`, `REGLAS.md` y la guía de instalación con la configuración aprobada.
 
-**Archivos permitidos:** `apps/api/src/modules/iam/infrastructure/mail-config.ts` y `mail-config.spec.ts` (nuevos), `infrastructure/mail-transport.ts` (nuevo), `infrastructure/email.service.ts`, `infrastructure/dns-email-domain-checker.ts` y su spec (nuevos), `ports/email-domain-checker.ts` (nuevo), `iam.settings.ts`, `iam.module.ts`, `iam.errors.ts`, `services/registration.service.ts`, `services/members.service.ts`, `apps/api/src/scripts/mail-check.ts` y su spec (nuevos), `package.json` (script `mail:check`), `.env.example`, `CONTRACTS.md`, `docs/decisions/ADR-003-detalles-operativos-aprobados.md`, `specs/README.md`, `INSTRUCTIVO_SEBASTIAN_DESPLIEGUE_Y_PRESENTACION.md` (solo las líneas de correo).
+**Archivos permitidos:** infraestructura de correo y DNS, configuración y servicios de registro y miembros en `apps/api/src/modules/iam/`, sus pruebas unitarias y de integración, `apps/api/src/scripts/mail-check.ts` y su prueba, `package.json` (script `mail:check`), los dos formularios de §7, `.env.example` y los documentos de §11. Los ajustes de configuración del instalador local se limitan a conservar el arranque local existente.
 
-**Coordinación:** SPEC-115 también edita `infrastructure/email.service.ts`, y SPEC-116 toca `iam/`. Fusionar una y actualizar la otra antes de programar.
+**Coordinación:** incorporar la versión de `main` que contiene SPEC-115 y SPEC-116 antes de implementar la revisión del transporte.
 
 ---
 
@@ -257,37 +244,38 @@ Script `apps/api/src/scripts/mail-check.ts`, expuesto como `mail:check` en `pack
 
 | Criterio | Tipo | Evidencia |
 |---|---|---|
-| Escenarios 1 y 2 | Unitaria | `mail-config.spec.ts` y `email.service.spec.ts` (opción `requireTLS` del transporte) |
-| Escenarios 3 y 4 | Unitaria | `mail-check.spec.ts` sobre `checkSenderMatches` y la verificación SMTP con transporte simulado |
+| Escenarios 1 y 2 | Unitaria | Configuración, renovación y reutilización de credenciales, composición MIME y HTTPS con peticiones simuladas |
+| Escenarios 3 y 4 | Unitaria | `mail-check.spec.ts` con éxito, credencial revocada y salida sin secretos |
 | Escenario 5 | Manual | Captura de `Authentication-Results` en el PR |
 | Escenarios 6 a 10 | Unitaria | `dns-email-domain-checker.spec.ts` (resolver simulado) e `iam.registration.spec.ts`, más las pruebas de alta de miembros |
 | Escenario 11 | Unitaria | Prueba que confirma que el validador no se llama en recuperación ni reenvío |
 | Escenario 12 | Unitaria | Captura de logs en las pruebas de envío y de `mail:check` |
 | Escenario 13 | Unitaria | `iam.outbox.spec.ts` (existente): un error del proveedor deja el mensaje pendiente para reintento |
-| Envío real | Manual | Correo recibido en Gmail y en Outlook |
+| Escenario 14 | Integración local | Correo recibido en Mailpit con la configuración de desarrollo |
+| Envío real desde Render Free | Manual | Correo recibido en Gmail y Outlook, captura del encabezado de autenticación y verificación de una cuenta en la web publicada |
 
 ---
 
 ## 11. Impacto en Documentación
 
 - [ ] `CONTRACTS.md`, sección "Alcance final [v0.6]": código `EMAIL_DOMAIN_INVALID` en registro y alta de miembros.
-- [ ] `docs/decisions/ADR-003-detalles-operativos-aprobados.md`: enmienda con Gmail SMTP como proveedor, la cuenta elegida y la regla de validación. No se agrega librería, así que no hace falta un ADR nuevo.
+- [ ] `docs/decisions/ADR-003-detalles-operativos-aprobados.md`: enmienda con la API de Gmail sobre HTTPS, el alcance de OAuth, la cuenta remitente y la regla de validación.
 - [ ] `.env.example`: variables de Gmail, sin credenciales.
-- [ ] `specs/README.md`: agregar SPEC-117 al catálogo, en la sección 1xx.
-- [ ] `INSTRUCTIVO_SEBASTIAN_DESPLIEGUE_Y_PRESENTACION.md`: reemplazar `sandbox.smtp.mailtrap.io` (líneas 170 a 173 y 743) y `MAIL_HOST=localhost` (líneas 399 a 401) por los valores de Gmail.
-- [ ] `REGLAS.md`: aclarar que Mailpit es solo para desarrollo local y que producción usa Gmail SMTP.
+- [ ] `specs/README.md`: reflejar el título y estado de SPEC-117 en el catálogo.
+- [ ] `docs/GUIA_INSTALACION_Y_EJECUCION.md`: documentar la autorización inicial, las variables en Render, la renovación de credenciales y la prueba real. Si se mantiene una copia externa del instructivo de despliegue, sustituir allí las instrucciones de Mailtrap o SMTP.
+- [ ] `REGLAS.md`: documentar Mailpit para desarrollo y la API de Gmail por HTTPS para producción.
 
 ---
 
 ## 12. Preguntas Abiertas
 
-1. **Proveedor. Resuelto:** Gmail SMTP (2026-11-10). Brevo y Resend quedan descartados.
+1. **Transporte propuesto:** API de Gmail por HTTPS. La API publicada usa Render Free, que bloquea SMTP en los puertos previstos en la revisión anterior.
 2. **Dominio. Resuelto:** no hay dominio propio. Se usa la cuenta de Gmail.
 3. **Resuelto:** no desplegar con Mailpit. La guarda de §8.3 se mantiene.
 4. **Resuelto:** si la consulta DNS falla, se deja pasar el registro (`unknown`) y se escribe una advertencia.
 5. **Resuelto:** cualquier correo válido puede usarse. No se limita al dominio de la organización.
 6. **Resuelto:** el nombre genérico de validación es `VALIDATION_ERROR`, como en `CONTRACTS.md`. SPEC-116 debe corregirse, porque hoy usa `VALIDATION_FAILED`.
-7. **Pendiente de elegir antes de T1:** la cuenta de Gmail. Opción A: cuenta nueva del proyecto (recomendada). Opción B: cuenta personal existente de un integrante. Ver §8.1.
+7. **Cuenta remitente acordada:** `nexuscorreoprueba@gmail.com`. Está pendiente validar la configuración OAuth en Google Cloud para envío continuo (§8.1).
 
 ---
 
@@ -300,3 +288,4 @@ Script `apps/api/src/scripts/mail-check.ts`, expuesto como `mail:check` en `pack
 | 2026-11-10 | Claude Code (borrador) | Decididos: no desplegar con Mailpit (punto 3), fallo DNS deja pasar (punto 4), sin restricción por dominio (punto 5), `VALIDATION_ERROR` (punto 6). |
 | 2026-11-10 | Claude Code (borrador) | Cambio a Gmail SMTP: sin dominio propio, Brevo y Resend quedan descartados. Se reescriben §1, §2, §3, §4 (criterios 1 a 5), §8.1 a §8.6 y §9. Se agrega el criterio 13 (límite diario). Pendiente: elegir la cuenta de Gmail (§8.1). |
 | 2026-11-10 | Víctor Chán Morales | Aprobada. La cuenta de Gmail se elige antes de T1 (§8.1, pregunta 7). |
+| 2026-11-10 | Revisión propuesta | Render Free bloquea SMTP. Se propone la API de Gmail por HTTPS y se registra la cuenta remitente acordada. |
