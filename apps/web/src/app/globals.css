@@ -1403,3 +1403,17 @@ button.storage-model-card:hover { border-color: var(--brand); }
   .share-row-action:empty { display: none; }
   .share-created-row { flex-direction: column; }
 }
+
+/* SPEC-306: el comprobante se imprime sin navegación ni controles de acción. */
+@media print {
+  .no-print,
+  .sidebar,
+  .side-nav,
+  .topbar {
+    display: none !important;
+  }
+
+  .billing-card {
+    box-shadow: none !important;
+  }
+}
