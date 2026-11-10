@@ -1,0 +1,13 @@
+**
+!package.json
+!package-lock.json
+!apps
+!apps/web
+!apps/web/**
+**/node_modules
+**/.next
+**/out
+**/.env
+**/.env.*
+**/*.log
+**/*.tsbuildinfo

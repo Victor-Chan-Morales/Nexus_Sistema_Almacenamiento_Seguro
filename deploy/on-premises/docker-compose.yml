@@ -1,0 +1,113 @@
+name: nexus-on-premises
+
+services:
+  postgres:
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nexus
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "nexus", "-d", "nexus"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+
+  seaweedfs:
+    image: chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    restart: unless-stopped
+    command: ["server", "-dir=/data", "-s3", "-s3.port=8333", "-volume.max=0", "-master.volumeSizeLimitMB=1024"]
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:?Falta S3_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:?Falta S3_SECRET_KEY}
+      WEED_JWT_FILER_SIGNING_KEY: ${S3_FILER_SIGNING_KEY:?Falta S3_FILER_SIGNING_KEY}
+    volumes:
+      - seaweedfs-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9333/cluster/status && nc -z -w 3 127.0.0.1 8333"]
+      interval: 5s
+      timeout: 4s
+      retries: 24
+
+  migrate:
+    build:
+      context: ../../database/migrations
+      dockerfile: ../../deploy/on-premises/migrate.Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://nexus:${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD}@postgres:5432/nexus?sslmode=disable
+      DBMATE_MIGRATIONS_DIR: /db/migrations
+    command: ["--no-dump-schema", "--wait", "up"]
+
+  api:
+    build:
+      context: ../../apps/api
+      secrets: [build_ca]
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      seaweedfs:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      API_PORT: "3001"
+      WEB_URL: http://${NEXUS_PUBLIC_HOST:-localhost}:${NEXUS_WEB_PORT:-3000}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: nexus
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD}
+      S3_ENDPOINT: seaweedfs
+      S3_PORT: "8333"
+      S3_BUCKET: nexus
+      S3_REGION: us-east-1
+      S3_USE_SSL: "false"
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?Falta S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?Falta S3_SECRET_KEY}
+      JWT_SECRET: ${JWT_SECRET:?Falta JWT_SECRET}
+      FILES_MASTER_KEY: ${FILES_MASTER_KEY:?Falta FILES_MASTER_KEY}
+      FILES_MASTER_KEY_V2: ${FILES_MASTER_KEY_V2:-}
+      FILES_MASTER_KEY_CURRENT_VERSION: ${FILES_MASTER_KEY_CURRENT_VERSION:-1}
+      COOKIE_SECURE: "false"
+      IAM_REQUIRE_VERIFIED_EMAIL: ${IAM_REQUIRE_VERIFIED_EMAIL:-false}
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_SECURE: ${MAIL_SECURE:-false}
+      MAIL_USER: ${MAIL_USER:-}
+      MAIL_PASS: ${MAIL_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-Nexus <no-reply@nexus.local>}
+    ports:
+      - "${NEXUS_BIND_ADDRESS:-127.0.0.1}:${NEXUS_API_PORT:-3001}:3001"
+
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+      secrets: [build_ca]
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://${NEXUS_PUBLIC_HOST:-localhost}:${NEXUS_API_PORT:-3001}/api
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${NEXUS_BIND_ADDRESS:-127.0.0.1}:${NEXUS_WEB_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/servicios').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  postgres-data:
+  seaweedfs-data:
+
+secrets:
+  build_ca:
+    file: ${NEXUS_BUILD_CA_FILE:-/etc/ssl/certs/ca-certificates.crt}
