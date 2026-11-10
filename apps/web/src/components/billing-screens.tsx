@@ -51,6 +51,18 @@ function activationOutcome(err: unknown, planId: string): ActivationOutcome {
   return { redirect: `/suscripcion/fallida?plan=${id}` };
 }
 
+const alreadyActiveNote = "Este plan ya está activo: no se solicita tarjeta.";
+
+// Solo decide qué mostrar; el backend sigue siendo la autoridad sobre el pago.
+function useCurrentPlanId() {
+  const { session } = useSession();
+  const token = session?.accessToken;
+  const fetcher = useCallback((signal: AbortSignal) => getDashboard(token ?? "", { signal }), [token]);
+  const { state } = useLoad<DashboardResponse>(fetcher, Boolean(session), "No pudimos comprobar tu suscripción.");
+  const currentPlanId: string | null = state.status === "ready" ? state.data.plan?.id ?? null : null;
+  return { status: state.status, currentPlanId };
+}
+
 const catalogError = "No pudimos cargar el catálogo de planes. Inténtalo de nuevo.";
 
 function useCatalog() {
@@ -90,6 +102,7 @@ function ConfirmationContent() {
   const { session, failSession } = useSession();
   const planId = params.get("plan");
   const { state, reload, plan } = useSelectedPlan(planId);
+  const current = useCurrentPlanId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -112,9 +125,11 @@ function ConfirmationContent() {
       <BillingRows rows={[["Plan seleccionado", `Plan ${plan.name}`], ["Espacio incluido", formatBytes(plan.storageLimitBytes)], ["Límite de usuarios", `Hasta ${plan.userLimit} usuarios`], ["Vigencia", validity(plan)], ["Importe mensual", price(plan)]]} />
       <p className="billing-terms">Al confirmar, aceptas las condiciones generales del servicio. Este es un entorno de prueba y no se realizará ningún cobro real.</p>
       <div className="billing-warning"><span aria-hidden="true">△</span><div><b>Contratación simulada</b><p>Los pagos usan tarjetas de prueba y no se procesa ningún cobro real.</p></div></div>
-      {plan.priceMonthly > 0
-        ? <PaymentForm onSubmit={confirm} submitLabel="Confirmar activación simulada" disabled={busy} error={error} />
-        : <>{error && <Notice title="No se pudo confirmar" message={error} />}<button className="button button-primary billing-primary" onClick={() => confirm()} disabled={busy}>{busy ? "Activando…" : "Confirmar activación simulada"}</button></>}
+      {current.status === "loading"
+        ? <p className="billing-reference-note" role="status">Comprobando tu suscripción…</p>
+        : plan.priceMonthly > 0 && plan.id !== current.currentPlanId
+          ? <PaymentForm onSubmit={confirm} submitLabel="Confirmar activación simulada" disabled={busy} error={error} />
+          : <>{plan.priceMonthly > 0 && <p className="billing-reference-note">{alreadyActiveNote}</p>}{error && <Notice title="No se pudo confirmar" message={error} />}<button className="button button-primary billing-primary" onClick={() => confirm()} disabled={busy}>{busy ? "Activando…" : "Confirmar activación simulada"}</button></>}
       <Link className="billing-secondary-link" href={`/planes/${plan.id}`}>Cancelar</Link>
     </>}
   </BillingFrame>;
@@ -266,6 +281,7 @@ function ChangePlanContent() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const { state, reload } = useCatalog();
+  const current = useCurrentPlanId();
   const plans = state.status === "ready" ? state.data.items : [];
   const chosen = plans.find((item) => item.id === selected) ?? null;
 
@@ -291,9 +307,9 @@ function ChangePlanContent() {
       <select className="billing-select" id="target-plan" value={selected} onChange={(event) => { setSelected(event.target.value); setError(""); }}><option value="">Selecciona un plan</option>{plans.map((item) => <option key={item.id} value={item.id}>{item.name} · {formatBytes(item.storageLimitBytes)} · hasta {item.userLimit} usuarios</option>)}</select>
       {chosen && <BillingRows rows={[["Almacenamiento del plan nuevo", formatBytes(chosen.storageLimitBytes)], ["Precio", price(chosen)]]} />}
       <p className="billing-reference-note">El servidor valida el cambio frente al uso actual. Si el espacio ocupado supera el límite, la solicitud será rechazada.</p>
-      {chosen && chosen.priceMonthly > 0
+      {chosen && chosen.priceMonthly > 0 && current.status !== "loading" && chosen.id !== current.currentPlanId
         ? <PaymentForm key={chosen.id} onSubmit={submit} submitLabel="Enviar solicitud de cambio" disabled={busy} error={error} />
-        : <>{error && <Notice title="No se pudo enviar la solicitud" message={error} />}<button className="button button-primary billing-primary" onClick={() => submit()} disabled={!chosen || busy}>{busy ? "Enviando…" : "Enviar solicitud de cambio"}</button></>}
+        : <>{chosen && chosen.priceMonthly > 0 && chosen.id === current.currentPlanId && <p className="billing-reference-note">{alreadyActiveNote}</p>}{error && <Notice title="No se pudo enviar la solicitud" message={error} />}<button className="button button-primary billing-primary" onClick={() => submit()} disabled={!chosen || busy || current.status === "loading"}>{busy ? "Enviando…" : "Enviar solicitud de cambio"}</button></>}
     </>)}
     <Link className="billing-secondary-link" href="/suscripcion">Cancelar</Link>
   </BillingFrame>;
