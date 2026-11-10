@@ -62,7 +62,7 @@ No modifica la base de datos.
 
 ## 7. Interfaz de Usuario
 
-- Reescribir `SuperAdminDashboard` en un componente nuevo; quitar el `demo` de `AppShell`.
+- Reescribir `SuperAdminDashboard` en un componente nuevo; la consola deja de pasar `demo` a `AppShell`. El prop se conserva porque `DashboardDemoView` lo usa.
 - **Estados:** cargando, vacío ("No hay solicitudes pendientes"), error y datos.
 - Tabla con paginación simple. Bytes formateados con `formatBytes`.
 

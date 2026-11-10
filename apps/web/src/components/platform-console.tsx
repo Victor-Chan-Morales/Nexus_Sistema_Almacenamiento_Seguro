@@ -42,6 +42,7 @@ const APPROVED_REFRESH_ERROR = "No pudimos actualizar las instalaciones en curso
 const STALE_ORGANIZATION_CODES: ReadonlySet<string> = new Set(["INVALID_ORGANIZATION_TRANSITION", "ORGANIZATION_NOT_FOUND"]);
 const STALE_INSTALLATION_CODES: ReadonlySet<string> = new Set(["INVALID_INSTALLATION_TRANSITION", "INSTALLATION_NOT_FOUND"]);
 const ALREADY_REVIEWED_CODES: ReadonlySet<string> = new Set(["REQUEST_ALREADY_REVIEWED"]);
+const INSTALLATION_PAGE_SIZE = 10;
 
 const ORGANIZATION_STATUS_LABELS: Record<PlatformOrganization["status"], string> = {
   active: "Activa",
@@ -139,6 +140,20 @@ function useBusyIds() {
 
 function hasCode(error: unknown, codes: ReadonlySet<string>) {
   return error instanceof ApiError && codes.has(error.code);
+}
+
+/** Página de una lista en cliente (SPEC-502 §7). Si la lista se encoge, vuelve a la última página válida. */
+function pageOf<T>(items: T[], offset: number): { rows: T[]; offset: number } {
+  const safe = offset >= items.length ? Math.max(0, Math.floor((items.length - 1) / INSTALLATION_PAGE_SIZE) * INSTALLATION_PAGE_SIZE) : offset;
+  return { rows: items.slice(safe, safe + INSTALLATION_PAGE_SIZE), offset: safe };
+}
+
+function ListPagination({ total, offset, onChange }: { total: number; offset: number; onChange: (next: number) => void }) {
+  return <div className="platform-pagination">
+    <span>{total === 0 ? 0 : offset + 1}–{Math.min(offset + INSTALLATION_PAGE_SIZE, total)} de {total}</span>
+    <button type="button" className="button" disabled={offset === 0} onClick={() => onChange(Math.max(0, offset - INSTALLATION_PAGE_SIZE))}>Anterior</button>
+    <button type="button" className="button" disabled={offset + INSTALLATION_PAGE_SIZE >= total} onClick={() => onChange(offset + INSTALLATION_PAGE_SIZE)}>Siguiente</button>
+  </div>;
 }
 
 function MetricsSection({ state, onRetry }: { state: Load<PlatformMetrics>; onRetry: () => void }) {
@@ -256,6 +271,8 @@ function InstallationsSection({ token }: { token: string }) {
   const [pendingInstallation, setPendingInstallation] = useState<InstallationChange | null>(null);
   const pendingBusy = useBusyIds();
   const installationBusy = useBusyIds();
+  const [pendingOffset, setPendingOffset] = useState(0);
+  const [approvedOffset, setApprovedOffset] = useState(0);
 
   const fetchPending = useCallback((signal: AbortSignal) => listPlatformInstallationRequests(token, "Pendiente", { signal }), [token]);
   const { state: pendingState, reload: reloadPending, set: setPending } = useLoad(fetchPending, true, PENDING_LOAD_ERROR);
@@ -341,6 +358,9 @@ function InstallationsSection({ token }: { token: string }) {
     else void changeInstallation({ request, action });
   }
 
+  const pendingPage = pendingState.status === "ready" ? pageOf(pendingState.data.items, pendingOffset) : null;
+  const approvedPage = approvedState.status === "ready" ? pageOf(approvedState.data.items, approvedOffset) : null;
+
   return <div id="instalaciones" className="dashboard-lower-grid platform-section">
     <section className="panel" aria-labelledby="pendientes-title">
       <div className="settings-header-row"><div><h2 id="pendientes-title" className="settings-section-title">Solicitudes pendientes</h2><p className="settings-section-subtitle">Solicitudes de instalación esperando revisión.</p></div></div>
@@ -350,7 +370,7 @@ function InstallationsSection({ token }: { token: string }) {
         ? <p className="settings-state-box">No hay solicitudes pendientes</p>
         : <div className="settings-table-wrapper"><table className="settings-table">
           <thead><tr><th>Organización</th><th>Modelo</th><th>Fecha</th><th>Acciones</th></tr></thead>
-          <tbody>{pendingState.data.items.map((request) => {
+          <tbody>{(pendingPage?.rows ?? []).map((request) => {
             const busy = pendingBusy.ids.has(request.id);
             return <tr key={request.id}>
               <td className="settings-cell-name">{request.organizationName}</td>
@@ -363,6 +383,7 @@ function InstallationsSection({ token }: { token: string }) {
             </tr>;
           })}</tbody>
         </table></div>)}
+      {pendingState.status === "ready" && pendingState.data.items.length > 0 && <ListPagination total={pendingState.data.items.length} offset={pendingPage?.offset ?? 0} onChange={setPendingOffset} />}
     </section>
 
     <section className="panel" aria-labelledby="curso-title">
@@ -373,8 +394,9 @@ function InstallationsSection({ token }: { token: string }) {
         ? <p className="settings-state-box">No hay instalaciones en curso</p>
         : <div className="settings-table-wrapper"><table className="settings-table">
           <thead><tr><th>Organización</th><th>Modelo</th><th>Operador</th><th>Estado</th><th>Acciones</th></tr></thead>
-          <tbody>{approvedState.data.items.map((request) => <InstallationRow key={request.id} request={request} busy={request.installationId !== null && installationBusy.ids.has(request.installationId)} onAction={(action) => requestInstallationChange(request, action)} />)}</tbody>
+          <tbody>{(approvedPage?.rows ?? []).map((request) => <InstallationRow key={request.id} request={request} busy={request.installationId !== null && installationBusy.ids.has(request.installationId)} onAction={(action) => requestInstallationChange(request, action)} />)}</tbody>
         </table></div>)}
+      {approvedState.status === "ready" && approvedState.data.items.length > 0 && <ListPagination total={approvedState.data.items.length} offset={approvedPage?.offset ?? 0} onChange={setApprovedOffset} />}
     </section>
 
     {approving && <ApproveDialog request={approving} busy={pendingBusy.ids.has(approving.id)} onCancel={() => setApproving(null)} onApprove={(input) => void approve(approving, input)} />}
