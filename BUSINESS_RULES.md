@@ -37,6 +37,7 @@ El rol Auditor no se implementa: la propuesta §7 define tres roles (ADR-008 §2
 4. Las operaciones de pago/renovación llevan el indicador de simulación y no hacen cargos reales. La activación y la renovación de planes con precio mayor que cero solicitan una **tarjeta de prueba**: solo se aceptan números ficticios fijos definidos en el código. Nunca se guarda ni se registra el número completo ni el CVV, solo los últimos cuatro dígitos de la tarjeta de prueba aprobada (ADR-008 §5, SPEC-305).
 5. Al vencer una suscripción se respetan los estados definidos en el diccionario (`active`, `expired`, `cancelled`) y se aplica una decisión de acceso/cuota documentada antes de programarla.
 6. La capacidad total se mide en bytes; convertir a GB solo para presentación. Nunca aceptar el valor de uso enviado por el cliente.
+7. Un rechazo de tarjeta de prueba (`402 PAYMENT_DECLINED`) no cambia la suscripción ni el historial, no hay cobro y se registra en auditoría con `PAYMENT_DECLINED` y resultado `failure` (SPEC-305). En un plan de US$0, si llega `payment`, no se usa para el cobro: no exige tarjeta ni se guarda; su formato sí se valida (400 `VALIDATION_ERROR` si es inválido). `card_last4` queda nulo.
 
 ## Carpetas, archivos y destinos
 
