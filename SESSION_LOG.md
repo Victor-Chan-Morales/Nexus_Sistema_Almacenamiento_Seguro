@@ -7,7 +7,7 @@ Registro dinámico de decisiones, acuerdos pendientes y bloqueos. Añada entrada
 
 ## 2026-11-10 — SPEC-305: pago simulado con tarjetas de prueba
 
-- **Estado:** En curso en `feat/305-pago-simulado-tarjetas` (desde `main`). La documentación se alinea con el plan: `CONTRACTS.md` en v0.6 (`payment` opcional en `activate`, cuerpo opcional `{ payment }` en `renew`, `cardLast4` en `GET /billing/operations`, errores 402 `PAYMENT_DECLINED` y 422 `TEST_CARD_REQUIRED`, subsección «Pago simulado»), `BUSINESS_RULES.md` (rechazo 402 y planes gratuitos) y el README de billing (`card_last4`). El código (migración `card_last4`, `PAYMENT_DECLINED` en auditoría, formulario de tarjeta) se verifica antes de abrir la PR; SPEC-407 ya estaba en `main`.
+- **Estado:** Implementada y verificada en `feat/305-pago-simulado-tarjetas` (desde `main`), lista para PR. La documentación se alinea con el plan: `CONTRACTS.md` en v0.6 (`payment` opcional en `activate`, cuerpo opcional `{ payment }` en `renew`, `cardLast4` en `GET /billing/operations`, errores 402 `PAYMENT_DECLINED` y 422 `TEST_CARD_REQUIRED`, subsección «Pago simulado»), `BUSINESS_RULES.md` (rechazo 402 y planes gratuitos) y el README de billing (`card_last4`). El código (migración `card_last4`, `PAYMENT_DECLINED` en auditoría, formulario de tarjeta) se verifica antes de abrir la PR; SPEC-407 ya estaba en `main`.
 - **Decisiones (plan, default aplicado):**
   - D1 (resuelto): la auditoría de `result = failure` la habilita SPEC-407, ya fusionada en `main`.
   - D2: orden en `activate`: idempotencia → cuota (422) → pago requerido (400) → validación de campos (400) → tarjeta de prueba (422) → simulación (402).
@@ -21,11 +21,15 @@ Registro dinámico de decisiones, acuerdos pendientes y bloqueos. Añada entrada
   - D10: `BillingService.subscribe()` (sin llamadores de producción, salta el pago) se elimina salvo que un spec lo necesite; si lo necesita, rechaza planes con precio mayor que 0.
   - D11: `holderName` es texto de 1 a 100 caracteres, sin más reglas.
   - Abiertas, sin cambios aplicados: D12 (partir la PR si el diff supera 400 líneas) y D13 (responsable de `billing/**`: `ENTS_REGISTRY.md` dice Anthony, `Orden de ejecucion specs` dice Víctor).
+- **Verificación (2026-11-10):**
+  - `npm run test:api`: 60 suites y 1 002 pruebas en verde (baseline de `main`: 58 suites y 936 pruebas). `build:api` y `build:web` correctos; `lint:web` sin errores.
+  - Migración `20261110090000_add_billing_operation_card_last4`: up, down y up verificados en una base temporal.
+  - Prueba de humo contra la API real y una base temporal: 12 casos (aprobada, rechazada, otra tarjeta, sin tarjeta, vencimiento, CVV, reactivación, renovación rechazada y aprobada, historial, plan gratuito). Ninguna respuesta, log ni tabla contiene el número de tarjeta, el titular ni el CVV.
+  - Capturas del escenario 10 en escritorio y móvil (390 px): `docs/evidencia/spec-305/RESUMEN.md`.
+- **Corrección posterior:** reactivar el plan vigente ya no muestra el formulario (commit `abff87a`). La suscripción vigente sale de `GET /dashboard`.
 - **Pendiente:**
-  - Capturas del escenario 10 (formulario, avisos y `/suscripcion/fallida`); son manuales y deben ir en la PR.
-  - Migración `20261110090000_add_billing_operation_card_last4`: verificar `up`, `down` y `up` contra PostgreSQL. Esta entrada no deja constancia de que se haya hecho.
-  - Conteo de pruebas frente al baseline de fase 0 (`npm run test:api`): sin comprobar en esta entrada.
-  - Coordinación con SPEC-503 en `CONTRACTS.md` y `SESSION_LOG.md`: las ediciones se hicieron en líneas nuevas o en secciones propias.
+  - D12 (tamaño de la PR): se abre una sola PR con excepción explícita al límite de 400 líneas, por las pruebas del backend. Víctor debe aceptarla al revisar.
+  - Coordinación con SPEC-503 en `CONTRACTS.md` y `SESSION_LOG.md`: las ediciones se hicieron en líneas nuevas o en secciones propias. Si 503 fusiona antes, hay que rebasar y repetir la suite completa.
 
 ## 2026-11-06 — SPEC-804: pantalla de almacenamiento y segundo S3 (T1 a T4)
 
