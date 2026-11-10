@@ -127,12 +127,13 @@ export default function SettingsPage() {
       await signOut();
       router.push("/login?empresa=cerrada");
     } catch (err) {
+      // SPEC-114 §8: se revisa `code` antes de failSession, que cierra la sesión ante cualquier 401.
+      if (err instanceof ApiError && err.code === "INVALID_CREDENTIALS") {
+        setCloseError("Contraseña incorrecta.");
+        return;
+      }
+      if (failSession(err)) return;
       if (err instanceof ApiError) {
-        // 401 aquí es contraseña incorrecta, no sesión vencida: no se llama a failSession.
-        if (err.status === 401 || err.code === "INVALID_CREDENTIALS") {
-          setCloseError("Contraseña incorrecta.");
-          return;
-        }
         if (err.status === 422 || err.code === "ORGANIZATION_NAME_MISMATCH") {
           setCloseError("El nombre de la empresa no coincide.");
           return;
