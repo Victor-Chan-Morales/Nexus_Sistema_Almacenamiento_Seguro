@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Param,
   Request,
   UseFilters,
   UseGuards,
@@ -9,6 +10,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { BillingService } from './billing.service';
 import {
   BillingOperationListResponse,
+  BillingReceiptResponse,
   PlanCatalogResponse,
 } from './billing.dto';
 import { ApiExceptionFilter } from '../../common/filters/api-exception.filter';
@@ -23,6 +25,7 @@ import { priceUsd } from './billing.utils';
  *
  * GET /api/plans → Lista catálogo de planes aprobado oficial (público / autenticado)
  * GET /api/billing/operations → Historial de operaciones simuladas de la organización (solo tenant_admin)
+ * GET /api/billing/operations/:id/receipt → Comprobante de una operación (SPEC-306, solo tenant_admin)
  *
  * Aplica ApiExceptionFilter para garantizar el formato canónico:
  * { code, message, requestId }
@@ -55,5 +58,24 @@ export class BillingController {
   ): Promise<BillingOperationListResponse> {
     const items = await this.billingService.listOperations(req.user.organizationId);
     return { items };
+  }
+
+  /**
+   * SPEC-306: GET /api/billing/operations/:id/receipt. El organizationId sale de la sesión, nunca de la petición.
+   */
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(Role.TENANT_ADMIN)
+  @Get('billing/operations/:id/receipt')
+  async getReceipt(
+    @Param('id') id: string,
+    @Request() req: { user: AuthUser },
+  ): Promise<BillingReceiptResponse> {
+    const receipt = await this.billingService.getReceipt(req.user.organizationId, id);
+    return {
+      ...receipt,
+      organizationName: req.user.organizationName,
+      currency: 'USD',
+      simulated: true,
+    };
   }
 }
