@@ -14,7 +14,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { Readable } from 'stream';
-import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, QueryFailedError, Raw, Repository } from 'typeorm';
 import { BillingService } from '../billing/billing.service';
 import { StorageRouter } from '../storage/storage-router.service';
 import { Destination } from './entities/destination.entity';
@@ -523,6 +523,8 @@ export class FilesService {
         parentId || drive.rootFolderId,
         { manager },
       );
+      const folderRepo = manager.getRepository(Folder);
+      await this.requireAvailableFolderName(folderRepo, organizationId, parentFolder.id, normalizedName);
       const { destination: defaultDestination } = await this.ensureTenantResources(manager, organizationId);
       const destination = await this.placement.resolveForNewFolder(manager, {
         organizationId,
@@ -530,7 +532,6 @@ export class FilesService {
         requestedDestinationId: destinationId,
         defaultDestination,
       });
-      const folderRepo = manager.getRepository(Folder);
       const saved = await folderRepo.save(folderRepo.create({
         organizationId,
         driveId: drive.id,
@@ -550,7 +551,7 @@ export class FilesService {
         destinationId: destination.id,
         destinationLocation: destination.location,
       };
-    });
+    }).catch((error: unknown) => this.rethrowFolderNameConflict(error));
 
     void this.auditService?.logEvent({
       organizationId,
@@ -561,6 +562,35 @@ export class FilesService {
     }).catch(() => {});
 
     return created;
+  }
+
+  private async requireAvailableFolderName(
+    repository: Repository<Folder>,
+    organizationId: string,
+    parentId: string,
+    name: string,
+  ): Promise<void> {
+    const exists = await repository.exists({
+      where: {
+        organizationId, parentId, isDeleted: false,
+        name: Raw((column) => `lower(${column}) = lower(:folderName)`, { folderName: name }),
+      },
+    });
+    if (exists) throw this.folderNameConflict();
+  }
+
+  private folderNameConflict(): HttpException {
+    return this.businessError(HttpStatus.CONFLICT, 'FOLDER_NAME_CONFLICT', 'Ya existe una carpeta con ese nombre');
+  }
+
+  private rethrowFolderNameConflict(error: unknown): never {
+    if (error instanceof QueryFailedError) {
+      const cause = error.driverError as { code?: string; constraint?: string };
+      if (cause.code === '23505' && cause.constraint === 'uq_folder_active_name_per_parent') {
+        throw this.folderNameConflict();
+      }
+    }
+    throw error;
   }
 
   async getFolderItems(
@@ -1300,12 +1330,7 @@ export class FilesService {
         throw this.businessError(HttpStatus.CONFLICT, 'PARENT_FOLDER_UNAVAILABLE', 'La carpeta contenedora no está disponible');
       }
 
-      const nameTaken = await folderRepo.exists({
-        where: { organizationId, driveId: drive.id, parentId: root.parentId, name: root.name, isDeleted: false },
-      });
-      if (nameTaken) {
-        throw this.businessError(HttpStatus.CONFLICT, 'FOLDER_NAME_CONFLICT', 'Ya existe una carpeta con ese nombre');
-      }
+      await this.requireAvailableFolderName(folderRepo, organizationId, root.parentId, root.name);
 
       await manager.query(
         'UPDATE files.folder SET is_deleted = false, deleted_at = NULL ' +
@@ -1321,7 +1346,7 @@ export class FilesService {
       const usage = await this.readStorageUsage(manager, organizationId);
       await this.writeQuotaCounters(manager, organizationId, usage);
       return { id: root.id, name: root.name, parentFolderId: root.parentId };
-    });
+    }).catch((error: unknown) => this.rethrowFolderNameConflict(error));
 
     void this.auditService?.logEvent({
       organizationId,

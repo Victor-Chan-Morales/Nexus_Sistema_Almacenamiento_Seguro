@@ -48,11 +48,12 @@ describe('Rutas de carpetas (SPEC-803) por HTTP', () => {
   let app: INestApplication;
   let currentModel: DeploymentModel | null;
   let createFolderSpy: jest.SpyInstance;
-  let folderRepo: { create: jest.Mock; save: jest.Mock };
+  let folderRepo: { exists: jest.Mock; create: jest.Mock; save: jest.Mock };
 
   beforeAll(async () => {
     const modelSource = { findDeploymentModel: jest.fn(async () => currentModel) };
     folderRepo = {
+      exists: jest.fn().mockResolvedValue(false),
       create: jest.fn((data: object) => ({ ...data })),
       save: jest.fn(async (data: object) => ({ id: 'carpeta-nueva', ...data })),
     };
@@ -112,6 +113,16 @@ describe('Rutas de carpetas (SPEC-803) por HTTP', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     currentModel = DeploymentModel.CLOUD;
+  });
+
+  it('SPEC-218: un nombre activo ocupado responde 409 sin guardar la carpeta', async () => {
+    folderRepo.exists.mockResolvedValueOnce(true);
+    await request(app.getHttpServer())
+      .post('/folders')
+      .send({ name: '  Contratos  ', parentFolderId: ROOT_ID })
+      .expect(409)
+      .expect(/FOLDER_NAME_CONFLICT/);
+    expect(folderRepo.save).not.toHaveBeenCalled();
   });
 
   it('el cuerpo que envía la web (name y parentFolderId) crea la carpeta en el predeterminado', async () => {

@@ -254,6 +254,8 @@ Documentan lo que el código ya devuelve (arreglo de tamaño de carpetas, SPEC-0
 
 ## Alcance final [v0.6]
 
+- **[v0.6, SPEC-218]** `POST /folders` recorta el nombre y responde `409 FOLDER_NAME_CONFLICT` si una carpeta activa ya lo usa bajo el mismo padre, sin distinguir mayúsculas. `POST /folders/:id/restore` aplica la misma regla. Los nombres de carpetas en papelera no reservan el nombre.
+
 - **[v0.6, SPEC-404]** `GET /audit/verify` (solo `tenant_admin`) comprueba la cadena de la organización de la sesión y devuelve `200 { valid, checkedEvents, firstBrokenEventId, reason, verifiedAt }`. `checkedEvents` incluye el primer evento inconsistente. Una cadena íntegra devuelve `null` en `firstBrokenEventId` y `reason`. Los motivos posibles son `SEQUENCE_GAP`, `PREV_HASH_MISMATCH` y `HASH_MISMATCH`. El borrado de los eventos finales no es detectable sin un checkpoint firmado.
 
 - **[v0.6, SPEC-216]** `GET /public/share-links/:token` sin sesión devuelve `{ requiresPassword, expiresAt }` y, solo para enlaces sin contraseña, `{ name, sizeBytes, mimeType }` de la versión fija. `POST /public/share-links/:token/download` con `{ password? }` devuelve los bytes de esa versión como adjunto. Enlace no disponible → `404 SHARE_LINK_UNAVAILABLE`; contraseña incorrecta o ausente → `401 SHARE_LINK_PASSWORD_INVALID`; cinco fallos por enlace e IP en 15 minutos → `429 TOO_MANY_ATTEMPTS` en los siguientes intentos. Las rutas públicas aplican `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff` y `Cache-Control: no-store`. La descarga y los fallos de contraseña emiten `SHARE_LINK_ACCESSED` con actor visitante, sin token, contraseña ni IP.
