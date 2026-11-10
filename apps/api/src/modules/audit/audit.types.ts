@@ -46,6 +46,7 @@ export enum AuditAction {
   INSTALLATION_REQUEST_APPROVED = 'INSTALLATION_REQUEST_APPROVED',
   INSTALLATION_REQUEST_REJECTED = 'INSTALLATION_REQUEST_REJECTED',
   INSTALLATION_STATUS_CHANGED = 'INSTALLATION_STATUS_CHANGED',
+  PLAN_UPDATED = 'PLAN_UPDATED',
 }
 
 /** Recurso afectado. `resource_type` es varchar(20). */
@@ -61,6 +62,7 @@ export enum AuditResource {
   ORGANIZATION = 'organization',
   INSTALLATION_REQUEST = 'installation_request',
   INSTALLATION = 'installation',
+  PLAN = 'plan',
 }
 
 /**
