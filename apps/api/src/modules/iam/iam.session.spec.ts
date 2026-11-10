@@ -108,7 +108,7 @@ describe('SPEC-501: isSuperAdmin en la sesión', () => {
 });
 
 describe('SPEC-501: IamController (login, refresh y /auth/me)', () => {
-  const controller = new IamController({} as never, {} as never, {} as never, { refreshCookie: { secure: false, sameSite: 'lax' } } as never, {} as never);
+  const controller = new IamController({} as never, {} as never, {} as never, { refreshCookie: { secure: false, sameSite: 'lax' } } as never, {} as never, {} as never);
   const authUser = (isSuperAdmin: boolean) => ({
     userId: 'u1', organizationId: 'o1', role: Role.TENANT_ADMIN,
     email: 'd@n.com', fullName: 'Dueño', organizationName: 'Nexus Plataforma', isSuperAdmin,
@@ -131,7 +131,7 @@ describe('SPEC-501: IamController (login, refresh y /auth/me)', () => {
       role: Role.TENANT_ADMIN, isSuperAdmin: true,
     };
     const auth = { authenticate: jest.fn().mockResolvedValue(result) };
-    const c = new IamController(auth as never, {} as never, {} as never, { refreshCookie: { secure: false, sameSite: 'lax' } } as never, {} as never);
+    const c = new IamController(auth as never, {} as never, {} as never, { refreshCookie: { secure: false, sameSite: 'lax' } } as never, {} as never, {} as never);
     const res = { cookie: jest.fn() };
     const body = await c.login({ email: 'd@n.com', password: 'x' } as never, res as never);
     expect(body.isSuperAdmin).toBe(true);
