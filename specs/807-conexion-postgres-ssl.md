@@ -13,7 +13,7 @@
 | **Prioridad** | P1 |
 | **Estimación** | 1.5 h |
 | **Hito Objetivo** | Despliegue público (10-Nov-2026) |
-| **Estado** | Borrador |
+| **Estado** | Aprobada (2026-11-09, Víctor Chán Morales) |
 
 ---
 
@@ -173,7 +173,7 @@ No aplica.
 
 | Riesgo | Mitigación |
 |---|---|
-| El certificado de Render no está en las autoridades del sistema | Se usa `POSTGRES_SSL_CA` con la autoridad que entregue Render. Ver pregunta en el chat antes de aprobar. |
+| El certificado de Render no está en las autoridades del sistema | Se usa `POSTGRES_SSL_CA` con la autoridad que entregue Render (ruta absoluta). Pre-vuelo TLS antes del despliegue (ver plan de implementación). |
 | Un error de SSL deja la API sin arrancar | Se documenta en `.env.example` y en la guía. El mensaje de error nombra la variable. |
 | Se filtra la contraseña de la base en los logs | Ningún mensaje de error ni de arranque incluye la contraseña ni el contenido de la autoridad. |
 | `API_PORT` y `PORT` distintos | Gana `API_PORT`, como indica la sección 5. |
@@ -223,3 +223,4 @@ Ninguna. Valor confirmado por Víctor: verificación con las autoridades del sis
 | Fecha | Autor | Descripción |
 |---|---|---|
 | 2026-11-09 | Revisión de coordinación | Versión inicial en borrador a partir del estado de `origin/main` (`58be6a5`). |
+| 2026-11-09 | Víctor Chán Morales | Aprobada. Se confirma D1: un valor vacío de `POSTGRES_SSL`, `POSTGRES_SSL_CA`, `API_PORT` o `PORT` cuenta como no definido. Se quita de §8 la referencia a una pregunta abierta; §12 no tiene preguntas abiertas. El pre-vuelo TLS contra Render sigue pendiente. |

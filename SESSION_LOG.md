@@ -195,3 +195,18 @@ Se aprobaron las propuestas 1 a 12: correo mediante EmailService, sesiones con a
 - Contrato: `CONTRACTS.md` v0.6 agrega las rutas, los códigos `DESTINATION_IN_USE` y `DESTINATION_ENDPOINT_NOT_ALLOWED`, los eventos `DESTINATION_*` y el tipo de recurso `destination`.
 - `ADR-006` §2.5 cambia: los destinos propios guardan credenciales cifradas con la llave maestra. La rotación de SPEC-005 debe re-cifrarlas.
 - Pendiente: T4, prueba manual con dos contenedores S3 (escenarios 3 y 10). La spec sigue en estado Aprobada hasta cerrarla.
+
+## 2026-11-09 — SPEC-807: conexión a PostgreSQL con SSL y puerto de la plataforma
+
+- Implementado en `feat/807-conexion-postgres-ssl` (desde `main` `8561e5e`): `buildPostgresSsl` (`apps/api/src/config/postgres-config.ts`) y `resolveApiPort` (`apps/api/src/config/api-port.ts`), con sus pruebas. Cableado en `app.module.ts` (`ssl`) y `main.ts` (puerto). `.env.example` con `POSTGRES_SSL` y `POSTGRES_SSL_CA`. Guía y catálogo actualizados.
+- Decisión D1 confirmada: un valor vacío de `POSTGRES_SSL`, `POSTGRES_SSL_CA`, `API_PORT` o `PORT` cuenta como no definido.
+- Verificación automática en `apps/api`: `npm run lint` sin errores (64 avisos, igual que antes del cambio), `tsc`, `build` y `npm test` (57 suites, 918 pruebas en verde; antes 55 y 893).
+- Verificación manual, build local:
+  - Escenario 6: `PORT=10000` sin `API_PORT` escucha en 10000 y `/api/health` responde 200.
+  - Escenarios 4, 5 y 9: el proceso termina con código 1 y el mensaje exacto, sin filtrar secretos.
+  - Cableado de SSL: con `POSTGRES_SSL=true` contra la base de desarrollo (sin SSL), PostgreSQL responde "The server does not support SSL connections". Eso confirma que la conexión pide TLS.
+  - Regresión local sin SSL (`.env.example`): escucha en 3001 y `/api/health` reporta PostgreSQL `up`.
+- Pendiente (requiere la URL externa de Render, que no está disponible en esta sesión):
+  - Pre-vuelo TLS: comprobar con `openssl s_client -starttls postgres` que el certificado de Render valida con las autoridades del sistema. Si no valida, usar `POSTGRES_SSL_CA` con ruta absoluta.
+  - Escenario 10: `npm run seed:super-admin` contra la base externa de Render con `POSTGRES_SSL=true`. No ejecutado.
+- Pendiente de decisión: PR a `main` y paso de la fila de `specs/README.md` a ✅ Hecho tras el merge.
