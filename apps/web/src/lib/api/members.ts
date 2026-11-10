@@ -3,7 +3,9 @@ import type {
   AddMemberInput,
   AddMemberResponse,
   ApiRequestOptions,
+  OrganizationMember,
   OrganizationMembersResponse,
+  UpdateMemberInput,
 } from "./types";
 
 /** SPEC-106: Obtiene los miembros de la organización (GET /organizations/members). */
@@ -23,6 +25,39 @@ export function addMember(input: AddMemberInput, accessToken?: string, options?:
       method: "POST",
       body: JSON.stringify(input),
       headers: { "Content-Type": "application/json" },
+    },
+    { ...options, accessToken },
+  );
+}
+
+/** SPEC-109 / SPEC-108: Modifica rol o estado de un miembro (PATCH /organizations/members/:id). */
+export function updateMember(
+  id: string,
+  input: UpdateMemberInput,
+  accessToken?: string,
+  options?: ApiRequestOptions,
+) {
+  return apiRequest<OrganizationMember>(
+    `/organizations/members/${id}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+      headers: { "Content-Type": "application/json" },
+    },
+    { ...options, accessToken },
+  );
+}
+
+/** SPEC-109 / SPEC-108: Elimina un colaborador de la organización (DELETE /organizations/members/:id). */
+export function removeMember(
+  id: string,
+  accessToken?: string,
+  options?: ApiRequestOptions,
+) {
+  return apiRequest<void>(
+    `/organizations/members/${id}`,
+    {
+      method: "DELETE",
     },
     { ...options, accessToken },
   );
