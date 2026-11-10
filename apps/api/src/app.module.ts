@@ -1,6 +1,8 @@
+import { readFileSync } from 'fs';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { buildPostgresSsl } from './config/postgres-config';
 
 // Módulos de dominio — cada uno es independiente dentro del mismo proceso
 import { IamModule } from './modules/iam/iam.module';
@@ -31,6 +33,11 @@ import { AuditModule } from './modules/audit/audit.module';
         username: config.get('POSTGRES_USER', 'nexus_dev'),
         password: config.get('POSTGRES_PASSWORD', 'local_only_change_me'),
         database: config.get('POSTGRES_DB', 'nexus_dev'),
+        // SPEC-807: SSL solo si POSTGRES_SSL=true (por defecto no). POSTGRES_SSL_CA añade la autoridad propia.
+        ssl: buildPostgresSsl(
+          (key) => config.get<string>(key),
+          (path) => readFileSync(path, 'utf8'),
+        ),
 
         // Carga automáticamente las entidades registradas con TypeOrmModule.forFeature (IAM, etc.)
         autoLoadEntities: true,
