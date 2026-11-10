@@ -13,7 +13,7 @@ const S3ClientMock = S3Client as unknown as jest.Mock;
 const ORG = 'org-1';
 const OTHER_ORG = 'org-2';
 const MASTER_KEY = Buffer.alloc(32, 7).toString('base64');
-const crypto = new FilesCryptoService({ get: () => MASTER_KEY } as unknown as ConfigService);
+const crypto = new FilesCryptoService(new ConfigService({ FILES_MASTER_KEY: MASTER_KEY }));
 
 /** Configuración de entorno tal como la guarda FilesService: referencias cifradas, no credenciales. */
 const ENVIRONMENT_CIPHERTEXT = crypto.encryptConnectionDetails(

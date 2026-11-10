@@ -81,11 +81,16 @@ const setup = (allowPrivate = 'false') => {
       const row = rows.find((r) => r.id === where.id && r.organizationId === where.organizationId);
       return row ? { ...row } : null;
     }),
-    create: (data: Partial<Destination>) => ({ ...data }),
-    save: jest.fn(async (entity: Partial<Destination>) => upsert(entity)),
+    update: jest.fn(async (where: { id: string; organizationId: string }, changes: Partial<Destination>) => {
+      const row = rows.find((r) => r.id === where.id && r.organizationId === where.organizationId);
+      if (row) upsert({ ...row, ...changes });
+    }),
   };
 
   const manager = {
+    query: jest.fn().mockResolvedValue([]),
+    findOneBy: jest.fn().mockResolvedValue(null),
+    create: (_entity: unknown, data: Partial<Destination>) => ({ ...data }),
     findOne: jest.fn(async (_entity: unknown, { where }: { where: { id: string; organizationId: string } }) => {
       const row = rows.find((r) => r.id === where.id && r.organizationId === where.organizationId);
       return row ? { ...row } : null;
@@ -293,13 +298,13 @@ describe('DestinationsService (SPEC-802)', () => {
     it.each(['http://127.0.0.1:9000', 'http://169.254.169.254', 'http://[::1]:9000'])(
       'rechaza %s con 422 y no guarda nada',
       async (endpoint) => {
-        const { service, repository } = setup();
+        const { service, manager } = setup();
 
         const error = await failure(service.create(createDto({ endpoint }), ACTOR));
 
         expect(error?.getStatus()).toBe(422);
         expect(error?.getResponse()).toMatchObject({ code: 'DESTINATION_ENDPOINT_NOT_ALLOWED' });
-        expect(repository.save).not.toHaveBeenCalled();
+        expect(manager.save).not.toHaveBeenCalled();
       },
     );
 

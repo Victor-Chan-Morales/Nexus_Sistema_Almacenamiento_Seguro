@@ -97,14 +97,7 @@ export class FileVersionsService {
       const storage = await this.storageRouter.forRead(organizationId, version.destinationId);
       const objectStream = await storage.get(version.objectKey);
       const objectBytes = await this.readStream(objectStream);
-      return this.crypto.decryptFile(
-        organizationId,
-        file.id,
-        version.versionNumber,
-        version.encryptedDek,
-        version.checksum,
-        objectBytes,
-      );
+      return await this.crypto.decryptStoredVersion(this.versionRepository.manager, organizationId, version, objectBytes);
     } catch (error) {
       if (error instanceof HttpException) throw error;
       this.logger.error('No se pudo leer la versión ' + version.id + ' del archivo ' + file.id + ': ' + String(error));

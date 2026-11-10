@@ -141,6 +141,7 @@ describe('SPEC-801: compensación de una carga en el destino donde se escribió'
       defaultBucketName: 'nexus',
     };
     const crypto = {
+      keyVersionFromReference: jest.fn().mockReturnValue(1),
       encryptFile: jest.fn().mockReturnValue({
         bytes: Buffer.from('cifrado'),
         checksum: 'sum',
@@ -216,7 +217,7 @@ describe('SPEC-801: almacén por destino de la versión', () => {
       get: jest.fn().mockResolvedValue(Readable.from([Buffer.from('cifrado')])),
     };
     const storageRouter = { forRead: jest.fn().mockResolvedValue(storage), forWrite: jest.fn() };
-    const crypto = { decryptFile: jest.fn().mockReturnValue(Buffer.from('texto plano')) };
+    const crypto = { decryptStoredVersion: jest.fn().mockResolvedValue(Buffer.from('texto plano')) };
     const driveAccess = new DriveAccessService({} as never);
     jest.spyOn(driveAccess, 'locateFile').mockResolvedValue({
       file: file as never, folder: { isDeleted: false } as never,
@@ -297,6 +298,7 @@ describe('SPEC-803 escenario 9: cada carpeta principal escribe en su propio dest
       defaultBucketName: 'nexus',
     };
     const crypto = {
+      keyVersionFromReference: jest.fn().mockReturnValue(1),
       encryptFile: jest.fn().mockReturnValue({ bytes: Buffer.from('cifrado'), checksum: 'sum', encryptedDek: 'dek', formatVersion: 1 }),
     };
     const billingService = { getStorageLimitBytes: jest.fn().mockResolvedValue(BigInt(1_000_000)) };

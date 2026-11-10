@@ -15,7 +15,7 @@ const INVALID_REFERENCE = 'La referencia cifrada del archivo no es válida';
 const newMasterKey = () => randomBytes(32).toString('base64');
 
 const serviceWith = (masterKey: string | undefined) =>
-  new FilesCryptoService({ get: () => masterKey } as unknown as ConfigService);
+  new FilesCryptoService({ get: (name: string) => name === 'FILES_MASTER_KEY' ? masterKey : undefined } as ConfigService);
 
 const flipByte = (source: Buffer, position: number) => {
   const copy = Buffer.from(source);
@@ -41,6 +41,45 @@ describe('FilesCryptoService', () => {
   const plaintext = Buffer.from('contenido confidencial de prueba');
 
   const encrypt = (content: Buffer = plaintext) => service.encryptFile(ORG, FILE, VERSION, content);
+
+  describe('SPEC-005: llaves maestras versionadas', () => {
+    const config = new ConfigService({
+      FILES_MASTER_KEY: masterKey,
+      FILES_MASTER_KEY_V2: newMasterKey(),
+      FILES_MASTER_KEY_CURRENT_VERSION: '2',
+    });
+    const rotating = new FilesCryptoService(config);
+
+    it('lee una DEK v1 por su referencia aunque la versión configurada sea v2', async () => {
+      const encrypted = encrypt();
+      const version = {
+        fileId: FILE, versionNumber: VERSION, kekId: 'old-key',
+        encryptedDek: encrypted.encryptedDek, checksum: encrypted.checksum,
+      };
+      const manager = { findOneBy: jest.fn().mockResolvedValue({ externalReference: service.externalKeyReference(ORG) }) };
+      await expect(rotating.decryptStoredVersion(manager as never, ORG, version as never, encrypted.bytes)).resolves.toEqual(plaintext);
+      expect(manager.findOneBy).toHaveBeenCalledWith(expect.anything(), { id: 'old-key', organizationId: ORG });
+    });
+
+    it('reenvuelve solo la DEK y conserva los bytes y el checksum del objeto', () => {
+      const encrypted = encrypt();
+      const rewrapped = rotating.rewrapDek(ORG, FILE, VERSION, encrypted.encryptedDek, 1, 2);
+      expect(rewrapped).not.toBe(encrypted.encryptedDek);
+      expect(rotating.decryptFile(ORG, FILE, VERSION, rewrapped, encrypted.checksum, encrypted.bytes, 2)).toEqual(plaintext);
+      expect(() => rotating.decryptFile(ORG, FILE, VERSION, rewrapped, encrypted.checksum, encrypted.bytes, 1)).toThrow();
+    });
+
+    it('usa la versión configurada para una carga nueva y conserva el contexto de destinos', () => {
+      const encrypted = rotating.encryptFile(ORG, FILE, VERSION, plaintext);
+      expect(rotating.decryptFile(ORG, FILE, VERSION, encrypted.encryptedDek, encrypted.checksum, encrypted.bytes, 2)).toEqual(plaintext);
+      expect(rotating.keyVersionFromReference(rotating.externalKeyReference(ORG), ORG)).toBe(2);
+      const legacy = service.encryptConnectionDetails(ORG, 'datos de prueba');
+      const next = rotating.encryptConnectionDetails(ORG, rotating.decryptConnectionDetails(ORG, legacy));
+      expect(next.startsWith('k2.')).toBe(true);
+      expect(rotating.decryptConnectionDetails(ORG, next)).toBe('datos de prueba');
+      expect(() => rotating.decryptConnectionDetails('otra-organización', next)).toThrow();
+    });
+  });
 
   describe('Escenario 1: ida y vuelta', () => {
     it.each([
