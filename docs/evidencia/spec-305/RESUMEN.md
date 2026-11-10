@@ -38,7 +38,7 @@ Chromium headless con Playwright, contra la web y la API reales. Escritorio a 12
 
 ## Prueba de humo de la API
 
-Contra la base temporal, 12 casos en verde:
+Contra la base temporal, 12 casos en verde (la prueba se repitió tras rebasar la rama sobre `main` con SPEC-503, con el mismo resultado):
 
 1. Login del administrador.
 2. Activar Team con `4242` → 201, la suscripción cambia.
@@ -66,7 +66,7 @@ Contra la base temporal, 12 casos en verde:
 
 ## Desviaciones y notas
 
-- El botón "Cancelar" del formulario de renovación se ve como botón con borde, no como enlace. Es cosmético y queda pendiente.
+- El botón "Cancelar" del formulario de renovación se veía como botón con borde. Se corrigió: ahora tiene aspecto de enlace (regla `button.billing-secondary-link` en `globals.css`). `c07` y `m02` se regeneraron con la corrección, y se comprobó en el navegador que el borde y el fondo nativos desaparecen y que el botón cierra el formulario.
 - Las capturas usan el servidor de desarrollo de Next.js, que muestra un indicador "N" en la esquina inferior izquierda. No forma parte de la aplicación.
 - Las capturas son posteriores a la corrección de reactivar el plan vigente (commit `abff87a`).
 - Los mensajes de validación del DTO para mes 13 o CVV de 2 dígitos llegan al usuario como "Datos ausentes o mal formados", porque el filtro de errores no reenvía mensajes sin `code`. El formulario valida el formato antes de enviar, así que el usuario normalmente no llega a ese caso.
