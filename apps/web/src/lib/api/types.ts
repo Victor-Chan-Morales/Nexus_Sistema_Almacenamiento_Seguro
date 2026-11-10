@@ -427,3 +427,13 @@ export type PlatformMetrics = {
   usedBytes: number;
   subscriptionsByPlan: { planName: string; count: number }[];
 };
+
+// SPEC-114: Cierre de empresa
+export type CloseOrganizationInput = {
+  organizationName: string;
+  password: string;
+};
+
+export type CloseOrganizationResponse = {
+  closed: boolean;
+};

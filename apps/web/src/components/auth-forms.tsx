@@ -42,6 +42,7 @@ function messageFor(error: unknown, fallback: string) {
 export function LoginForm() {
   const router = useRouter();
   const { signIn, restoring } = useSession();
+  const companyClosed = useSearchParams().get("empresa") === "cerrada";
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   async function submit(e: FormEvent<HTMLFormElement>) {
@@ -70,6 +71,7 @@ export function LoginForm() {
     <section className="login-form-pane"><div className="login-card">
       {restoring ? <span className="auth-back" aria-disabled="true">Regresar</span> : <AuthBack href="/" />}
       <h1>Bienvenido</h1><p className="login-lead">Conéctate con tu espacio de trabajo digital y lleva tu productividad al siguiente nivel.</p>
+      {companyClosed && <div className="notice" role="status">Tu empresa fue cerrada. Tus archivos se conservan en la plataforma.</div>}
       <form onSubmit={submit} noValidate>
         <div className="field login-field"><label htmlFor="login-email">Correo electrónico</label><input id="login-email" name="email" type="email" autoComplete="email" placeholder="Ejemplo@correo.com" required /></div>
         <div className="field login-field"><label htmlFor="login-password">Contraseña</label><input id="login-password" name="password" type="password" autoComplete="current-password" placeholder="Ingresa tu contraseña" required /></div>
