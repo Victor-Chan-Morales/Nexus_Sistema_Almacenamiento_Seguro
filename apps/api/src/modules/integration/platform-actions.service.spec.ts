@@ -167,6 +167,10 @@ function setup(seed: { orgs?: OrgRow[]; requests?: RequestRow[]; installations?:
         const ids = (query.where.id as { value: string[] }).value;
         return orgs.filter((o) => ids.includes(o.id)).map((o) => project(o, query.select));
       }
+      if (entity === Installation) {
+        const ids = (query.where.requestId as { value: string[] }).value;
+        return installations.filter((i) => ids.includes(i.requestId)).map((i) => project(i, query.select));
+      }
       throw new Error('entidad inesperada en find');
     }),
   };
@@ -431,8 +435,114 @@ describe('PlatformActionsService (SPEC-503)', () => {
           status: 'Pendiente',
           createdAt: '2026-11-06T10:00:00.000Z',
           reviewedAt: null,
+          installationId: null,
+          installationStatus: null,
+          operatorName: null,
+          hostReference: null,
         },
       ]);
+    });
+
+    it('solicitud sin instalación (Pendiente) devuelve los cuatro campos de instalación en null (SPEC-502)', async () => {
+      const { service } = setup({
+        orgs: [org(CLIENT_ORG, 'Cliente SA', 'active')],
+        requests: [request({ requestId: REQ_A, status: 'Pendiente' })],
+      });
+
+      const { items } = await service.listInstallationRequests();
+
+      expect(items[0]).toMatchObject({
+        id: REQ_A,
+        installationId: null,
+        installationStatus: null,
+        operatorName: null,
+        hostReference: null,
+      });
+    });
+
+    it('solicitud Aprobada con instalación devuelve id, estado, operador y referencia de la instalación (SPEC-502)', async () => {
+      const { service } = setup({
+        orgs: [org(CLIENT_ORG, 'Cliente SA', 'active')],
+        requests: [
+          request({
+            requestId: REQ_A,
+            status: 'Aprobada',
+            reviewedAt: new Date('2026-11-07T09:00:00Z'),
+          }),
+        ],
+        installations: [
+          installation({
+            installationId: INSTALLATION_ID,
+            requestId: REQ_A,
+            status: 'Pendiente',
+            operatorName: 'Ana Operadora',
+            hostReference: 'srv-01.cliente.test',
+          }),
+        ],
+      });
+
+      const { items } = await service.listInstallationRequests();
+
+      expect(items[0]).toEqual({
+        id: REQ_A,
+        organizationId: CLIENT_ORG,
+        organizationName: 'Cliente SA',
+        requestedModel: DeploymentModel.ON_PREMISES,
+        status: 'Aprobada',
+        createdAt: '2026-11-06T10:00:00.000Z',
+        reviewedAt: '2026-11-07T09:00:00.000Z',
+        installationId: INSTALLATION_ID,
+        installationStatus: 'Pendiente',
+        operatorName: 'Ana Operadora',
+        hostReference: 'srv-01.cliente.test',
+      });
+    });
+
+    it('lista mezclada: cada solicitud recibe solo su propia instalación y una única consulta a instalaciones (SPEC-502)', async () => {
+      const { service, manager } = setup({
+        orgs: [org(CLIENT_ORG, 'Cliente SA', 'active'), org(OTHER_CLIENT_ORG, 'Otra SA', 'active')],
+        requests: [
+          request({ requestId: REQ_A, createdAt: new Date('2026-11-06T10:00:00Z') }),
+          request({
+            requestId: REQ_B,
+            organizationId: OTHER_CLIENT_ORG,
+            status: 'Rechazada',
+            createdAt: new Date('2026-11-07T10:00:00Z'),
+            reviewedAt: new Date('2026-11-08T10:00:00Z'),
+          }),
+          request({
+            requestId: REQ_C,
+            organizationId: OTHER_CLIENT_ORG,
+            status: 'Aprobada',
+            createdAt: new Date('2026-11-08T10:00:00Z'),
+            reviewedAt: new Date('2026-11-09T10:00:00Z'),
+          }),
+        ],
+        installations: [
+          installation({
+            installationId: INSTALLATION_ID,
+            requestId: REQ_C,
+            organizationId: OTHER_CLIENT_ORG,
+            status: 'En proceso',
+            operatorName: 'Luis Operador',
+            hostReference: null,
+          }),
+        ],
+      });
+
+      const { items } = await service.listInstallationRequests();
+
+      expect(items.map((i) => [i.id, i.installationId, i.installationStatus])).toEqual([
+        [REQ_A, null, null],
+        [REQ_B, null, null],
+        [REQ_C, INSTALLATION_ID, 'En proceso'],
+      ]);
+      expect(items[2]).toMatchObject({ operatorName: 'Luis Operador', hostReference: null });
+      const installationCalls = manager.find.mock.calls.filter(([entity]) => entity === Installation);
+      expect(installationCalls).toHaveLength(1);
+      expect(installationCalls[0][1]).toMatchObject({
+        select: { installationId: true, requestId: true, status: true, operatorName: true, hostReference: true },
+      });
     });
 
     it('serializa reviewedAt cuando la solicitud ya fue revisada', async () => {
@@ -467,15 +577,48 @@ describe('PlatformActionsService (SPEC-503)', () => {
       expect(Object.keys(call.select)).not.toContain('assignedOperator');
       expect(JSON.stringify(items)).not.toMatch(/@|requestedBy|assignedOperator|Operador Interno/);
       expect(Object.keys(items[0]).sort()).toEqual(
-        ['createdAt', 'id', 'organizationId', 'organizationName', 'requestedModel', 'reviewedAt', 'status'].sort(),
+        [
+          'createdAt',
+          'hostReference',
+          'id',
+          'installationId',
+          'installationStatus',
+          'operatorName',
+          'organizationId',
+          'organizationName',
+          'requestedModel',
+          'reviewedAt',
+          'status',
+        ].sort(),
       );
     });
 
-    it('sin solicitudes devuelve { items: [] } sin consultar organizaciones', async () => {
+    it('sin solicitudes devuelve { items: [] } sin consultar organizaciones ni instalaciones', async () => {
       const { service, manager } = setup({ requests: [] });
 
       await expect(service.listInstallationRequests()).resolves.toEqual({ items: [] });
       expect(manager.find).toHaveBeenCalledTimes(1);
+      expect(manager.find).toHaveBeenCalledWith(InstallationRequest, expect.anything());
+    });
+
+    it('con filtro de status solo consulta instalaciones de las solicitudes filtradas (SPEC-502)', async () => {
+      const { service, manager } = setup({
+        orgs: [org(CLIENT_ORG, 'Cliente SA', 'active'), org(OTHER_CLIENT_ORG, 'Otra SA', 'active')],
+        requests: seeded(),
+        installations: [
+          installation({ installationId: INSTALLATION_ID, requestId: REQ_C, organizationId: OTHER_CLIENT_ORG, status: 'Operativa' }),
+          installation({ installationId: NEW_INSTALLATION_ID, requestId: REQ_A, status: 'Pendiente' }),
+        ],
+      });
+
+      const { items } = await service.listInstallationRequests('Aprobada');
+
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({ id: REQ_C, installationId: INSTALLATION_ID, installationStatus: 'Operativa' });
+      const installationCalls = manager.find.mock.calls.filter(([entity]) => entity === Installation);
+      expect(installationCalls).toHaveLength(1);
+      const requestIdFilter = installationCalls[0][1].where.requestId as { value: string[] };
+      expect(requestIdFilter.value).toEqual([REQ_C]);
     });
   });
 

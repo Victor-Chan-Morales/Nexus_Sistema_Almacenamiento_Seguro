@@ -17,7 +17,10 @@ import { SessionService } from '../iam/services/session.service';
 import { Installation, InstallationStatus } from './entities/installation.entity';
 import { InstallationRequest, InstallationRequestStatus } from './entities/installation-request.entity';
 
-/** Elemento de la lista de solicitudes del Super Admin (SPEC-503 §4, escenario 4). Sin correos ni nombres de archivo. */
+/**
+ * Elemento de la lista de solicitudes del Super Admin (SPEC-503 §4, escenario 4). Sin correos ni nombres de archivo.
+ * Los campos de instalación (SPEC-502, ampliación aditiva) son null cuando la solicitud no tiene instalación.
+ */
 export interface InstallationRequestAdminItem {
   id: string;
   organizationId: string;
@@ -26,6 +29,10 @@ export interface InstallationRequestAdminItem {
   status: InstallationRequestStatus;
   createdAt: string;
   reviewedAt: string | null;
+  installationId: string | null;
+  installationStatus: InstallationStatus | null;
+  operatorName: string | null;
+  hostReference: string | null;
 }
 
 /**
@@ -139,16 +146,31 @@ export class PlatformActionsService {
     });
     const names = new Map(orgs.map((org) => [org.id, org.name]));
 
+    // Una sola consulta a admin.installation por requestId (uq_installation_request: como mucho una por solicitud).
+    const requestIds = rows.map((row) => row.requestId);
+    const installations = await this.dataSource.manager.find(Installation, {
+      select: { installationId: true, requestId: true, status: true, operatorName: true, hostReference: true },
+      where: { requestId: In(requestIds) },
+    });
+    const installationByRequest = new Map(installations.map((installation) => [installation.requestId, installation]));
+
     return {
-      items: rows.map((row) => ({
-        id: row.requestId,
-        organizationId: row.organizationId,
-        organizationName: names.get(row.organizationId) ?? '',
-        requestedModel: row.requestedModel,
-        status: row.status,
-        createdAt: row.createdAt.toISOString(),
-        reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
-      })),
+      items: rows.map((row) => {
+        const installation = installationByRequest.get(row.requestId);
+        return {
+          id: row.requestId,
+          organizationId: row.organizationId,
+          organizationName: names.get(row.organizationId) ?? '',
+          requestedModel: row.requestedModel,
+          status: row.status,
+          createdAt: row.createdAt.toISOString(),
+          reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
+          installationId: installation?.installationId ?? null,
+          installationStatus: installation?.status ?? null,
+          operatorName: installation?.operatorName ?? null,
+          hostReference: installation?.hostReference ?? null,
+        };
+      }),
     };
   }
 

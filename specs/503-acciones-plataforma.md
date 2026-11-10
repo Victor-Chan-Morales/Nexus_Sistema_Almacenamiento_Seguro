@@ -74,7 +74,7 @@ Escenario 10: Auditoría
 |---|---|---|
 | `POST /platform/organizations/:id/suspend` | — | `200 { id, status }` |
 | `POST /platform/organizations/:id/reactivate` | — | `200 { id, status }` |
-| `GET /platform/installation-requests` | `?status` | `{ items: [...] }` |
+| `GET /platform/installation-requests` | `?status` | `{ items: [...] }`; cada item añade `installationId`, `installationStatus`, `operatorName` y `hostReference` (`null` sin instalación; SPEC-502) |
 | `POST /platform/installation-requests/:id/approve` | `{ operatorName, hostReference? }` | `200 { requestId, installationId }` |
 | `POST /platform/installation-requests/:id/reject` | — | `200 { requestId, status }` |
 | `PATCH /platform/installations/:id` | `{ status }` | `200 { id, status }` |
@@ -121,3 +121,4 @@ Ninguna.
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
+| 2026-11-10 | Claude Code (ampliación) | Lista de solicitudes incluye la instalación asociada, aprobado por el coordinador para SPEC-502. |
