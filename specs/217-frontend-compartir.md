@@ -84,7 +84,7 @@ No modifica la base de datos.
 - [ ] **T3 (50 min)**: Página pública.
 - [ ] **T4 (20 min)**: Prueba manual.
 
-**Archivos permitidos:** `components/share-dialog.tsx`, `app/compartido/[token]/page.tsx`, `lib/api/public-share.ts` (nuevos), `components/file-browser-live.tsx` (solo el botón y el diálogo), `lib/api/files.ts`, `lib/api/types.ts`, `app/globals.css`.
+**Archivos permitidos:** `components/share-dialog.tsx`, `app/compartido/[token]/page.tsx`, `lib/api/public-share.ts` (nuevos), `components/file-browser-live.tsx` (solo el botón y el diálogo), `lib/api/files.ts`, `lib/api/types.ts`, `lib/api/client.ts` (solo el parámetro de método y cuerpo de `apiRequestBlob`, necesario para la descarga pública por `POST`; ver §13), `app/globals.css`.
 
 ## 10. Estrategia de Pruebas
 
@@ -106,3 +106,4 @@ Ninguna.
 |---|---|---|
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
+| 2026-11-10 | Claude Code (implementación) | Excepción D1 confirmada antes de implementar: `lib/api/client.ts` se añade a "Archivos permitidos". `apiRequestBlob` acepta un `RequestInit` opcional (por defecto `GET`) porque la descarga pública de SPEC-216 es un `POST` con cuerpo JSON. Las llamadas existentes no cambian. |

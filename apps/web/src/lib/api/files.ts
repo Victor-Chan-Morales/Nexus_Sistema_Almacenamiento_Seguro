@@ -1,5 +1,5 @@
 import { apiRequest, apiRequestBlob, filenameFromContentDisposition } from "./client";
-import type { ApiRequestOptions, CreateFolderInput, CreateFolderResponse, DeleteFileResponse, FileMetadata, FileVersionsResponse, FolderItemsResponse, FolderListResponse, PurgeFileResponse, RestoreFileResponse, RestoredFileVersionResponse, TrashResponse, UUID, UploadFileResponse } from "./types";
+import type { ApiRequestOptions, CreateFolderInput, CreateShareLinkInput, CreatedShareLink, CreateFolderResponse, DeleteFileResponse, FileMetadata, FileVersionsResponse, FolderItemsResponse, FolderListResponse, PurgeFileResponse, RestoreFileResponse, RestoredFileVersionResponse, ShareLinksResponse, TrashResponse, UUID, UploadFileResponse } from "./types";
 
 export function listFolders(accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
   return apiRequest<FolderListResponse>("/folders", { method: "GET" }, { ...options, accessToken });
@@ -78,4 +78,25 @@ export function restoreFileVersion(fileId: UUID, versionId: UUID, accessToken: s
 /** SPEC-202/205: mueve un archivo activo a la papelera (borrado lógico). */
 export function deleteFile(fileId: UUID, accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
   return apiRequest<DeleteFileResponse>(`/files/${encodeURIComponent(fileId)}`, { method: "DELETE" }, { ...options, accessToken });
+}
+
+/** SPEC-217: crea un enlace compartido. No envía `password` si viene vacía (la API exige mínimo 8 caracteres). */
+export function createShareLink(fileId: UUID, input: CreateShareLinkInput, accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
+  const body: CreateShareLinkInput = { expiresInDays: input.expiresInDays };
+  if (input.password) body.password = input.password;
+  return apiRequest<CreatedShareLink>(`/files/${encodeURIComponent(fileId)}/share-links`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+  }, { ...options, accessToken });
+}
+
+/** SPEC-217: lista los enlaces compartidos de un archivo propio. */
+export function listShareLinks(fileId: UUID, accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
+  return apiRequest<ShareLinksResponse>(`/files/${encodeURIComponent(fileId)}/share-links`, { method: "GET" }, { ...options, accessToken });
+}
+
+/** SPEC-217: revoca un enlace compartido (204 sin cuerpo). */
+export function revokeShareLink(linkId: UUID, accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
+  return apiRequest<void>(`/share-links/${encodeURIComponent(linkId)}`, { method: "DELETE" }, { ...options, accessToken });
 }
