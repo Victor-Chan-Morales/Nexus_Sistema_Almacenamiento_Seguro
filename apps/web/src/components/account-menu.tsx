@@ -9,7 +9,7 @@ import { initialsOf, useSession } from "@/lib/session";
 export function AccountMenu({ name, email }: { name: string; email: string }) {
   const menuRef = useRef<HTMLDetailsElement>(null);
   const router = useRouter();
-  const { signOut } = useSession();
+  const { session, signOut } = useSession();
 
   useEffect(() => {
     function closeOnOutsideClick(event: PointerEvent) {
@@ -48,6 +48,7 @@ export function AccountMenu({ name, email }: { name: string; email: string }) {
       <div className="account-menu-summary"><b>{name}</b><span>{email}</span></div>
       <Link href="/perfil"><UiIcon name="user" size={16} />Mi perfil</Link>
       <Link href="/configuracion"><UiIcon name="settings" size={16} />Configuración</Link>
+      {session?.isSuperAdmin && <Link href="/dashboard/super-admin"><UiIcon name="organizations" size={16} />Consola de plataforma</Link>}
       <button type="button" onClick={handleSignOut}><UiIcon name="logout" size={16} />Cerrar sesión</button>
     </div>
   </details>;

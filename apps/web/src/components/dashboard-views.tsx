@@ -135,23 +135,3 @@ export function DashboardDemoView({ variant = "standard" }: { variant?: Dashboar
     {quotaMode && <p className="dashboard-demo-note">Vista de cuota alcanzada. Las cargas deben bloquearse al exceder el límite del plan.</p>}
   </AppShell>;
 }
-
-const adminOrganizations = [
-  { name: "Acme Guatemala", plan: "Business", status: "Activa", color: "good" },
-  { name: "Corporación S.A.", plan: "Demo", status: "Activa", color: "good" },
-  { name: "Nexus Demo", plan: "Demo", status: "Pendiente", color: "pending" },
-];
-
-export function SuperAdminDashboard() {
-  return <AppShell active="/dashboard/super-admin" superAdmin demo><div className="dashboard-page-heading"><div><p className="eyebrow">CONSOLA DE PLATAFORMA</p><h1>Resumen global</h1><p>Estado general de Nexus y sus organizaciones.</p></div><span className="admin-demo-badge">Métricas simuladas</span></div>
-    <section className="platform-health-banner"><span className="platform-health-indicator"/><div><b>Plataforma operativa</b><p>Estado de demostración · No conectado a telemetría real</p></div><span className="platform-health-check">Operativa</span></section>
-    <div className="admin-metrics-grid"><a href="#organizaciones" className="admin-metric-card"><span>ORGANIZACIONES</span><b>3</b><small>2 activas · 1 pendiente</small></a><a href="#planes" className="admin-metric-card"><span>PLANES</span><b>4</b><small>Demo · Team · Business · Enterprise</small></a><a href="#instalaciones" className="admin-metric-card"><span>INSTALACIONES</span><b>1</b><small>Entorno de demostración</small></a><a href="#actividad" className="admin-metric-card"><span>ACTIVIDAD GLOBAL</span><b>12</b><small>Eventos recientes de muestra</small></a></div>
-    <div className="dashboard-lower-grid admin-content-grid">
-      <section className="panel" id="organizaciones"><div className="dashboard-section-heading"><div><h2>Organizaciones</h2><p>Tenants registrados en la plataforma.</p></div><Link href="/configuracion">Administrar <UiIcon name="arrowRight" size={14} /></Link></div><div className="admin-org-list">{adminOrganizations.map((org) => <div className="admin-org-row" key={org.name}><span className="org-avatar">{org.name.charAt(0)}</span><div><b>{org.name}</b><small>Plan {org.plan}</small></div><span className={`admin-org-status ${org.color}`}>{org.status}</span></div>)}</div></section>
-      <section className="panel" id="planes"><div className="dashboard-section-heading"><div><h2>Planes disponibles</h2><p>Propuesta de catálogo SaaS mensual.</p></div><Link href="/planes">Ver catálogo <UiIcon name="arrowRight" size={14} /></Link></div><div className="admin-plan-row"><span><b>Demo</b><small>5 GB · hasta 5 usuarios</small></span><strong>Gratis</strong></div><div className="admin-plan-row"><span><b>Team</b><small>100 GB · hasta 10 usuarios</small></span><strong>US$19.99</strong></div><div className="admin-plan-row"><span><b>Business</b><small>500 GB · hasta 30 usuarios</small></span><strong>US$59.99</strong></div><div className="admin-plan-row"><span><b>Enterprise</b><small>2 TB · hasta 100 usuarios</small></span><strong>US$149.99</strong></div></section>
-      <section className="panel" id="instalaciones"><div className="dashboard-section-heading"><div><h2>Instalaciones</h2><p>Destinos e infraestructura de ejemplo.</p></div></div><div className="admin-installation"><span className="dashboard-metric-icon violet"><UiIcon name="storage" size={17} /></span><div><b>Cloud de demostración</b><small>Proveedor no conectado</small></div><span className="admin-org-status pending">Simulado</span></div></section>
-      <section className="panel" id="actividad"><div className="dashboard-section-heading"><div><h2>Actividad global</h2><p>Eventos recientes de muestra.</p></div><Link href="/auditoria">Abrir auditoría <UiIcon name="arrowRight" size={14} /></Link></div><div className="admin-global-event"><span className="activity-icon violet"><UiIcon name="plus" size={15} /></span><div><b>Se registró una organización</b><small>Nexus Demo · Hace 18 min</small></div></div><div className="admin-global-event"><span className="activity-icon blue"><UiIcon name="plans" size={15} /></span><div><b>Se activó un plan Business</b><small>Acme Guatemala · Hace 1 h</small></div></div><div className="admin-global-event"><span className="activity-icon coral"><UiIcon name="settings" size={15} /></span><div><b>Se revisó una instalación</b><small>Cloud de demostración · Hoy</small></div></div></section>
-    </div>
-    <p className="dashboard-demo-note">La vista Super Admin es solo una maqueta. Las cifras y los eventos no proceden de la base de datos.</p>
-  </AppShell>;
-}

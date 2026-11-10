@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Brand } from "@/components/brand";
@@ -14,10 +15,10 @@ const navigation = [
   ["audit", "Auditoría", "/auditoria"], ["subscription", "Suscripción", "/suscripcion"], ["user", "Mi perfil", "/perfil"], ["storage", "Almacenamiento", "/almacenamiento"], ["settings", "Configuración", "/configuracion"],
 ] as const;
 
+/** SPEC-502: anclas reales de la consola de plataforma (misma página). */
 const adminNavigation = [
   ["dashboard", "Resumen global", "/dashboard/super-admin"], ["organizations", "Organizaciones", "/dashboard/super-admin#organizaciones"],
-  ["plans", "Planes", "/dashboard/super-admin#planes"], ["install", "Instalaciones", "/dashboard/super-admin#instalaciones"],
-  ["activity", "Actividad global", "/dashboard/super-admin#actividad"],
+  ["install", "Instalaciones", "/dashboard/super-admin#instalaciones"],
 ] as const;
 
 const roleLabels: Record<string, string> = { tenant_admin: "Administrador", owner: "Propietario", colaborador: "Colaborador", member: "Miembro", auditor: "Auditor" };
@@ -25,19 +26,28 @@ const roleLabels: Record<string, string> = { tenant_admin: "Administrador", owne
 /**
  * Marco del espacio de trabajo. Exige sesión válida en el cliente (la API valida de nuevo cada request).
  * `demo` solo se activa en pantallas que todavía no consumen la API.
+ * `requireSuperAdmin` (SPEC-502) oculta el contenido a quien no sea Super Admin y lo redirige a /dashboard.
  */
-export function AppShell({ active, children, superAdmin = false, demo = false }: { active: string; children: React.ReactNode; superAdmin?: boolean; demo?: boolean }) {
-  return <RequireSession>{(session) => <ShellFrame active={active} superAdmin={superAdmin} demo={demo} name={session.user.fullName} email={session.user.email} organization={session.organization.name} role={session.role}>{children}</ShellFrame>}</RequireSession>;
+export function AppShell({ active, children, superAdmin = false, demo = false, requireSuperAdmin = false }: { active: string; children: React.ReactNode; superAdmin?: boolean; demo?: boolean; requireSuperAdmin?: boolean }) {
+  return <RequireSession>{(session) => <ShellFrame active={active} superAdmin={superAdmin} demo={demo} requireSuperAdmin={requireSuperAdmin} name={session.user.fullName} email={session.user.email} organization={session.organization.name} role={session.role}>{children}</ShellFrame>}</RequireSession>;
 }
 
-function ShellFrame({ active, children, superAdmin, demo, name, email, organization, role }: { active: string; children: React.ReactNode; superAdmin: boolean; demo: boolean; name: string; email: string; organization: string; role: string }) {
+function ShellFrame({ active, children, superAdmin, demo, requireSuperAdmin, name, email, organization, role }: { active: string; children: React.ReactNode; superAdmin: boolean; demo: boolean; requireSuperAdmin: boolean; name: string; email: string; organization: string; role: string }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { signOut } = useSession();
+  const { session, signOut } = useSession();
+  // Sesión sin Super Admin: se redirige. Sin sesión confirmada, RequireSession decide (login o sesión vencida).
+  const wrongRole = requireSuperAdmin && session !== null && !session.isSuperAdmin;
+  const notConfirmed = requireSuperAdmin && !session?.isSuperAdmin;
+  useEffect(() => {
+    if (wrongRole) router.replace("/dashboard");
+  }, [wrongRole, router]);
   const initials = initialsOf(name);
   const items = superAdmin ? adminNavigation : navigation;
   const currentItem = items.find(([, , href]) => href === active || pathname.startsWith(`${href}/`));
   const currentLabel = currentItem?.[1] ?? (pathname.includes("archivos/") ? "Mis archivos" : "Espacio de trabajo");
+  // Sin contenido hasta confirmar el permiso: no se pinta nada mientras se redirige.
+  if (notConfirmed) return null;
   return <div className="app-shell">
     <aside className="sidebar">
       <Link href="/dashboard" className="brand-link"><Brand /></Link>

@@ -582,38 +582,23 @@ h1, h2, h3 { font-family: "Inter", Arial, sans-serif; }
 .dashboard-activity-item small, .dashboard-activity-item time { margin-top: 4px; color: #8790a0; font-size: 8.4px; }
 .dashboard-activity-item time { flex: 0 0 auto; }
 .dashboard-demo-note { margin: 15px 0 0; color: #8b92a1; font-size: 9.45px; text-align: right; }
-.admin-demo-badge { padding: 7px 10px; border: 1px solid #f0dda9; border-radius: 20px; background: #fff9e9; color: #80601d; font-size: 9.45px; font-weight: 700; }
-.platform-health-banner { display: flex; align-items: center; gap: 12px; margin-bottom: 17px; padding: 14px 17px; border: 1px solid #cfe8d6; border-radius: 12px; background: #f3faf5; }
-.platform-health-indicator { width: 10px; height: 10px; border-radius: 50%; background: #38a15c; box-shadow: 0 0 0 4px #38a15c1c; }
-.platform-health-banner > div { flex: 1; }
-.platform-health-banner b { color: #2f6941; font-size: 12.6px; }
-.platform-health-banner p { margin: 4px 0 0; color: #718078; font-size: 9.45px; }
-.platform-health-check { color: #38734c; font-size: 10.5px; font-weight: 800; }
 .admin-metrics-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; }
 .admin-metric-card { display: grid; gap: 7px; padding: 17px; border: 1px solid var(--line); border-radius: 13px; background: white; }
 .admin-metric-card > span { color: #858d9c; font-size: 9.45px; font-weight: 800; letter-spacing: .08em; }
 .admin-metric-card > b { color: var(--brand); font-size: 28.35px; }
 .admin-metric-card > small { color: #7b8494; font-size: 9.45px; }
+.platform-stack { display: grid; gap: 24px; }
+.platform-section { scroll-margin-top: 20px; }
+.platform-wide-card { grid-column: 1 / -1; }
+.platform-plan-list { display: grid; gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
+.platform-plan-list li { display: flex; justify-content: space-between; gap: 12px; color: #374052; font-size: .875rem; }
+.platform-plan-list li b { color: var(--brand); }
+.platform-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; font-size: .875rem; }
+.platform-field-error { margin: 0; color: #af4255; font-size: .8125rem; }
+.platform-spinner { display: inline-block; width: .8em; height: .8em; margin-left: 6px; border: 2px solid var(--color-ice); border-top-color: var(--color-purple); border-radius: 50%; vertical-align: -.05em; }
+@media (prefers-reduced-motion: no-preference) { .platform-spinner { animation: nexus-spin .8s linear infinite; } }
 .admin-content-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .admin-content-grid > .panel { scroll-margin-top: 20px; }
-.admin-org-list { display: grid; }
-.admin-org-row { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-top: 1px solid #eff1f5; }
-.admin-org-row > div { flex: 1; }
-.admin-org-row b, .admin-org-row small { display: block; }
-.admin-org-row b, .admin-plan-row b, .admin-installation b { color: #374052; font-size: 10.5px; }
-.admin-org-row small, .admin-plan-row small, .admin-installation small { display: block; margin-top: 4px; color: #838c9b; font-size: 9.45px; }
-.admin-org-status { padding: 5px 8px; border-radius: 15px; font-size: 8.4px; font-weight: 700; }
-.admin-org-status.good { background: #edf8f1; color: #33734a; }
-.admin-org-status.pending { background: #fff7e8; color: #8b671f; }
-.admin-plan-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-top: 1px solid #eff1f5; }
-.admin-plan-row > strong { color: #3c4659; font-size: 10.5px; }
-.admin-installation { display: flex; align-items: center; gap: 11px; padding: 14px 0; border-top: 1px solid #eff1f5; }
-.admin-installation > div { flex: 1; }
-.admin-global-event { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-top: 1px solid #eff1f5; }
-.admin-global-event > div { min-width: 0; }
-.admin-global-event b, .admin-global-event small { display: block; }
-.admin-global-event b { color: #384052; font-size: 9.45px; }
-.admin-global-event small { margin-top: 4px; color: #8790a0; font-size: 8.4px; }
 
 @media (max-width: 980px) {
   .dashboard-metrics, .admin-metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
