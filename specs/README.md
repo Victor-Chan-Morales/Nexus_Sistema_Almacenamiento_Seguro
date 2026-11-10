@@ -110,7 +110,7 @@ Todas siguen el flujo normal de aprobación y fusión.
 | `SPEC-214` | [Arrastrar y soltar e íconos por tipo](214-arrastrar-iconos.md) | N1 | UI/UX §8 | P1 | — | Aprobada |
 | `SPEC-215` | [Purga automática a los 30 días](215-purga-automatica.md) | N2 | RF-009, RF-013 | P1 | 221, 407 | Aprobada |
 | `SPEC-216` | [Acceso público al enlace](216-acceso-publico-enlace.md) | N2 | RF-010, RF-011, RF-012 | P1 | 209, 210, 407 | Aprobada |
-| `SPEC-217` | [Pantallas de compartir](217-frontend-compartir.md) | N1 | RF-010, RF-011 | P1 | 209, 216 | Aprobada |
+| `SPEC-217` | [Pantallas de compartir](217-frontend-compartir.md) | N1 | RF-010, RF-011 | P1 | 209, 216 | ✅ Hecho |
 | `SPEC-218` | [Nombres de carpeta únicos](218-nombres-carpeta-unicos.md) | N2 | RF-007 | P1 | 221 | Aprobada |
 | `SPEC-220` | [Equipos y sus miembros](220-equipos-miembros.md) | N2 | RF-006, RF-003 | P1 | 221 | ✅ Hecho |
 | `SPEC-221` | [Centralizar el acceso a Drives](221-acceso-drive.md) | N2 | RF-006, RF-007, RF-003 | P1 | 006 | ✅ Hecho |

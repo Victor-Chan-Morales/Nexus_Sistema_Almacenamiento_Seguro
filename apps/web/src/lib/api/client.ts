@@ -78,8 +78,8 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}, option
   }
 }
 
-export async function apiRequestBlob(path: string, options: ApiRequestOptions = {}) {
-  const response = await apiFetch(path, { method: "GET" }, options);
+export async function apiRequestBlob(path: string, options: ApiRequestOptions = {}, init: RequestInit = { method: "GET" }) {
+  const response = await apiFetch(path, init, options);
   return {
     blob: await response.blob(),
     contentDisposition: response.headers.get("content-disposition"),

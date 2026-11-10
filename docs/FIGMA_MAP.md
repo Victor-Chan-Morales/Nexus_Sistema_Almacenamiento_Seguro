@@ -25,6 +25,8 @@
 | Pendiente: planes/contratación | `/planes` | Víctor | Billing — Anthony | No | Pendiente | Estructura de ruta |
 | Pendiente: dashboard | `/dashboard` | Víctor | IAM/Billing/Files | No | Pendiente | Estructura de ruta |
 | Pendiente: explorador de archivos | `/archivos` | Víctor | Files/Storage — Miguel | No | Pendiente | Estructura de ruta |
+| Sin frame identificado; comportamiento definido en SPEC-217 §4 y §7 | Diálogo "Compartir" en `/archivos` (botón en la fila y en el panel de detalle) | Víctor | Files — SPEC-209 | No | Vigencia de 1, 7 o 30 días; contraseña opcional (mínimo 8); enlace mostrado una vez con "Copiar"; lista con vencimiento, protección y estado; revocar con confirmación | Implementación inicial conectada a la API (SPEC-209); verificada con pruebas de navegador, sin cotejo con frame |
+| Sin frame identificado; comportamiento definido en SPEC-217 §4 y §7 | `/compartido/[token]` | Víctor | Files — SPEC-216 | No | Sin contraseña: nombre, tamaño, vencimiento y "Descargar". Con contraseña: campo sin mostrar el nombre. Errores: "Este enlace no está disponible", contraseña incorrecta y demasiados intentos | Implementación inicial conectada a la API (SPEC-216); verificada con pruebas de navegador, sin cotejo con frame |
 
 ## Cómo completar cada fila
 

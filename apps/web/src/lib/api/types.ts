@@ -520,3 +520,44 @@ export type CloseOrganizationInput = {
 export type CloseOrganizationResponse = {
   closed: boolean;
 };
+
+// SPEC-217
+export type ShareLinkStatus = "active" | "expired" | "revoked";
+export type ShareExpiryDays = 1 | 7 | 30;
+
+export type CreateShareLinkInput = {
+  expiresInDays: ShareExpiryDays;
+  password?: string;
+};
+
+export type CreatedShareLink = {
+  id: UUID;
+  token: string;
+  versionId: UUID;
+  expiresAt: string;
+  hasPassword: boolean;
+  createdAt: string;
+};
+
+export type ShareLinkItem = {
+  id: UUID;
+  versionId: UUID;
+  expiresAt: string;
+  hasPassword: boolean;
+  status: ShareLinkStatus;
+  createdAt: string;
+  revokedAt: string | null;
+};
+
+export type ShareLinksResponse = {
+  items: ShareLinkItem[];
+};
+
+/** SPEC-216. Sin sesión. `name`, `sizeBytes` y `mimeType` solo cuando no hay contraseña. */
+export type PublicShareLinkInfo = {
+  requiresPassword: boolean;
+  expiresAt: string;
+  name?: string;
+  sizeBytes?: number;
+  mimeType?: string;
+};
