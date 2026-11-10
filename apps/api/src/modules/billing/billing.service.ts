@@ -456,4 +456,54 @@ export class BillingService implements OnModuleInit {
       },
     };
   }
+
+  // ── SPEC-504: edición del catálogo ────────────────────────────────────────
+
+  /**
+   * Bloquea la fila del plan (SELECT ... FOR UPDATE) dentro de la transacción del llamador.
+   * El plan Demo no es editable: se rechaza antes de cualquier escritura.
+   */
+  async lockPlanForUpdate(manager: EntityManager, planId: string): Promise<Plan> {
+    const plan = await manager.findOne(Plan, {
+      where: { id: planId },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!plan) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'El plan solicitado no existe' });
+    }
+    if (plan.name === 'Demo') {
+      throw new UnprocessableEntityException({ code: 'PLAN_NOT_EDITABLE', message: 'El plan Demo no se puede editar' });
+    }
+    return plan;
+  }
+
+  /**
+   * Aplica solo los campos definidos en `changes` y guarda el plan.
+   * Unidades: `priceCents` en centavos (el transformer lo convierte a USD); `storageLimitBytes` en bytes, nunca en GB.
+   */
+  async applyPlanChanges(manager: EntityManager, plan: Plan, changes: PlanChanges): Promise<Plan> {
+    if (changes.priceCents !== undefined) {
+      plan.priceCents = changes.priceCents;
+    }
+    if (changes.storageLimitBytes !== undefined) {
+      plan.storageLimitBytes = changes.storageLimitBytes;
+    }
+    if (changes.maxMembers !== undefined) {
+      plan.maxMembers = changes.maxMembers;
+    }
+    if (changes.description !== undefined) {
+      plan.description = changes.description;
+    }
+    return manager.save(plan);
+  }
+}
+
+// ── SPEC-504: edición del catálogo ──
+
+/** Cambios parciales de un plan (SPEC-504). Solo se aplican los campos presentes. */
+export interface PlanChanges {
+  priceCents?: number;
+  storageLimitBytes?: string;
+  maxMembers?: number;
+  description?: string;
 }
