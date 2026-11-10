@@ -172,6 +172,7 @@ Todas siguen el flujo normal de aprobación y fusión.
 | `SPEC-804` | [Pantalla de almacenamiento](804-frontend-almacenamiento.md) | N2 | RF-014 | P1 | 803 | ✅ Hecho |
 | `SPEC-805` | [Instalación on-premises en un comando](805-instalacion-on-premises.md) | N2 | RF-015, RNF-010 | P1 | 801 | Aprobada |
 | `SPEC-806` | [HTTPS y cabeceras de seguridad](806-https-cabeceras.md) | N2 | RNF-002, RNF-011 | P1 | 805 | Aprobada |
+| `SPEC-807` | [Conexión a PostgreSQL con SSL y puerto](807-conexion-postgres-ssl.md) | N2 | RNF-002, RNF-010 | P1 | — | Aprobada |
 
 ---
 

@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { INestApplication, Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { ApiExceptionFilter } from './common/filters/api-exception.filter';
+import { resolveApiPort } from './config/api-port';
 
 const logger = new Logger('Bootstrap');
 
@@ -50,7 +51,8 @@ async function configureAndListen(app: INestApplication) {
   // Error común de CONTRACTS.md: { code, message, requestId } (sin stack ni datos internos)
   app.useGlobalFilters(new ApiExceptionFilter());
 
-  const port = process.env.API_PORT ?? 3001;
+  // SPEC-807: API_PORT, luego PORT (Render), luego 3001.
+  const port = resolveApiPort((key) => process.env[key]);
   await app.listen(port);
   logger.log(`Nexus API corriendo en http://localhost:${port}/api`);
 }

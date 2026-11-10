@@ -75,6 +75,12 @@ Editar `.env` solo si se necesita cambiar puertos o credenciales locales. Para A
 
 No subir `.env` a Git ni compartir sus secretos. `.env.example` contiene valores de desarrollo y no debe reutilizarse en producción.
 
+### Conexión a PostgreSQL con SSL y puerto de la API (SPEC-807)
+
+- `POSTGRES_SSL`: `false` por defecto. Con `true`, la API conecta a PostgreSQL con TLS. Cualquier otro valor que no sea `true` o `false` impide el arranque.
+- `POSTGRES_SSL_CA`: vacía por defecto. Si se define, es la **ruta absoluta** a un archivo PEM con la autoridad del certificado. Si está vacía, el certificado se verifica con las autoridades del sistema. Solo aplica con `POSTGRES_SSL=true`.
+- Puerto de la API: `API_PORT` tiene prioridad. Si no está definida, la API usa `PORT`, que asigna la plataforma (Render). Si ninguna está definida, usa `3001`. En Render basta con `PORT`; no hace falta definir `API_PORT`.
+
 ## 4. Iniciar PostgreSQL y SeaweedFS
 
 Desde la raíz del proyecto:
@@ -237,6 +243,8 @@ La sincronización automática del esquema es una comodidad exclusiva del desarr
 | SeaweedFS Filer | `localhost:8888` | `8888` |
 | SeaweedFS local, perfil `s3-local` (S3) | `localhost:8334` | `8333` |
 
+La API escucha en `API_PORT`; si no está definida, usa `PORT` (la asigna Render) y, si tampoco lo está, `3001` (SPEC-807).
+
 Si un puerto ya está ocupado, cerrar el proceso que lo usa o coordinar un cambio de puerto en Compose y `.env`. Si se cambia un puerto, todos los integrantes deben actualizar la misma configuración documentada.
 
 ## 9. Problemas frecuentes
@@ -249,6 +257,8 @@ Abrir Docker Desktop, esperar a que indique que está funcionando y volver a eje
 
 - En desarrollo local, revisar `POSTGRES_HOST=127.0.0.1` y `POSTGRES_PORT=5433` en `.env`.
 - Si la API corre dentro de Compose, usar el host `postgres` y puerto interno `5432` (el perfil de Compose los configura).
+- Si el servidor exige SSL (por ejemplo, la URL externa de Render), poner `POSTGRES_SSL=true`. Si el certificado no lo reconoce el sistema, definir `POSTGRES_SSL_CA` con la ruta absoluta del PEM.
+- El mensaje `POSTGRES_SSL_CA no se pudo leer` indica que la ruta no existe o no se puede leer. El mensaje `POSTGRES_SSL debe ser true o false` indica un valor inválido.
 - Revisar `docker compose logs postgres` y que el contenedor esté iniciado.
 
 ### La API no conecta a SeaweedFS
