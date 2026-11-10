@@ -16,6 +16,25 @@ import type {
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
+/** SPEC-504: cuerpo de PATCH /platform/plans/:id. Todos los campos son opcionales; al menos uno debe enviarse. */
+export interface PlatformPlanUpdateInput {
+  priceMonthly?: number;
+  storageLimitGb?: number;
+  userLimit?: number;
+  description?: string;
+}
+
+/** SPEC-504: plan del catálogo tal como lo devuelve la API (storageLimitBytes en bytes). */
+export interface PlatformPlan {
+  id: string;
+  name: string;
+  description: string;
+  priceMonthly: number;
+  storageLimitBytes: number;
+  userLimit: number;
+  validityDays: number | null;
+}
+
 /** SPEC-502: mensajes en español por código de error de la API de plataforma. */
 const PLATFORM_ERROR_MESSAGES = new Map<string, string>([
   ["PLATFORM_ADMIN_REQUIRED", "Tu cuenta no tiene permiso de administración de la plataforma."],
@@ -27,6 +46,9 @@ const PLATFORM_ERROR_MESSAGES = new Map<string, string>([
   ["INSTALLATION_REQUEST_NOT_FOUND", "El elemento ya no existe."],
   ["INSTALLATION_NOT_FOUND", "El elemento ya no existe."],
   ["VALIDATION_ERROR", "Revisa los datos enviados."],
+  ["PLAN_NOT_EDITABLE", "El plan Demo no se puede editar."],
+  ["PLAN_LIMIT_BELOW_USAGE", "Hay organizaciones suscritas cuyo uso supera el nuevo límite de almacenamiento. Reduce el límite o pide que liberen espacio."],
+  ["NOT_FOUND", "El plan ya no existe. Se actualizó la lista."],
 ]);
 
 /** SPEC-502: métricas globales de la plataforma (GET /platform/metrics; solo Super Admin). */
@@ -115,6 +137,20 @@ export function updateInstallationStatus(
 ) {
   return apiRequest<UpdatePlatformInstallationResponse>(
     `/platform/installations/${encodeURIComponent(installationId)}`,
+    { method: "PATCH", body: JSON.stringify(input), headers: JSON_HEADERS },
+    { ...options, accessToken },
+  );
+}
+
+/** SPEC-504: edita precio, almacenamiento (GB), usuarios o descripción de un plan (PATCH /platform/plans/:id; solo Super Admin). */
+export function updatePlatformPlan(
+  accessToken: string,
+  planId: UUID,
+  input: PlatformPlanUpdateInput,
+  options?: Omit<ApiRequestOptions, "accessToken">,
+) {
+  return apiRequest<PlatformPlan>(
+    `/platform/plans/${encodeURIComponent(planId)}`,
     { method: "PATCH", body: JSON.stringify(input), headers: JSON_HEADERS },
     { ...options, accessToken },
   );
