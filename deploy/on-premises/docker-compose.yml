@@ -55,7 +55,7 @@ services:
       seaweedfs:
         condition: service_healthy
     environment:
-      NODE_ENV: production
+      NODE_ENV: ${NEXUS_API_NODE_ENV:-development}
       API_PORT: "3001"
       WEB_URL: http://${NEXUS_PUBLIC_HOST:-localhost}:${NEXUS_WEB_PORT:-3000}
       POSTGRES_HOST: postgres
@@ -76,9 +76,15 @@ services:
       FILES_MASTER_KEY_CURRENT_VERSION: ${FILES_MASTER_KEY_CURRENT_VERSION:-1}
       COOKIE_SECURE: "false"
       IAM_REQUIRE_VERIFIED_EMAIL: ${IAM_REQUIRE_VERIFIED_EMAIL:-false}
+      MAIL_TRANSPORT: ${MAIL_TRANSPORT:-smtp}
+      GMAIL_SENDER: ${GMAIL_SENDER:-}
+      GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID:-}
+      GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET:-}
+      GMAIL_REFRESH_TOKEN: ${GMAIL_REFRESH_TOKEN:-}
       MAIL_HOST: ${MAIL_HOST:-}
       MAIL_PORT: ${MAIL_PORT:-587}
       MAIL_SECURE: ${MAIL_SECURE:-false}
+      MAIL_REQUIRE_TLS: ${MAIL_REQUIRE_TLS:-}
       MAIL_USER: ${MAIL_USER:-}
       MAIL_PASS: ${MAIL_PASS:-}
       MAIL_FROM: ${MAIL_FROM:-Nexus <no-reply@nexus.local>}

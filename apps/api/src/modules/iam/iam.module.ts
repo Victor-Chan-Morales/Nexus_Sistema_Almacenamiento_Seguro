@@ -16,6 +16,7 @@ import { IamController } from './iam.controller';
 import { IamSettings } from './iam.settings';
 import { Argon2PasswordHasher } from './infrastructure/argon2-password-hasher';
 import { CryptoOpaqueTokens } from './infrastructure/crypto-opaque-tokens';
+import { DnsEmailDomainChecker } from './infrastructure/dns-email-domain-checker';
 import { EmailService } from './infrastructure/email.service';
 import { JwtAccessTokenIssuer } from './infrastructure/jwt-access-token-issuer';
 import { OutboxCipher } from './infrastructure/outbox-cipher';
@@ -39,6 +40,7 @@ import {
 import { AccessTokenIssuer, OpaqueTokens, PasswordHasher } from './ports/security';
 import { UnitOfWork } from './ports/transaction';
 import { VerificationMailer } from './ports/verification-mailer';
+import { EmailDomainChecker } from './ports/email-domain-checker';
 import { MemberAdmission } from './member-admission';
 import { MembersController } from './members.controller';
 import { RegistrationHooks } from './registration-hooks';
@@ -106,6 +108,7 @@ function resolveJwtSecret(config: ConfigService): string {
     { provide: AccessTokenIssuer, useClass: JwtAccessTokenIssuer },
     { provide: OpaqueTokens, useClass: CryptoOpaqueTokens },
     { provide: VerificationMailer, useClass: EmailService },
+    { provide: EmailDomainChecker, useClass: DnsEmailDomainChecker },
   ],
   exports: [
     AccountNotices,

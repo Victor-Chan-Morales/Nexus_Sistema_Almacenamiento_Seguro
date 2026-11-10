@@ -13,6 +13,11 @@ import {
  * Los mensajes son seguros y uniformes (no revelan si un correo existe).
  */
 export const IamErrors = {
+  invalidEmailDomain: () =>
+    new BadRequestException({
+      code: 'EMAIL_DOMAIN_INVALID',
+      message: 'Este correo no puede recibir mensajes. Revisa que el dominio esté bien escrito.',
+    }),
   emailTaken: () =>
     new ConflictException({ code: 'EMAIL_ALREADY_REGISTERED', message: 'El correo ya está registrado' }),
   invalidCredentials: () =>

@@ -187,6 +187,8 @@ getUsedStorageBytes(organizationId: string): Promise<bigint>
 
 `POST /organizations/members` (solo `tenant_admin`): cuerpo `{ "fullName": "...", "email": "...", "role": "tenant_admin" | "colaborador" }`. Respuesta `201`: `{ id, userId, email, fullName, role, status: "active", createdAt }`. Crea la cuenta con contraseña aleatoria inutilizable y encola un correo `member_invitation` con un enlace a `/nueva-contrasena?token=...` de **24 h**.
 
+**Dominio de correo (SPEC-117).** `POST /auth/register` y `POST /organizations/members` devuelven `400 EMAIL_DOMAIN_INVALID` si el dominio tiene un MX nulo o carece de MX, A y AAAA. Una falla temporal de DNS permite continuar. El rechazo se produce antes de crear cuentas, membresías, organizaciones o mensajes. Recuperación de contraseña y reenvío de verificación conservan sus contratos.
+
 **Invitación vencida:** el administrador no puede reinvitar (`MEMBER_ALREADY_EXISTS`) y el reintento del outbox no emite token nuevo. La salida es que la persona use **"Olvidé mi contraseña"** (`POST /auth/forgot-password`), que emite un token de 15 minutos y deja la cuenta verificada. Es el comportamiento previsto, no un error; la pantalla de miembros debe indicarlo.
 
 | HTTP | `code` | Causa |

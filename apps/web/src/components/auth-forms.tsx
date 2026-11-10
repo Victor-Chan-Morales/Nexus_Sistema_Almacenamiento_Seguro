@@ -88,9 +88,11 @@ export function LoginForm() {
 export function RegisterForm() {
   const router = useRouter();
   const [error, setError] = useState("");
+  const [emailError, setEmailError] = useState("");
   const [busy, setBusy] = useState(false);
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    setEmailError("");
     const form = new FormData(e.currentTarget);
     const name = String(form.get("name") ?? "").trim();
     const email = String(form.get("email") ?? "").trim().toLowerCase();
@@ -107,14 +109,21 @@ export function RegisterForm() {
       await register({ fullName: name, email, password, organizationName: organization });
       router.push(`/registro/completado?email=${encodeURIComponent(email)}`);
     } catch (err) {
-      setError(messageFor(err, "No fue posible crear la cuenta."));
+      if (err instanceof ApiError && err.code === "EMAIL_DOMAIN_INVALID") setEmailError(err.message);
+      else setError(messageFor(err, "No fue posible crear la cuenta."));
       setBusy(false);
     }
   }
   return <AuthFrame className="register-card" title="Crea tu cuenta" lead="Comienza a guardar tus archivos de forma segura.">
     <form className="auth-form" onSubmit={submit} noValidate>
       <div className="field"><label htmlFor="register-name">Nombre completo</label><input id="register-name" name="name" autoComplete="name" placeholder="Ej. Ana Martínez" required /></div>
-      <div className="field"><label htmlFor="register-email">Correo electrónico</label><input id="register-email" name="email" type="email" autoComplete="email" placeholder="tu@correo.com" required /></div>
+      <div className="field">
+        <label htmlFor="register-email">Correo electrónico</label>
+        <input id="register-email" name="email" type="email" autoComplete="email" placeholder="tu@correo.com" required
+          aria-invalid={Boolean(emailError)} aria-describedby={emailError ? "register-email-error" : undefined}
+          onChange={() => setEmailError("")} />
+        {emailError && <div id="register-email-error" className="auth-alert" role="alert">{emailError}</div>}
+      </div>
       <div className="field"><label htmlFor="register-organization">Nombre de la organización</label><input id="register-organization" name="organization" autoComplete="organization" placeholder="Nombre de tu organización" required /></div>
       <div className="field"><label htmlFor="register-password">Contraseña</label><input id="register-password" name="password" type="password" autoComplete="new-password" placeholder="Mínimo 8 caracteres" required /><small>Incluye una mayúscula y un número.</small></div>
       <div className="field"><label htmlFor="register-confirmation">Confirmar contraseña</label><input id="register-confirmation" name="confirmation" type="password" autoComplete="new-password" placeholder="Repite tu contraseña" required /></div>

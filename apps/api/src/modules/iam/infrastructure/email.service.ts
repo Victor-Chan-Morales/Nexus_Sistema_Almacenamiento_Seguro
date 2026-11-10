@@ -1,7 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as nodemailer from 'nodemailer';
-import type { Transporter } from 'nodemailer';
 import {
   AccountNoticeKind,
   DEFAULT_RESET_PASSWORD_PATH,
@@ -12,6 +10,7 @@ import {
 } from '../constants';
 import { buildVerificationLink } from '../iam.utils';
 import { VerificationMailer } from '../ports/verification-mailer';
+import { createMailTransport, MailTransport } from './mail-transport';
 
 const ACCOUNT_NOTICE_COPY: Record<AccountNoticeKind, { subject: string; text: string }> = {
   plan_changed: {
@@ -29,21 +28,28 @@ const ACCOUNT_NOTICE_COPY: Record<AccountNoticeKind, { subject: string; text: st
 };
 
 /**
- * EmailService del plan: implementación SMTP de VerificationMailer. En desarrollo apunta a
- * Mailpit (localhost:1025) o Mailtrap por variables de entorno (ADR-003). Nunca registra el token ni el enlace.
+ * Compone los correos de VerificationMailer y registra el resultado sin datos del mensaje.
  */
 @Injectable()
 export class EmailService implements VerificationMailer {
   private readonly logger = new Logger(EmailService.name);
-  private readonly transporter: Transporter;
+  private readonly transporter: MailTransport;
 
   constructor(private readonly config: ConfigService) {
-    const user = this.config.get<string>('MAIL_USER');
-    this.transporter = nodemailer.createTransport({
-      host: this.config.get<string>('MAIL_HOST') ?? 'localhost',
-      port: Number(this.config.get<string>('MAIL_PORT') ?? 1025),
-      secure: this.config.get<string>('MAIL_SECURE') === 'true',
-      auth: user ? { user, pass: this.config.get<string>('MAIL_PASS') } : undefined,
+    this.transporter = createMailTransport({
+      NODE_ENV: config.get<string>('NODE_ENV'),
+      MAIL_TRANSPORT: config.get<string>('MAIL_TRANSPORT'),
+      GMAIL_SENDER: config.get<string>('GMAIL_SENDER'),
+      GMAIL_CLIENT_ID: config.get<string>('GMAIL_CLIENT_ID'),
+      GMAIL_CLIENT_SECRET: config.get<string>('GMAIL_CLIENT_SECRET'),
+      GMAIL_REFRESH_TOKEN: config.get<string>('GMAIL_REFRESH_TOKEN'),
+      MAIL_HOST: config.get<string>('MAIL_HOST'),
+      MAIL_PORT: config.get<string>('MAIL_PORT'),
+      MAIL_SECURE: config.get<string>('MAIL_SECURE'),
+      MAIL_REQUIRE_TLS: config.get<string>('MAIL_REQUIRE_TLS'),
+      MAIL_USER: config.get<string>('MAIL_USER'),
+      MAIL_PASS: config.get<string>('MAIL_PASS'),
+      MAIL_FROM: config.get<string>('MAIL_FROM'),
     });
   }
 
@@ -111,8 +117,7 @@ export class EmailService implements VerificationMailer {
   }
 
   private async send(to: string, subject: string, body: { text: string; html: string }): Promise<void> {
-    const from = this.config.get<string>('MAIL_FROM') ?? 'Nexus <no-reply@nexus.local>';
-    await this.transporter.sendMail({ from, to, subject, ...body });
+    await this.transporter.sendMail({ to, subject, ...body });
   }
 }
 
