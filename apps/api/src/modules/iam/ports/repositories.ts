@@ -42,10 +42,14 @@ export abstract class OrganizationRepository {
   ): Promise<Organization>;
 
   /**
-   * Bloquea la fila de la organización (SELECT ... FOR UPDATE) hasta el fin de la transacción. Serializa las
-   * altas de miembros de una misma organización. Devuelve false si la organización no existe.
+   * Bloquea la fila de la organización hasta el fin de la transacción. Con allowReferences,
+   * otras transacciones pueden insertar referencias a esa fila. Devuelve false si la organización no existe.
    */
-  abstract lockById(tx: TransactionContext, organizationId: string): Promise<boolean>;
+  abstract lockById(
+    tx: TransactionContext,
+    organizationId: string,
+    options?: { allowReferences: boolean },
+  ): Promise<boolean>;
 
   /** Modelo de despliegue actual (SPEC-803). Devuelve null si la organización no existe. */
   abstract findDeploymentModel(tx: TransactionContext, organizationId: string): Promise<DeploymentModel | null>;
@@ -81,7 +85,7 @@ export abstract class MembershipRepository {
    * Miembros de una organización (cualquier estado) con el nombre y el correo del usuario y el nombre del rol,
    * del más antiguo al más nuevo. Solo carga las columnas necesarias: nunca el hash de la contraseña.
    */
-  abstract listByOrganization(organizationId: string): Promise<Membership[]>;
+  abstract listByOrganization(organizationId: string, tx?: TransactionContext): Promise<Membership[]>;
 
   /**
    * Una membresía de ESTA organización, con `user` y `roleRef` cargados, o null si no existe o es de otra organización

@@ -14,8 +14,8 @@ const BATCH_SIZE = 20;
 const TOKEN_RENEWAL_MARGIN_MS = 60_000;
 
 /**
- * Outbox de correo (`email_verification`, `password_reset`, `member_invitation`). El mensaje se escribe dentro de
- * la transacción que lo origina y se envía después del commit. Si el proveedor falla, el mensaje queda pendiente
+ * Outbox de enlaces y avisos por correo. El mensaje se envía después del commit de la outbox.
+ * Si el proveedor falla, el mensaje queda pendiente
  * y el worker lo reintenta con espera creciente durante 24 horas.
  * Solo `email_verification` renueva el token vencido esperando (la cuenta ya existe y no hay reenvío manual);
  * `password_reset` y `member_invitation` se abandonan al vencer el token y se vuelven a solicitar.
@@ -136,7 +136,7 @@ export class EmailOutboxService implements OnModuleInit, OnModuleDestroy {
 
     if (message.kind !== 'email_verification' && message.expiresAt.getTime() <= Date.now()) {
       await this.outbox.markExpired(message.id);
-      this.logger.warn(`Mensaje ${message.id} (${message.kind}) abandonado: el token venció sin enviarse`);
+      this.logger.warn(`Mensaje ${message.id} (${message.kind}) abandonado: venció sin enviarse`);
       return;
     }
 
@@ -158,6 +158,10 @@ export class EmailOutboxService implements OnModuleInit, OnModuleDestroy {
         return this.mailer.sendPasswordReset(message.recipientEmail, message.recipientName, token);
       case 'member_invitation':
         return this.mailer.sendMemberInvitation(message.recipientEmail, message.recipientName, token);
+      case 'plan_changed':
+      case 'member_status_changed':
+      case 'organization_closed':
+        return this.mailer.sendAccountNotice(message.recipientEmail, message.kind);
       default:
         throw new Error(`UnknownOutboxKind`);
     }

@@ -109,6 +109,7 @@ const build = (opts: Options = {}) => {
     admission,
     audit as never,
     {} as never,
+    {} as never,
   );
   return { service, log, db, uow, users, organizations, memberships, hasher, opaque, outbox, audit };
 };
@@ -228,7 +229,7 @@ describe('MembersService.addMember (sin base de datos: puertos simulados)', () =
     admission.register(async () => null);
     const service = new MembersService(
       t.uow as never, t.users as never, t.organizations as never, t.memberships as never,
-      t.hasher as never, t.opaque as never, t.outbox as never, admission, t.audit as never, {} as never,
+      t.hasher as never, t.opaque as never, t.outbox as never, admission, t.audit as never, {} as never, {} as never,
     );
     expect(await codeOf(service.addMember(ACTOR, DTO))).toBe('USER_LIMIT_EXCEEDED');
   });
@@ -331,7 +332,7 @@ describe('MembersService.list (SPEC-104)', () => {
     if (limit !== null) admission.register(async () => limit);
     const service = new MembersService(
       {} as never, {} as never, {} as never, memberships as never,
-      {} as never, {} as never, {} as never, admission, {} as never, {} as never,
+      {} as never, {} as never, {} as never, admission, {} as never, {} as never, {} as never,
     );
     return { service, memberships, admission };
   };
@@ -445,11 +446,12 @@ describe('MembersService.update / remove (SPEC-108, puertos simulados con estado
     const audit = { logEvent: jest.fn().mockResolvedValue(undefined) };
     const admission = new MemberAdmission();
     if (limit !== null) admission.register(async () => limit);
+    const notices = { memberStatusChanged: jest.fn().mockResolvedValue(undefined) };
     const service = new MembersService(
       uow as never, users as never, organizations as never, memberships as never,
-      {} as never, {} as never, {} as never, admission, audit as never, sessions as never,
+      {} as never, {} as never, {} as never, admission, audit as never, sessions as never, notices as never,
     );
-    return { service, store, log, uow, memberships, users, sessions, organizations, audit };
+    return { service, store, log, uow, memberships, users, sessions, organizations, audit, notices };
   };
 
   const base = () => [
@@ -491,6 +493,9 @@ describe('MembersService.update / remove (SPEC-108, puertos simulados con estado
     // JwtStrategy usa findActive en cada solicitud: sin membresía activa responde 401
     expect(await w.memberships.findActive('u-ana', 'ORG-1')).toBeNull();
     expect(w.audit.logEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'MEMBER_SUSPENDED', resourceId: 'm-ana' }));
+    expect(w.notices.memberStatusChanged).toHaveBeenCalledWith(expect.objectContaining({ userId: 'u-ana' }));
+    await w.service.update(ADMIN, 'm-ana', { status: 'suspended' as never });
+    expect(w.notices.memberStatusChanged).toHaveBeenCalledTimes(1);
   });
 
   it('Escenario 3: reactivar con cupo deja la membresía activa de nuevo y lo audita', async () => {
@@ -500,6 +505,7 @@ describe('MembersService.update / remove (SPEC-108, puertos simulados con estado
     expect(result.status).toBe('active');
     expect(await w.memberships.findActive('u-bea', 'ORG-1')).not.toBeNull(); // puede iniciar sesión otra vez
     expect(w.audit.logEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'MEMBER_REACTIVATED', resourceId: 'm-bea' }));
+    expect(w.notices.memberStatusChanged).not.toHaveBeenCalled();
   });
 
   // ---------- Escenario 4: reactivar sin cupo ----------
@@ -532,6 +538,7 @@ describe('MembersService.update / remove (SPEC-108, puertos simulados con estado
     expect(w.store.revoked).toEqual(['u-ana']);
     expect(await w.memberships.countActiveInOrganization('tx', 'ORG-1')).toBe(before - 1);
     expect(w.audit.logEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'MEMBER_REMOVED', resourceType: 'membership', resourceId: 'm-ana' }));
+    expect(w.notices.memberStatusChanged).toHaveBeenCalledWith(expect.objectContaining({ userId: 'u-ana' }));
   });
 
   it('Escenario 5: eliminar a un miembro suspendido también funciona', async () => {

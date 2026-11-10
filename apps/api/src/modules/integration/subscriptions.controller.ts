@@ -25,6 +25,7 @@ import { RolesGuard } from '../iam/guards/roles.guard';
 import { Roles } from '../iam/decorators/roles.decorator';
 import { Role } from '../iam/domain/enums';
 import { AuthUser } from '../iam/interfaces/auth-user.interface';
+import { AccountNotices } from '../iam/services/account-notices.service';
 
 /**
  * SubscriptionsController — Coordinación de suscripciones en Integración
@@ -41,6 +42,7 @@ export class SubscriptionsController {
     private readonly subscriptionCoordinator: SubscriptionCoordinator,
     private readonly billingService: BillingService,
     private readonly audit: AuditService,
+    private readonly notices: AccountNotices,
   ) {}
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -79,6 +81,7 @@ export class SubscriptionsController {
     const subscription = await this.withDeclineAudit(req.user, () =>
       this.billingService.renewSubscription(orgId, body?.payment),
     );
+    await this.notices.planChanged(orgId);
 
     // SPEC-405: PLAN_RENEWED tras éxito
     void this.audit.logEvent({

@@ -41,11 +41,9 @@ npm run install:api                   # dependencias de la API (apps/api NO es w
 cp .env.example .env                  # y completar JWT_SECRET y FILES_MASTER_KEY
 
 # Entorno e Infraestructura
-docker compose up -d                  # postgres, seaweedfs y mailpit
+npm run infra:up                      # postgres, seaweedfs y mailpit (bandeja en http://localhost:8025)
 npm run migration:run                 # aplica las migraciones pendientes (dbmate)
 npm run seed:demo                     # opcional: cuentas demo para iniciar sesión (requiere DEMO_PASSWORD en .env)
-#   Ojo: `npm run infra:up` levanta SOLO postgres y seaweedfs (sin mailpit):
-#   con ese script no llegan los correos de verificación, recuperación ni invitación.
 
 # Desarrollo
 npm run dev:api                       # API NestJS en :3001 con recarga en caliente

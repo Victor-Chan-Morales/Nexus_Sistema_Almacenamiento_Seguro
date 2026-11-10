@@ -13,12 +13,14 @@ import { RolesGuard } from '../iam/guards/roles.guard';
 import { ROLES_KEY } from '../iam/decorators/roles.decorator';
 import { Role } from '../iam/domain/enums';
 import { AuthUser } from '../iam/interfaces/auth-user.interface';
+import { AccountNotices } from '../iam/services/account-notices.service';
 
 describe('SubscriptionsController — Pruebas de contratos HTTP y RBAC (SPEC-302)', () => {
   let controller: SubscriptionsController;
   let coordinator: jest.Mocked<Partial<SubscriptionCoordinator>>;
   let billingService: jest.Mocked<Partial<BillingService>>;
   let audit: { logEvent: jest.Mock };
+  let planChanged: jest.Mock;
 
   const mockSubscription: Subscription = {
     id: 'sub-team-uuid',
@@ -51,6 +53,7 @@ describe('SubscriptionsController — Pruebas de contratos HTTP y RBAC (SPEC-302
     };
 
     audit = { logEvent: jest.fn().mockResolvedValue(undefined) };
+    planChanged = jest.fn().mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [SubscriptionsController],
@@ -58,6 +61,7 @@ describe('SubscriptionsController — Pruebas de contratos HTTP y RBAC (SPEC-302
         { provide: SubscriptionCoordinator, useValue: coordinator },
         { provide: BillingService, useValue: billingService },
         { provide: AuditService, useValue: audit },
+        { provide: AccountNotices, useValue: { planChanged } },
       ],
     }).compile();
 
@@ -70,6 +74,7 @@ describe('SubscriptionsController — Pruebas de contratos HTTP y RBAC (SPEC-302
 
       expect(billingService.renewSubscription).toHaveBeenCalledTimes(1);
       expect(billingService.renewSubscription).toHaveBeenCalledWith('org-tenant-uuid', undefined);
+      expect(planChanged).toHaveBeenCalledWith('org-tenant-uuid');
       expect(response).toEqual({
         subscriptionId: 'sub-team-uuid',
         status: 'active',

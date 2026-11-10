@@ -15,12 +15,15 @@ import { Plan, StorageLocation } from '../billing/entities/plan.entity';
 import { Subscription, SubscriptionStatus } from '../billing/entities/subscription.entity';
 import * as simulatedPayment from '../billing/simulated-payment';
 import { PaymentDeclinedException, PaymentInput } from '../billing/simulated-payment';
+import { OrganizationRepository } from '../iam/ports/repositories';
+import { AccountNotices } from '../iam/services/account-notices.service';
 
 describe('SubscriptionCoordinator — Pruebas de orquestación, concurrencia y fail-safe', () => {
   let coordinator: SubscriptionCoordinator;
   let billingService: jest.Mocked<Partial<BillingService>>;
   let filesService: jest.Mocked<Partial<FilesService>>;
   let dataSource: Partial<DataSource>;
+  let planChanged: jest.Mock;
 
   const mockDemoPlan: Plan = {
     id: 'plan-demo-uuid',
@@ -64,6 +67,7 @@ describe('SubscriptionCoordinator — Pruebas de orquestación, concurrencia y f
   });
 
   beforeEach(async () => {
+    planChanged = jest.fn().mockResolvedValue(undefined);
     billingService = {
       findPlanById: jest.fn(),
       persistSubscription: jest.fn(),
@@ -90,10 +94,30 @@ describe('SubscriptionCoordinator — Pruebas de orquestación, concurrencia y f
         { provide: BillingService, useValue: billingService },
         { provide: FilesService, useValue: filesService },
         { provide: DataSource, useValue: dataSource },
+        { provide: OrganizationRepository, useValue: { lockById: jest.fn().mockResolvedValue(true) } },
+        { provide: AccountNotices, useValue: { planChanged } },
       ],
     }).compile();
 
     coordinator = module.get<SubscriptionCoordinator>(SubscriptionCoordinator);
+  });
+
+  it('SPEC-115: avisa después de confirmar el cambio de plan', async () => {
+    const order: string[] = [];
+    const subscription = { id: 'sub-nueva' } as Subscription;
+    billingService.findPlanById!.mockResolvedValue(mockDemoPlan);
+    billingService.persistSubscription!.mockResolvedValue(subscription);
+    filesService.getTotalStorageUsage!.mockResolvedValue(emptyUsage);
+    (dataSource.transaction as jest.Mock).mockImplementation(async (work) => {
+      const result = await work({ findOne: jest.fn().mockResolvedValue(null) });
+      order.push('commit');
+      return result;
+    });
+    planChanged.mockImplementation(async () => { order.push('aviso'); });
+
+    await expect(coordinator.activateSubscription('org-1', mockDemoPlan.id)).resolves.toBe(subscription);
+    expect(planChanged).toHaveBeenCalledWith('org-1');
+    expect(order).toEqual(['commit', 'aviso']);
   });
 
   describe('1. Idempotencia y Transaccionalidad', () => {
@@ -122,6 +146,7 @@ describe('SubscriptionCoordinator — Pruebas de orquestación, concurrencia y f
 
       expect(result.id).toBe('existing-active-team');
       expect(billingService.persistSubscription).not.toHaveBeenCalled();
+      expect(planChanged).not.toHaveBeenCalled();
     });
 
     it('Escenario 2: al activar un plan nuevo (Team US$19.99) unifica la persistencia delegando en persistSubscription', async () => {
