@@ -347,6 +347,11 @@ Cada spec agrega aquí sus rutas, campos y códigos de error antes de programar.
 - **[v0.6, SPEC-503]** `PATCH /platform/installations/:id` con `{ "status" }` (uno de los valores del enum de instalación) → `200 { "id", "status" }`. Transiciones permitidas: `Pendiente` → `En proceso`; `En proceso` → `Operativa`; `En proceso` → `Fallida`. Cualquier otra transición → `422 INVALID_INSTALLATION_TRANSITION`. Emite `INSTALLATION_STATUS_CHANGED`. Errores: `400 VALIDATION_ERROR` si `status` no pertenece al enum; `404 INSTALLATION_NOT_FOUND`.
 - **[v0.6, SPEC-501]** `POST /auth/login`, `POST /auth/refresh` y `GET /auth/me` añaden `isSuperAdmin: boolean` a su respuesta. El valor se lee de `iam.user.is_super_admin` en cada solicitud y nunca viaja en el token de acceso.
 
+### Perfil y contraseña [v0.6, SPEC-113]
+
+- **[v0.6, SPEC-113]** `PATCH /auth/me` con `{ fullName }` (2–120 caracteres, sin espacios sobrantes) → `200 MeResponse`, igual que `GET /auth/me`. Campos adicionales → `400 VALIDATION_ERROR`.
+- **[v0.6, SPEC-113]** `POST /auth/change-password` con `{ currentPassword, newPassword }` → `204`. Revoca todas las sesiones del usuario y borra la cookie `nexus_refresh`. Contraseña actual incorrecta o cuenta bloqueada → `401 INVALID_CREDENTIALS` y cuenta el fallo (SPEC-112). Nueva contraseña fuera de la política → `400 VALIDATION_ERROR`. Emite `AUTH_PASSWORD_CHANGED`.
+
 ## Implementación y cambios futuros
 
 - IAM implementa identidad, cookies, refresh y el contexto autenticado; Billing implementa catálogo y persistencia de suscripción; Files implementa objetos, versiones, uso y reservas; Víctor implementa Dashboard, coordinador de activación y frontend.
