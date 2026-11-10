@@ -254,6 +254,8 @@ Documentan lo que el código ya devuelve (arreglo de tamaño de carpetas, SPEC-0
 
 ## Alcance final [v0.6]
 
+- **[v0.6, SPEC-224]** En Drives de equipo, `write` permite crear carpetas, cargar, enviar a papelera, restaurar archivos, carpetas y versiones y administrar enlaces. Un miembro `read` recibe `403 DRIVE_PERMISSION_DENIED`. Solo un `tenant_admin` puede purgar definitivamente en un Drive de equipo. El dueño de un Drive personal conserva sus permisos. Los recursos de Drives ajenos responden `404`. Las cargas de equipo consumen cuota de la organización y cada versión y evento de auditoría conserva el usuario que realizó la acción.
+
 - **[v0.6, SPEC-222]** `GET /drives` devuelve `{ items: [{ id, name, type, teamId, rootFolderId, myLevel }] }`. El Drive personal es de su dueño (`owner`). Un miembro ve los Drives de sus equipos con su nivel `read` o `write`. Un administrador ve los Drives de equipo de su organización con nivel `write`.
 - **[v0.6, SPEC-222]** `GET /folders` y `GET /files/trash` aceptan `driveId` opcional. Sin él usan el Drive personal. La consulta de una carpeta o archivo por ID resuelve el Drive del recurso para navegar, descargar y consultar versiones. Un Drive ajeno o de otra organización, o un equipo del que se quitó al miembro, responde `404`. Un lector recibe `403 DRIVE_PERMISSION_DENIED` al administrar enlaces. La escritura de archivos y carpetas en equipo corresponde a SPEC-224.
 
