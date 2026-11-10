@@ -62,6 +62,10 @@ export type VerifyEmailResponse = {
   verified: true;
 };
 
+export type ResendVerificationResponse = {
+  message: string;
+};
+
 export type CurrentUserResponse = {
   user: UserIdentity;
   organization: OrganizationReference;

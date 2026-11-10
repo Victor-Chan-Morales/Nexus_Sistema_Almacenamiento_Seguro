@@ -43,10 +43,12 @@ const build = (claimed: unknown[] = []) => {
   };
   const uow = { run: jest.fn((work: (tx: unknown) => unknown) => work('tx')) };
   const tokens = {
-    issue: jest.fn().mockResolvedValue({ rawToken: TOKEN_NUEVO, expiresAt: new Date(Date.now() + 15 * MIN) }),
+    findForUpdate: jest.fn().mockResolvedValue({ userId: 'u1', usedAt: null, expiresAt: new Date(Date.now() + 15 * MIN) }),
+    replace: jest.fn().mockResolvedValue({ rawToken: TOKEN_NUEVO, expiresAt: new Date(Date.now() + 15 * MIN) }),
     issueFor: jest.fn().mockResolvedValue({ rawToken: TOKEN, expiresAt: new Date(Date.now() + 24 * HOUR) }),
   };
-  const service = new EmailOutboxService(uow as never, outbox as never, cipher, mailer as never, tokens as never);
+  const users = { findByIdForUpdate: jest.fn().mockResolvedValue({ id: 'u1', status: 'active', emailVerified: false }) };
+  const service = new EmailOutboxService(uow as never, outbox as never, cipher, mailer as never, tokens as never, users as never);
   return { service, outbox, mailer, uow, tokens };
 };
 
@@ -57,7 +59,7 @@ describe('EmailOutboxService (outbox persistente de correo)', () => {
       const t = build([message({ kind, encryptedPayload: cipher.encrypt(''), recipientName: '' })]);
       await t.service.dispatch('out-1');
       expect(t.mailer.sendAccountNotice).toHaveBeenCalledWith(EMAIL, kind);
-      expect(t.tokens.issue).not.toHaveBeenCalled();
+      expect(t.tokens.replace).not.toHaveBeenCalled();
       expect(t.outbox.markSent).toHaveBeenCalledWith('out-1');
     },
   );
@@ -116,7 +118,7 @@ describe('EmailOutboxService (outbox persistente de correo)', () => {
 
     expect(t.outbox.claimDue).toHaveBeenCalledWith('tx', expect.objectContaining({ ids: ['out-1'] }));
     expect(t.mailer.sendVerification).toHaveBeenCalledWith(EMAIL, 'Ana', TOKEN);
-    expect(t.tokens.issue).not.toHaveBeenCalled(); // el token vigente no se toca
+    expect(t.tokens.replace).not.toHaveBeenCalled(); // el token vigente no se toca
     expect(t.outbox.markSent).toHaveBeenCalledWith('out-1');
     expect(t.outbox.markFailed).not.toHaveBeenCalled();
   });
@@ -143,19 +145,30 @@ describe('EmailOutboxService (outbox persistente de correo)', () => {
   });
 
   it('si el token venció esperando al proveedor, el reintento emite uno nuevo y entrega ese enlace', async () => {
-    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
     const t = build([message({ expiresAt: new Date(Date.now() - MIN), createdAt: new Date(Date.now() - HOUR) })]);
 
     await t.service.dispatch('out-1');
 
-    expect(t.tokens.issue).toHaveBeenCalledWith('tx', 'u1');
+    expect(t.tokens.replace).toHaveBeenCalledWith('tx', expect.objectContaining({ userId: 'u1' }));
+    expect(t.outbox.updatePayload).toHaveBeenCalledWith('out-1', expect.any(Object), 'tx');
     const renewed = t.outbox.updatePayload.mock.calls[0][1] as { encryptedPayload: string; expiresAt: Date };
     expect(cipher.decrypt(renewed.encryptedPayload)).toBe(TOKEN_NUEVO);
     expect(renewed.expiresAt.getTime()).toBeGreaterThan(Date.now());
     expect(t.mailer.sendVerification).toHaveBeenCalledWith(EMAIL, 'Ana', TOKEN_NUEVO);
     expect(t.outbox.markSent).toHaveBeenCalledWith('out-1');
     expect(t.outbox.markExpired).not.toHaveBeenCalled(); // la cuenta no queda sin enlace utilizable
-    log.mockRestore();
+  });
+
+  it('SPEC-116: un mensaje cuyo token fue reemplazado no emite otro enlace aunque haya vencido', async () => {
+    const stale = message({ expiresAt: new Date(Date.now() - MIN) });
+    const t = build([stale]);
+    t.tokens.findForUpdate.mockResolvedValueOnce({ userId: 'u1', usedAt: new Date(), expiresAt: stale.expiresAt });
+
+    await t.service.dispatch('out-1');
+
+    expect(t.tokens.replace).not.toHaveBeenCalled();
+    expect(t.outbox.markExpired).toHaveBeenCalledWith('out-1', stale.encryptedPayload);
+    expect(t.mailer.sendVerification).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -177,7 +190,7 @@ describe('EmailOutboxService (outbox persistente de correo)', () => {
 
     await t.service.dispatch('out-1');
 
-    expect(t.tokens.issue).not.toHaveBeenCalled();
+    expect(t.tokens.replace).not.toHaveBeenCalled();
     expect(t.outbox.updatePayload).not.toHaveBeenCalled();
     expect(t.mailer.sendMemberInvitation).not.toHaveBeenCalled();
     expect(t.outbox.markExpired).toHaveBeenCalledWith('out-1');
@@ -190,7 +203,7 @@ describe('EmailOutboxService (outbox persistente de correo)', () => {
 
     await t.service.dispatch('out-1');
 
-    expect(t.tokens.issue).not.toHaveBeenCalled();
+    expect(t.tokens.replace).not.toHaveBeenCalled();
     expect(t.mailer.sendPasswordReset).not.toHaveBeenCalled();
     expect(t.outbox.markExpired).toHaveBeenCalledWith('out-1');
     warn.mockRestore();
@@ -203,7 +216,7 @@ describe('EmailOutboxService (outbox persistente de correo)', () => {
     await t.service.dispatch('out-1');
 
     expect(t.mailer.sendVerification).not.toHaveBeenCalled();
-    expect(t.tokens.issue).not.toHaveBeenCalled();
+    expect(t.tokens.replace).not.toHaveBeenCalled();
     expect(t.outbox.markExpired).toHaveBeenCalledWith('out-1');
     warn.mockRestore();
   });

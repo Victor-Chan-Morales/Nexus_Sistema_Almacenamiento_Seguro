@@ -7,6 +7,7 @@ import type {
   LoginResponse,
   RegisterInput,
   RegisterResponse,
+  ResendVerificationResponse,
   ResetPasswordResponse,
   VerifyEmailResponse,
 } from "./types";
@@ -23,9 +24,16 @@ export function getCurrentUser(accessToken: string, options?: Omit<ApiRequestOpt
   return apiRequest<CurrentUserResponse>("/auth/me", { method: "GET" }, { ...options, accessToken });
 }
 
-/** Endpoint del contrato v0.3; pendiente de implementación en IAM. */
 export function verifyEmail(token: string, options?: ApiRequestOptions) {
   return apiRequest<VerifyEmailResponse>("/auth/verify-email", { method: "POST", body: JSON.stringify({ token }), headers: { "Content-Type": "application/json" } }, options);
+}
+
+export function resendVerification(email: string, options?: ApiRequestOptions) {
+  return apiRequest<ResendVerificationResponse>(
+    "/auth/resend-verification",
+    { method: "POST", body: JSON.stringify({ email }), headers: { "Content-Type": "application/json" } },
+    options,
+  );
 }
 
 /** Endpoint del contrato v0.3: renueva el access token con la cookie HttpOnly. */

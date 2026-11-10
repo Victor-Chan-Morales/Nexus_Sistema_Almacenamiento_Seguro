@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api/client";
-import { forgotPassword, login, register, resetPassword, verifyEmail } from "@/lib/api/iam";
+import { forgotPassword, login, register, resendVerification, resetPassword, verifyEmail } from "@/lib/api/iam";
 import { useSession } from "@/lib/session";
 import { Brand } from "@/components/brand";
 import { UiIcon } from "@/components/ui-icon";
@@ -129,7 +129,7 @@ export function RegistrationComplete() {
   return <AuthFrame className="auth-result-card" title="Cuenta creada" lead="Tu registro se completó correctamente.">
     <div className="auth-result-icon" aria-hidden="true"><UiIcon name="envelope" size={25} /></div>
     <div className="auth-result-notice"><strong>Tu cuenta está pendiente de verificar</strong><span>Revisa tu correo electrónico y abre el enlace que te enviamos. Vence en 15 minutos y solo sirve una vez.</span></div>
-    <Link className="button button-primary button-wide auth-submit" href="/verificar-correo">Ya tengo mi enlace o código</Link>
+    <Link className="button button-primary button-wide auth-submit" href="/verificar-correo">Verificar correo o solicitar otro enlace</Link>
     <p className="auth-switch"><Link href="/login">Volver al inicio de sesión</Link></p>
   </AuthFrame>;
 }
@@ -168,14 +168,80 @@ function VerifyFormContent() {
   }
   return <AuthFrame className="auth-result-card" title={done ? "Correo verificado" : "Verifica tu correo"} lead={done ? "Tu cuenta está lista. Ya puedes iniciar sesión." : "Abre el enlace que enviamos a tu correo o pega aquí el código del enlace."}>
     <div className="auth-result-icon" aria-hidden="true"><UiIcon name={done ? "check" : "envelope"} size={25} /></div>
-    {done ? <Link className="button button-primary button-wide auth-submit" href="/login">Iniciar sesión</Link> : <form className="auth-form" onSubmit={submit} noValidate>
+    {done ? <Link className="button button-primary button-wide auth-submit" href="/login">Iniciar sesión</Link> : <><form className="auth-form" onSubmit={submit} noValidate>
       <div className="field"><label htmlFor="verify-code">Código de verificación</label><input id="verify-code" name="code" autoComplete="one-time-code" placeholder="Pega el código del enlace" value={token} onChange={(event) => setToken(event.target.value)} required /></div>
       {status && <div className="auth-alert" role="alert">{status}</div>}
       <button className="button button-primary button-wide auth-submit" type="submit" disabled={busy}>{busy ? "Verificando…" : "Verificar correo"}</button>
-      <p className="auth-demo-hint">El reenvío del enlace aún no forma parte del contrato de la API.</p>
-    </form>}
+    </form><ResendVerificationForm /></>}
     <p className="auth-switch"><Link href="/registro">Usar otra cuenta</Link></p>
   </AuthFrame>;
+}
+
+const RESEND_COOLDOWN_SECONDS = 120;
+
+function ResendVerificationForm() {
+  const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
+  const [deadline, setDeadline] = useState(0);
+  const [remaining, setRemaining] = useState(0);
+
+  useEffect(() => {
+    if (!deadline) return;
+    const timer = window.setInterval(() => {
+      const seconds = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setRemaining(seconds);
+      if (seconds === 0) window.clearInterval(timer);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [deadline]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (loading || remaining > 0) return;
+    const email = String(new FormData(event.currentTarget).get("email") ?? "").trim();
+    setSent(false);
+    setError("");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+      setError("Escribe un correo válido.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await resendVerification(email);
+      setDeadline(Date.now() + RESEND_COOLDOWN_SECONDS * 1000);
+      setRemaining(RESEND_COOLDOWN_SECONDS);
+      setSent(true);
+    } catch (err) {
+      setError(err instanceof ApiError && err.code === "VALIDATION_FAILED"
+        ? "Escribe un correo válido."
+        : "No pudimos conectar. Intenta de nuevo.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section className="auth-resend-section" aria-labelledby="resend-heading">
+      <h2 id="resend-heading">¿No llegó el correo?</h2>
+      <form className="auth-form" onSubmit={submit} noValidate>
+        <div className="field">
+          <label htmlFor="resend-email">Correo electrónico</label>
+          <input id="resend-email" name="email" type="email" autoComplete="email"
+            maxLength={254} placeholder="tu@correo.com" aria-describedby="resend-help" required />
+          <small id="resend-help">Si ya tienes un enlace anterior, usa siempre el más reciente. El anterior deja de funcionar.</small>
+        </div>
+        {error && <div className="auth-alert" role="alert">{error}</div>}
+        {sent && <div className="auth-result-notice" role="status">
+          Si la cuenta existe y no está verificada, te enviamos un nuevo enlace. Revisa también la carpeta de spam.
+        </div>}
+        <button className="button button-primary button-wide auth-submit" type="submit" disabled={loading || remaining > 0}>
+          {loading ? "Enviando…" : remaining > 0 ? `Reenviar en ${remaining} s` : "Reenviar enlace"}
+        </button>
+      </form>
+    </section>
+  );
 }
 
 export function RecoverForm() {

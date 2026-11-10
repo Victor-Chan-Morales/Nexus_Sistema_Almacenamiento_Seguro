@@ -16,6 +16,7 @@ export abstract class UserRepository {
   /** Como findByEmail, pero bloquea la fila del usuario hasta el fin de la transacción (SELECT ... FOR UPDATE). */
   abstract findByEmailForUpdate(email: string, tx: TransactionContext): Promise<User | null>;
   abstract findById(id: string, tx?: TransactionContext): Promise<User | null>;
+  abstract findByIdForUpdate(id: string, tx: TransactionContext): Promise<User | null>;
   abstract create(
     tx: TransactionContext,
     data: { email: string; fullName: string; passwordHash: string },
@@ -129,6 +130,9 @@ export abstract class SessionRepository {
 
 /** Tokens de un solo uso (hoy verificación de correo; mañana también restablecer contraseña). */
 export abstract class OneTimeTokenRepository {
+  abstract latestCreatedAt(tx: TransactionContext, userId: string, purpose: TokenPurpose): Promise<Date | null>;
+  abstract countCreatedSince(tx: TransactionContext, userId: string, purpose: TokenPurpose, since: Date): Promise<number>;
+  abstract findByHash(tx: TransactionContext, tokenHash: string, purpose: TokenPurpose): Promise<OneTimeToken | null>;
   abstract create(
     tx: TransactionContext,
     data: { userId: string; purpose: TokenPurpose; tokenHash: string; expiresAt: Date },
@@ -175,11 +179,11 @@ export abstract class EmailOutboxRepository {
     data: { ids?: string[]; now: Date; leaseUntil: Date; limit: number },
   ): Promise<OutboxMessage[]>;
   /** Reemplaza el token cifrado y su vencimiento cuando el reintento emite un token nuevo. */
-  abstract updatePayload(id: string, data: { encryptedPayload: string; expiresAt: Date }): Promise<void>;
+  abstract updatePayload(id: string, data: { encryptedPayload: string; expiresAt: Date }, tx: TransactionContext): Promise<void>;
   abstract markSent(id: string): Promise<void>;
   abstract markFailed(
     id: string,
     data: { attempts: number; nextAttemptAt: Date; lastError: string },
   ): Promise<void>;
-  abstract markExpired(id: string): Promise<void>;
+  abstract markExpired(id: string, expectedPayload?: string): Promise<void>;
 }
