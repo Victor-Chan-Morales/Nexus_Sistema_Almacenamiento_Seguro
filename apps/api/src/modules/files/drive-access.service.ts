@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, EntityManager, In, IsNull } from 'typeorm';
 import { Role } from '../iam/domain/enums';
 import { Drive } from './entities/drive.entity';
@@ -12,7 +12,7 @@ export type DriveAccessLevel = 'read' | 'write' | 'owner';
 export interface DriveActor {
   organizationId: string;
   userId: string;
-  /** Las rutas de lectura y enlaces lo pasan para habilitar el acceso a equipos. */
+  /** Las rutas autenticadas lo pasan para habilitar el acceso a equipos. */
   role?: Role;
 }
 
@@ -24,6 +24,7 @@ export interface DriveAccess {
 interface DriveAccessOptions {
   manager?: EntityManager;
   lock?: boolean;
+  includeDeleted?: boolean;
 }
 
 /**
@@ -36,6 +37,22 @@ interface DriveAccessOptions {
 @Injectable()
 export class DriveAccessService {
   constructor(private readonly dataSource: DataSource) {}
+
+  assertCanWrite(access: DriveAccess): void {
+    if (access.level === 'read') this.denyWrite('Tu acceso al Drive es de solo lectura.');
+  }
+
+  assertCanPurge(access: DriveAccess, actor: DriveActor): void {
+    if (access.drive.type === 'team') {
+      if (actor.role !== Role.TENANT_ADMIN) this.denyWrite('Solo un administrador puede purgar en un Drive de equipo.');
+    } else if (access.level !== 'owner') {
+      this.denyWrite('Solo el dueño puede purgar en su Drive personal.');
+    }
+  }
+
+  private denyWrite(message: string): never {
+    throw new ForbiddenException({ code: 'DRIVE_PERMISSION_DENIED', message });
+  }
 
   /**
    * Sin `driveId`: el Drive personal del solicitante. No crea nada; la creación sigue en
@@ -105,9 +122,10 @@ export class DriveAccessService {
     folderId: string,
     options: DriveAccessOptions = {},
   ): Promise<{ folder: Folder; access: DriveAccess }> {
+    const state = options.includeDeleted ? {} : { isDeleted: false };
     if (actor.role) {
       const folder = await (options.manager ?? this.dataSource).getRepository(Folder).findOne({
-        where: { id: folderId, organizationId: actor.organizationId, isDeleted: false },
+        where: { id: folderId, organizationId: actor.organizationId, ...state },
         ...(options.lock && options.manager ? { lock: { mode: 'pessimistic_write' as const } } : {}),
       });
       const access = folder && await this.findDrive(actor, folder.driveId, options.manager);
@@ -121,7 +139,7 @@ export class DriveAccessService {
             id: folderId,
             organizationId: actor.organizationId,
             driveId: access.drive.id,
-            isDeleted: false,
+            ...state,
           },
           ...(options.lock && options.manager ? { lock: { mode: 'pessimistic_write' as const } } : {}),
         })

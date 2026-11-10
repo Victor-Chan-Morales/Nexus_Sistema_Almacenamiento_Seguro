@@ -13,7 +13,7 @@ import { Repository } from 'typeorm';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction, AuditResource } from '../audit/audit.types';
 import { StorageRouter } from '../storage/storage-router.service';
-import { DriveAccessService, DriveActor } from './drive-access.service';
+import { DriveAccess, DriveAccessService, DriveActor } from './drive-access.service';
 import { Role } from '../iam/domain/enums';
 import { FileVersionsResponseDto } from './dto/versions.dto';
 import { FileRecord } from './entities/file-record.entity';
@@ -139,9 +139,8 @@ export class FileVersionsService {
     versionId: string,
     actor: DriveActor,
   ): Promise<RestoredVersionDto> {
-    const { file, version } = await this.locateVersion(fileId, versionId, {
-      organizationId: actor.organizationId, userId: actor.userId,
-    });
+    const { file, version, access } = await this.locateVersion(fileId, versionId, actor);
+    this.driveAccess.assertCanWrite(access);
     if (file.currentVersionId === version.id) throw versionAlreadyCurrentError();
 
     const plaintext = await this.readVersionBytes(actor.organizationId, file, version);
@@ -150,6 +149,7 @@ export class FileVersionsService {
     const uploaded = await this.filesService.uploadMultipartFileWithVersion({
       organizationId: actor.organizationId,
       ownerId: actor.userId,
+      role: actor.role,
       folderId: file.folderId,
       file: { buffer: plaintext, originalname: file.name, mimetype: file.mimeType ?? '' },
       correlationId,
@@ -180,14 +180,14 @@ export class FileVersionsService {
     fileId: string,
     versionId: string,
     actor: DriveActor,
-  ): Promise<{ file: FileRecord; version: FileVersion }> {
+  ): Promise<{ file: FileRecord; version: FileVersion; access: DriveAccess }> {
     const located = await this.driveAccess.locateFile(actor, fileId);
     if (!located || located.file.isDeleted || located.folder.isDeleted) throw this.notFound(fileId);
 
     const file = located.file;
     const version = await this.versionRepository.findOne({ where: { id: versionId, fileId: file.id } });
     if (!version) throw this.notFound(fileId);
-    return { file, version };
+    return { file, version, access: located.access };
   }
 
   private notFound(fileId: string): NotFoundException {

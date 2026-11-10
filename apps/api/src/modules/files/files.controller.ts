@@ -87,6 +87,7 @@ export class FoldersController {
       dto.name,
       dto.parentFolderId || dto.parentId,
       dto.destinationId,
+      req.user.role,
     );
   }
 
@@ -100,7 +101,7 @@ export class FoldersController {
   /** Mueve una carpeta y sus descendientes a la papelera como unidad. */
   @Delete(':id')
   async softDeleteFolder(@CurrentUser() user: AuthUser, @Param('id') folderId: string) {
-    return this.filesService.softDeleteFolder(folderId, user.organizationId, user.userId);
+    return this.filesService.softDeleteFolder(folderId, user.organizationId, user.userId, user.role);
   }
 
   @Post(':id/restore')
@@ -109,7 +110,7 @@ export class FoldersController {
     @CurrentUser() user: AuthUser,
     @Param('id') folderId: string,
   ): Promise<RestoreFolderResponseDto> {
-    return this.filesService.restoreFolder(folderId, user.organizationId, user.userId);
+    return this.filesService.restoreFolder(folderId, user.organizationId, user.userId, user.role);
   }
 
   @Delete(':id/purge')
@@ -117,7 +118,7 @@ export class FoldersController {
     @CurrentUser() user: AuthUser,
     @Param('id') folderId: string,
   ): Promise<PurgeFileResponseDto> {
-    return this.filesService.purgeFolder(folderId, user.organizationId, user.userId);
+    return this.filesService.purgeFolder(folderId, user.organizationId, user.userId, user.role);
   }
 }
 
@@ -192,6 +193,7 @@ export class FilesController {
     return this.fileVersions.restoreVersion(fileId, versionId, {
       organizationId: user.organizationId,
       userId: user.userId,
+      ...(user.role ? { role: user.role } : {}),
     });
   }
 
@@ -202,7 +204,7 @@ export class FilesController {
     @CurrentUser() user: AuthUser,
     @Param('id') fileId: string,
   ): Promise<RestoreFileResponseDto> {
-    return this.filesService.restoreFile(fileId, user.organizationId, user.userId);
+    return this.filesService.restoreFile(fileId, user.organizationId, user.userId, user.role);
   }
 
   /** SPEC-204: purga definitiva. `DELETE` responde 200 por defecto. */
@@ -211,7 +213,7 @@ export class FilesController {
     @CurrentUser() user: AuthUser,
     @Param('id') fileId: string,
   ): Promise<PurgeFileResponseDto> {
-    return this.filesService.purgeFile(fileId, user.organizationId, user.userId);
+    return this.filesService.purgeFile(fileId, user.organizationId, user.userId, user.role);
   }
 
   @Get()
@@ -239,6 +241,7 @@ export class FilesController {
     return this.filesService.uploadMultipartFile({
       organizationId: orgId,
       ownerId: userId,
+      role: req.user.role,
       folderId,
       file,
       idempotencyKey,
@@ -276,7 +279,7 @@ export class FilesController {
   async softDelete(@Request() req: any, @Param('id') fileId: string) {
     const orgId = req.user.organizationId;
     const userId = req.user.userId || req.user.id;
-    await this.filesService.softDelete(fileId, orgId, userId);
+    await this.filesService.softDelete(fileId, orgId, userId, req.user.role);
     return { success: true, id: fileId };
   }
 }
