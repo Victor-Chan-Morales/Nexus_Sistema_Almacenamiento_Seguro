@@ -254,6 +254,8 @@ Documentan lo que el código ya devuelve (arreglo de tamaño de carpetas, SPEC-0
 
 ## Alcance final [v0.6]
 
+- **[v0.6, SPEC-211]** `PATCH /files/:id` acepta `{ name?, folderId? }`; `PATCH /folders/:id` acepta `{ name?, parentId? }`. Se requiere al menos un campo. Responden `200` con el formato de listado y conservan versiones y enlaces. Los conflictos de nombre responden `409 FILE_NAME_CONFLICT` o `FOLDER_NAME_CONFLICT`; los ciclos, otro almacén, la raíz o la papelera responden `422 FOLDER_CYCLE_NOT_ALLOWED`, `DESTINATION_MISMATCH` o `RESOURCE_NOT_MOVABLE`. Otro Drive o un recurso ajeno responde `404`. El nivel de solo lectura recibe `403 DRIVE_PERMISSION_DENIED`. Se auditan los cambios efectivos con `FILE_RENAMED`, `FILE_MOVED`, `FOLDER_RENAMED` y `FOLDER_MOVED`, sin incluir nombres.
+
 - **[v0.6, SPEC-224]** En Drives de equipo, `write` permite crear carpetas, cargar, enviar a papelera, restaurar archivos, carpetas y versiones y administrar enlaces. Un miembro `read` recibe `403 DRIVE_PERMISSION_DENIED`. Solo un `tenant_admin` puede purgar definitivamente en un Drive de equipo. El dueño de un Drive personal conserva sus permisos. Los recursos de Drives ajenos responden `404`. Las cargas de equipo consumen cuota de la organización y cada versión y evento de auditoría conserva el usuario que realizó la acción.
 
 - **[v0.6, SPEC-222]** `GET /drives` devuelve `{ items: [{ id, name, type, teamId, rootFolderId, myLevel }] }`. El Drive personal es de su dueño (`owner`). Un miembro ve los Drives de sus equipos con su nivel `read` o `write`. Un administrador ve los Drives de equipo de su organización con nivel `write`.

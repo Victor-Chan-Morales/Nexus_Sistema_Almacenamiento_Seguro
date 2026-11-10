@@ -67,6 +67,7 @@ describe('SPEC-405: Files Audit Hooks', () => {
     filesController = new FilesController(
       filesService,
       fileVersions,
+      {} as never,
       mockAuditService as unknown as AuditService,
     );
   });

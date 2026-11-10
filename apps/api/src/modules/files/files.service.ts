@@ -14,7 +14,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { Readable } from 'stream';
-import { DataSource, EntityManager, In, IsNull, QueryFailedError, Raw, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, Not, QueryFailedError, Raw, Repository } from 'typeorm';
 import { BillingService } from '../billing/billing.service';
 import { StorageRouter } from '../storage/storage-router.service';
 import { Role } from '../iam/domain/enums';
@@ -425,11 +425,12 @@ export class FilesService {
   private async calculateFolderSizes(
     organizationId: string,
     folderIds: string[],
+    executor: DataSource | EntityManager = this.dataSource,
   ): Promise<Map<string, number>> {
     const folderSizes = new Map<string, number>();
     if (!folderIds || folderIds.length === 0) return folderSizes;
 
-    const sizeRows = await this.dataSource.query(
+    const sizeRows = await executor.query(
       `WITH RECURSIVE folder_tree AS (
         SELECT folder_id, folder_id AS root_folder_id
         FROM files.folder
@@ -453,6 +454,16 @@ export class FilesService {
       folderSizes.set(row.folderId, Number(row.totalSizeBytes));
     }
     return folderSizes;
+  }
+
+  async describeFolder(folder: Folder, manager: EntityManager): Promise<FolderSummary> {
+    const sizes = await this.calculateFolderSizes(folder.organizationId, [folder.id], manager);
+    const destination = folder.destinationId ? await manager.findOne(Destination, {
+      select: { id: true, location: true },
+      where: { id: folder.destinationId, organizationId: folder.organizationId },
+    }) : null;
+    const locations = new Map(destination ? [[destination.id, destination.location]] : []);
+    return this.toFolderSummary(folder, sizes, locations);
   }
 
   async listFolders(
@@ -594,15 +605,17 @@ export class FilesService {
     return created;
   }
 
-  private async requireAvailableFolderName(
+  async requireAvailableFolderName(
     repository: Repository<Folder>,
     organizationId: string,
     parentId: string,
     name: string,
+    exceptId?: string,
   ): Promise<void> {
     const exists = await repository.exists({
       where: {
         organizationId, parentId, isDeleted: false,
+        ...(exceptId ? { id: Not(exceptId) } : {}),
         name: Raw((column) => `lower(${column}) = lower(:folderName)`, { folderName: name }),
       },
     });
@@ -613,7 +626,7 @@ export class FilesService {
     return this.businessError(HttpStatus.CONFLICT, 'FOLDER_NAME_CONFLICT', 'Ya existe una carpeta con ese nombre');
   }
 
-  private rethrowFolderNameConflict(error: unknown): never {
+  rethrowFolderNameConflict(error: unknown): never {
     if (error instanceof QueryFailedError) {
       const cause = error.driverError as { code?: string; constraint?: string };
       if (cause.code === '23505' && cause.constraint === 'uq_folder_active_name_per_parent') {
@@ -677,7 +690,7 @@ export class FilesService {
     return files.map((file) => this.toUploadedFileDto(file, file.versions ?? []));
   }
 
-  private toUploadedFileDto(file: FileRecord, versions: FileVersion[]): UploadedFileDto {
+  toUploadedFileDto(file: FileRecord, versions: FileVersion[]): UploadedFileDto {
     const current = versions.find((version) => version.id === file.currentVersionId)
       ?? versions.reduce<FileVersion | undefined>(
         (latest, version) => !latest || version.versionNumber > latest.versionNumber ? version : latest,
@@ -737,7 +750,7 @@ export class FilesService {
     return { usedBytes, reservedBytes, totalBytes: usedBytes + reservedBytes };
   }
 
-  private async lockTenantQuota(manager: EntityManager, organizationId: string): Promise<void> {
+  async lockTenantQuota(manager: EntityManager, organizationId: string): Promise<void> {
     await manager.query(
       'INSERT INTO files.tenant_quota (organization_id) VALUES ($1) ' +
       'ON CONFLICT (organization_id) DO NOTHING',
@@ -1117,7 +1130,7 @@ export class FilesService {
     }
   }
 
-  private normalizeFileName(value: unknown): string {
+  normalizeFileName(value: unknown): string {
     if (typeof value !== 'string' || !value.trim()) {
       throw new BadRequestException('El archivo debe tener un nombre válido');
     }

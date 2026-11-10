@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   HttpCode,
   HttpStatus,
@@ -27,6 +28,8 @@ import { FileVersionsService, RestoredVersionDto } from './file-versions.service
 import { PurgeFileResponseDto, RestoreFileResponseDto, RestoreFolderResponseDto, TrashResponseDto } from './dto/trash.dto';
 import { FileVersionsResponseDto } from './dto/versions.dto';
 import { CreateFolderDto } from './dto/folder.dto';
+import { OrganizeFileDto, OrganizeFolderDto } from './dto/organize.dto';
+import { FileOrganizerService } from './file-organizer.service';
 import { CurrentUser } from '../iam/decorators/current-user.decorator';
 import { AuthUser } from '../iam/interfaces/auth-user.interface';
 import { AuditService } from '../audit/audit.service';
@@ -63,7 +66,19 @@ async function sendAttachment(res: Response, stream: Readable, mimeType: string,
 @Controller('folders')
 @UseGuards(AuthGuard('jwt'))
 export class FoldersController {
-  constructor(private readonly filesService: FilesService) {}
+  constructor(
+    private readonly filesService: FilesService,
+    private readonly organizer: FileOrganizerService,
+  ) {}
+
+  @Patch(':id')
+  organize(
+    @CurrentUser() user: AuthUser,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: OrganizeFolderDto,
+  ) {
+    return this.organizer.organizeFolder(user, id, dto);
+  }
 
   @Get()
   async listFolders(
@@ -132,8 +147,18 @@ export class FilesController {
   constructor(
     private readonly filesService: FilesService,
     private readonly fileVersions: FileVersionsService,
+    private readonly organizer: FileOrganizerService,
     @Optional() private readonly auditService?: AuditService,
   ) {}
+
+  @Patch(':id')
+  organize(
+    @CurrentUser() user: AuthUser,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: OrganizeFileDto,
+  ) {
+    return this.organizer.organizeFile(user, id, dto);
+  }
 
   /**
    * SPEC-202: Listado de archivos en papelera para el Drive personal del solicitante.
