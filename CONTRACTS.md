@@ -350,6 +350,13 @@ Cada spec agrega aquí sus rutas, campos y códigos de error antes de programar.
 - **[v0.7, SPEC-504]** `PATCH /platform/plans/:id` emite `PLAN_UPDATED` (recurso `plan`) después del commit. No hay organización afectada, así que el evento queda en la organización del Super Admin. Un fallo al registrar la auditoría se avisa en el log y no cambia la respuesta.
 - **[v0.6, SPEC-501]** `POST /auth/login`, `POST /auth/refresh` y `GET /auth/me` añaden `isSuperAdmin: boolean` a su respuesta. El valor se lee de `iam.user.is_super_admin` en cada solicitud y nunca viaja en el token de acceso.
 
+### Comprobantes [v0.6, SPEC-306]
+
+- **[v0.6, SPEC-306]** `GET /billing/operations/:id/receipt` (solo `tenant_admin`) → `200 { "receiptNumber", "organizationName", "planName", "type", "amount", "currency": "USD", "cardLast4", "occurredAt", "simulated": true }`. `type` es `"charge"` o `"renewal"`. `cardLast4` es `string | null`: `null` en cargos de US$0 y en renovaciones de planes gratuitos. Las claves son exactamente estas: no hay número de tarjeta, CVV, titular ni vencimiento.
+- **[v0.6, SPEC-306]** `organizationName` sale de la sesión (`req.user`). La consulta filtra por la organización de la sesión, nunca por un `organizationId` enviado por el cliente.
+- **[v0.6, SPEC-306]** `receiptNumber` = `"NX-"` + el `operation_id` sin guiones, en mayúsculas (32 caracteres hexadecimales). Es determinista: la misma operación siempre produce el mismo número. Decisión confirmada el 2026-11-10.
+- **[v0.6, SPEC-306]** Errores: `403 FORBIDDEN_ROLE` (colaborador); `404 NOT_FOUND` si la operación no existe, pertenece a otra organización o el `:id` no es un UUID. La respuesta es la misma en los tres casos. Sin migración.
+
 ## Implementación y cambios futuros
 
 - IAM implementa identidad, cookies, refresh y el contexto autenticado; Billing implementa catálogo y persistencia de suscripción; Files implementa objetos, versiones, uso y reservas; Víctor implementa Dashboard, coordinador de activación y frontend.

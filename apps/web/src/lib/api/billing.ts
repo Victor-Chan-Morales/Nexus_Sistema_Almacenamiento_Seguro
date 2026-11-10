@@ -1,5 +1,5 @@
 import { apiRequest } from "./client";
-import type { ActivateSubscriptionResponse, ApiRequestOptions, BillingOperationsResponse, PaymentCardPayload, PlanCatalogResponse, RenewSubscriptionResponse, UUID } from "./types";
+import type { ActivateSubscriptionResponse, ApiRequestOptions, BillingOperationsResponse, BillingReceipt, PaymentCardPayload, PlanCatalogResponse, RenewSubscriptionResponse, UUID } from "./types";
 
 export function getPlans(options?: ApiRequestOptions) {
   return apiRequest<PlanCatalogResponse>("/plans", { method: "GET" }, options);
@@ -15,6 +15,11 @@ export function activateSubscription(planId: UUID, accessToken: string, payment?
 
 export function getBillingOperations(accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
   return apiRequest<BillingOperationsResponse>("/billing/operations", { method: "GET" }, { ...options, accessToken });
+}
+
+// SPEC-306: comprobante imprimible de una operación de la organización de la sesión.
+export function getBillingReceipt(operationId: UUID, accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
+  return apiRequest<BillingReceipt>(`/billing/operations/${encodeURIComponent(operationId)}/receipt`, { method: "GET" }, { ...options, accessToken });
 }
 
 export function renewSubscription(accessToken: string, payment?: PaymentCardPayload, options?: Omit<ApiRequestOptions, "accessToken">) {

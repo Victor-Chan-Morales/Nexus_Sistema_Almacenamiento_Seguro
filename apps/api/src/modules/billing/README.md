@@ -33,5 +33,6 @@ La base impone una suscripción `active` como máximo por organización mediante
 | `POST /api/subscriptions/activate` | JWT, `tenant_admin` | Activa un plan para la organización del token; el coordinador valida cuotas con Files antes de persistir. |
 | `POST /api/subscriptions/renew` | JWT, `tenant_admin` | Extiende la vigencia de la suscripción actual. |
 | `GET /api/billing/operations` | JWT, `tenant_admin` | Historial de operaciones simuladas; cada elemento incluye `cardLast4` (`string \| null`, SPEC-305). |
+| `GET /api/billing/operations/:id/receipt` | JWT, `tenant_admin` | Comprobante de una operación de la organización (SPEC-306). Solo expone los últimos cuatro dígitos de la tarjeta. Operación inexistente, ajena o con `:id` que no es UUID → `404 NOT_FOUND`. |
 
 `BillingService.getStorageLimitBytes(organizationId)` sirve a Files en proceso. Si no hay una suscripción vigente, devuelve cero bytes.

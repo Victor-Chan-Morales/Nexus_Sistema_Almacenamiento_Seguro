@@ -13,9 +13,25 @@ import {
   BillingOperation,
   BillingOperationType,
 } from './entities/billing-operation.entity';
-import { BillingOperationItemResponse } from './billing.dto';
+import { BillingOperationItemResponse, BillingReceiptData } from './billing.dto';
 import { priceUsd, todayUtcDate } from './billing.utils';
 import { PaymentInput, resolveSimulatedPayment } from './simulated-payment';
+
+/** SPEC-306 D3: un id que no es UUID se trata como inexistente, sin consultar la base. */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** SPEC-306 D2: número de comprobante derivado de operation_id (función pura, única fuente del formato). */
+function deriveReceiptNumber(operationId: string): string {
+  return `NX-${operationId.replace(/-/g, '').toUpperCase()}`;
+}
+
+/** SPEC-306: la misma respuesta para una operación inexistente, ajena o con id mal formado. */
+function receiptNotFound(): NotFoundException {
+  return new NotFoundException({
+    code: 'NOT_FOUND',
+    message: 'El comprobante no existe o no pertenece a tu organización.',
+  });
+}
 
 /**
  * BillingService — Lógica de dominio para planes, cuotas y persistencia de suscripciones.
@@ -123,6 +139,41 @@ export class BillingService implements OnModuleInit {
           ? op.simulatedAt.toISOString()
           : new Date(op.simulatedAt).toISOString(),
     }));
+  }
+
+  /**
+   * SPEC-306: comprobante de una operación de la organización indicada.
+   * La consulta filtra por sub.organizationId: una operación ajena responde igual que una inexistente.
+   * El organizationName no sale de aquí; lo agrega el controlador desde la sesión.
+   */
+  async getReceipt(organizationId: string, operationId: string): Promise<BillingReceiptData> {
+    if (!UUID_PATTERN.test(operationId)) {
+      throw receiptNotFound();
+    }
+
+    const operation = await this.billingOperationRepo
+      .createQueryBuilder('op')
+      .innerJoinAndSelect('op.subscription', 'sub')
+      .innerJoinAndSelect('sub.plan', 'plan')
+      .where('op.id = :operationId', { operationId })
+      .andWhere('sub.organizationId = :organizationId', { organizationId })
+      .getOne();
+
+    if (!operation) {
+      throw receiptNotFound();
+    }
+
+    return {
+      receiptNumber: deriveReceiptNumber(operation.id),
+      planName: operation.subscription?.plan?.name ?? '',
+      type: operation.type,
+      amount: Number(operation.amount ?? 0),
+      cardLast4: operation.cardLast4 ?? null,
+      occurredAt:
+        operation.simulatedAt instanceof Date
+          ? operation.simulatedAt.toISOString()
+          : new Date(operation.simulatedAt).toISOString(),
+    };
   }
 
   // ── Provisión Inicial Atómica (Hook de Registro de IAM) ───────────────────
