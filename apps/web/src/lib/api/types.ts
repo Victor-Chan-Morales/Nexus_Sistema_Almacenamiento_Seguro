@@ -229,6 +229,14 @@ export type BillingOperationItem = {
   amount: number;
   simulated: boolean;
   occurredAt: ISODateTime;
+  cardLast4: string | null;
+};
+
+export type PaymentCardPayload = {
+  cardNumber: string;
+  holderName: string;
+  expiry: string;
+  cvv: string;
 };
 
 export type BillingOperationsResponse = {
