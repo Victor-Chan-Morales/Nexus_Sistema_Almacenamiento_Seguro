@@ -1,4 +1,4 @@
-import { DeploymentModel, MembershipStatus, Role, TokenPurpose, UserStatus } from '../domain/enums';
+import { DeploymentModel, MembershipStatus, OrgStatus, Role, TokenPurpose, UserStatus } from '../domain/enums';
 import { Membership } from '../entities/membership.entity';
 import { OneTimeToken } from '../entities/one-time-token.entity';
 import { Organization } from '../entities/organization.entity';
@@ -56,6 +56,8 @@ export abstract class OrganizationRepository {
     organizationId: string,
     model: DeploymentModel,
   ): Promise<void>;
+  abstract findByIdForUpdate(organizationId: string, tx: TransactionContext): Promise<Organization | null>;
+  abstract setStatus(tx: TransactionContext, organizationId: string, status: OrgStatus): Promise<void>;
 }
 
 export abstract class MembershipRepository {
@@ -117,6 +119,7 @@ export abstract class SessionRepository {
   ): Promise<Session | null>;
   abstract revoke(tx: TransactionContext, session: Session): Promise<void>;
   abstract revokeAllActiveOf(tx: TransactionContext, userId: string): Promise<void>;
+  abstract revokeAllOfOrganization(tx: TransactionContext, organizationId: string): Promise<void>;
   abstract revokeByRefreshHash(refreshTokenHash: string): Promise<void>;
 }
 

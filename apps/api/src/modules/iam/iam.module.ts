@@ -107,6 +107,10 @@ function resolveJwtSecret(config: ConfigService): string {
   ],
   exports: [
     AuthService,
+    SessionService,
+    UserRepository,
+    UnitOfWork,
+    IamSettings,
     JwtModule,
     PassportModule,
     JwtAuthGuard,
