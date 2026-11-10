@@ -47,6 +47,7 @@ function errorMessage(error: unknown, fallback: string) {
 /** SPEC-804: los 422 al crear carpeta son de destino (no de cuota), así que se explican con storageErrorMessage. */
 function createFolderErrorMessage(error: unknown) {
   const fallback = "No fue posible crear la carpeta.";
+  if (error instanceof ApiError && error.code === "FOLDER_NAME_CONFLICT") return error.message;
   if (error instanceof ApiError && error.status === 422) return storageErrorMessage(error, fallback);
   return errorMessage(error, fallback);
 }

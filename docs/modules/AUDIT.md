@@ -77,3 +77,9 @@ Si el INSERT directo falla, `logEvent` guarda el evento en `audit.audit_outbox` 
 
 - Verificación de la cadena: SPEC-404.
 - Checkpoints firmados: no se implementan (ADR-008 §10).
+
+## Verificar integridad (SPEC-404)
+
+Un administrador puede pulsar **Verificar integridad** en Auditoría o consultar `GET /audit/verify`. La API verifica una instantánea por organización, en lotes de 500. Comprueba la secuencia, el enlace con el evento anterior y el hash del contenido. La operación es de lectura.
+
+La verificación detecta alteraciones y huecos dentro de la cadena. Detectar la eliminación de los últimos eventos requiere un checkpoint firmado, fuera del alcance de esta spec. Los eventos escritos antes de la migración `20261029090000` pueden dar `HASH_MISMATCH` porque se numeraron sin volver a calcular su hash. Si esto ocurre, la decisión aprobada en la SPEC-404 permite reiniciar únicamente esa base de desarrollo.

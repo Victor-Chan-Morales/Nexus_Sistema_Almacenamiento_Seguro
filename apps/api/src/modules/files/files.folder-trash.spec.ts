@@ -1,4 +1,5 @@
 import { HttpException, NotFoundException } from '@nestjs/common';
+import { QueryFailedError } from 'typeorm';
 import { FilesService } from './files.service';
 import { DriveAccessService } from './drive-access.service';
 import { Destination } from './entities/destination.entity';
@@ -138,6 +139,36 @@ function buildService({
   );
   return { service, folderRepo, fileRepo, versionRepo, uploadRepo, manager, dataSource, storage, billing, audit };
 }
+
+describe('SPEC-218: unicidad al crear una carpeta', () => {
+  it('recorta el nombre y busca un conflicto activo en el mismo padre sin distinguir mayúsculas', async () => {
+    const { service, folderRepo } = buildService({ nameTaken: true });
+    await expect(service.createFolder(ORG, USER, '  Contratos  ')).rejects.toMatchObject({
+      status: 409, response: expect.objectContaining({ code: 'FOLDER_NAME_CONFLICT' }),
+    });
+    expect(folderRepo.exists).toHaveBeenCalledWith({
+      where: {
+        organizationId: ORG, parentId: DRIVE.rootFolderId, isDeleted: false,
+        name: expect.objectContaining({ objectLiteralParameters: { folderName: 'Contratos' } }),
+      },
+    });
+    expect(folderRepo.save).not.toHaveBeenCalled();
+  });
+
+  it.each(['uq_folder_active_name_per_parent', 'other_constraint'])('maneja 23505 de %s', async (constraint) => {
+    const { service, folderRepo } = buildService();
+    const failure = new QueryFailedError('INSERT', [], Object.assign(new Error('duplicado'), { code: '23505', constraint }));
+    folderRepo.save.mockRejectedValueOnce(failure);
+    const result = service.createFolder(ORG, USER, 'Contratos');
+    if (constraint === 'uq_folder_active_name_per_parent') {
+      await expect(result).rejects.toMatchObject({
+        status: 409, response: expect.objectContaining({ code: 'FOLDER_NAME_CONFLICT' }),
+      });
+    } else {
+      await expect(result).rejects.toBe(failure);
+    }
+  });
+});
 
 describe('FilesService folder trash', () => {
   it('audits folder creation after the database transaction succeeds', async () => {

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { FilesController, FoldersController } from './files.controller';
+import { DrivesController } from './drives.controller';
 import { FilesService } from './files.service';
 import { TrashRetentionService } from './trash-retention.service';
 import { FileVersionsService } from './file-versions.service';
@@ -64,6 +65,7 @@ import { OrganizationRepository } from '../iam/ports/repositories';
   ],
   controllers: [
     FoldersController,
+    DrivesController,
     FilesController,
     ShareLinksController,
     PublicShareLinksController,

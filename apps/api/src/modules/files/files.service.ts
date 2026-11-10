@@ -14,9 +14,10 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { Readable } from 'stream';
-import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, QueryFailedError, Raw, Repository } from 'typeorm';
 import { BillingService } from '../billing/billing.service';
 import { StorageRouter } from '../storage/storage-router.service';
+import { Role } from '../iam/domain/enums';
 import { Destination } from './entities/destination.entity';
 import { Drive } from './entities/drive.entity';
 import { FileRecord } from './entities/file-record.entity';
@@ -199,10 +200,13 @@ export class FilesService {
   /**
    * SPEC-202: lista archivos y carpetas eliminados del Drive del solicitante.
    */
-  async listTrash(organizationId: string, userId: string): Promise<TrashResponseDto> {
-    const access = await this.driveAccess.findDrive({ organizationId, userId });
+  async listTrash(organizationId: string, userId: string, driveId?: string, role?: Role): Promise<TrashResponseDto> {
+    const access = driveId
+      ? await this.driveAccess.findDrive({ organizationId, userId, role }, driveId)
+      : await this.driveAccess.findDrive({ organizationId, userId });
 
     if (!access) {
+      if (driveId) throw new NotFoundException('Drive no encontrado');
       return { items: [], totalItems: 0 };
     }
     const drive = access.drive;
@@ -454,13 +458,21 @@ export class FilesService {
     organizationId: string,
     userId: string,
     parentId?: string,
+    driveId?: string,
+    role?: Role,
   ): Promise<{
     drive: { id: string; name: string; rootFolderId: string };
     items: FolderSummary[];
   }> {
-    const drive = await this.getOrCreateUserDrive(organizationId, userId);
+    const actor = { organizationId, userId, role };
+    const drive = driveId
+      ? await this.getAccessibleDriveRoot(actor, driveId)
+      : await this.getOrCreateUserDrive(organizationId, userId);
     const effectiveParentId = parentId || drive.rootFolderId;
-    await this.driveAccess.requireFolder({ organizationId, userId }, effectiveParentId);
+    const { access } = await this.driveAccess.requireFolder(
+      driveId ? actor : { organizationId, userId }, effectiveParentId,
+    );
+    if (access.drive.id !== drive.id) throw new NotFoundException('Carpeta no encontrada en el Drive');
 
     const folders = await this.folderRepository.find({
       where: {
@@ -480,6 +492,21 @@ export class FilesService {
       drive,
       items: folders.map((folder) => this.toFolderSummary(folder, folderSizes, locations)),
     };
+  }
+
+  async listDrives(actor: DriveActor) {
+    await this.getOrCreateUserDrive(actor.organizationId, actor.userId);
+    return this.driveAccess.listDrives(actor);
+  }
+
+  private async getAccessibleDriveRoot(actor: DriveActor, driveId: string) {
+    const access = await this.driveAccess.findDrive(actor, driveId);
+    if (!access) throw new NotFoundException('Drive no encontrado');
+    const root = await this.folderRepository.findOneBy({
+      organizationId: actor.organizationId, driveId, parentId: IsNull(), isDeleted: false,
+    });
+    if (!root) throw new NotFoundException('Drive no encontrado');
+    return { id: driveId, name: access.drive.name, rootFolderId: root.id };
   }
 
   /** Vista de una carpeta para la navegación: tamaño acumulado y ubicación de su destino (SPEC-803). */
@@ -523,6 +550,8 @@ export class FilesService {
         parentId || drive.rootFolderId,
         { manager },
       );
+      const folderRepo = manager.getRepository(Folder);
+      await this.requireAvailableFolderName(folderRepo, organizationId, parentFolder.id, normalizedName);
       const { destination: defaultDestination } = await this.ensureTenantResources(manager, organizationId);
       const destination = await this.placement.resolveForNewFolder(manager, {
         organizationId,
@@ -530,7 +559,6 @@ export class FilesService {
         requestedDestinationId: destinationId,
         defaultDestination,
       });
-      const folderRepo = manager.getRepository(Folder);
       const saved = await folderRepo.save(folderRepo.create({
         organizationId,
         driveId: drive.id,
@@ -550,7 +578,7 @@ export class FilesService {
         destinationId: destination.id,
         destinationLocation: destination.location,
       };
-    });
+    }).catch((error: unknown) => this.rethrowFolderNameConflict(error));
 
     void this.auditService?.logEvent({
       organizationId,
@@ -563,20 +591,50 @@ export class FilesService {
     return created;
   }
 
+  private async requireAvailableFolderName(
+    repository: Repository<Folder>,
+    organizationId: string,
+    parentId: string,
+    name: string,
+  ): Promise<void> {
+    const exists = await repository.exists({
+      where: {
+        organizationId, parentId, isDeleted: false,
+        name: Raw((column) => `lower(${column}) = lower(:folderName)`, { folderName: name }),
+      },
+    });
+    if (exists) throw this.folderNameConflict();
+  }
+
+  private folderNameConflict(): HttpException {
+    return this.businessError(HttpStatus.CONFLICT, 'FOLDER_NAME_CONFLICT', 'Ya existe una carpeta con ese nombre');
+  }
+
+  private rethrowFolderNameConflict(error: unknown): never {
+    if (error instanceof QueryFailedError) {
+      const cause = error.driverError as { code?: string; constraint?: string };
+      if (cause.code === '23505' && cause.constraint === 'uq_folder_active_name_per_parent') {
+        throw this.folderNameConflict();
+      }
+    }
+    throw error;
+  }
+
   async getFolderItems(
     organizationId: string,
     userId: string,
     folderId: string,
+    role?: Role,
   ): Promise<{
     folder: FolderSummary;
     folders: FolderSummary[];
     files: UploadedFileDto[];
   }> {
-    const drive = await this.getOrCreateUserDrive(organizationId, userId);
-    const { folder } = await this.driveAccess.requireFolder({ organizationId, userId }, folderId);
+    if (!role) await this.getOrCreateUserDrive(organizationId, userId);
+    const { folder, access } = await this.driveAccess.requireFolder({ organizationId, userId, role }, folderId);
     const [folders, files] = await Promise.all([
       this.folderRepository.find({
-        where: { organizationId, driveId: drive.id, parentId: folder.id, isDeleted: false },
+        where: { organizationId, driveId: access.drive.id, parentId: folder.id, isDeleted: false },
         order: { name: 'ASC' },
       }),
       this.fileRepository.find({
@@ -604,10 +662,10 @@ export class FilesService {
     organizationId: string,
     userId: string,
     folderId?: string,
+    role?: Role,
   ): Promise<UploadedFileDto[]> {
-    const drive = await this.getOrCreateUserDrive(organizationId, userId);
-    const effectiveFolderId = folderId || drive.rootFolderId;
-    await this.driveAccess.requireFolder({ organizationId, userId }, effectiveFolderId);
+    const effectiveFolderId = folderId || (await this.getOrCreateUserDrive(organizationId, userId)).rootFolderId;
+    await this.driveAccess.requireFolder({ organizationId, userId, role }, effectiveFolderId);
     const files = await this.fileRepository.find({
       where: { organizationId, folderId: effectiveFolderId, isDeleted: false },
       relations: { versions: true },
@@ -1148,18 +1206,10 @@ export class FilesService {
     fileId: string,
     organizationId: string,
     userId: string,
+    role?: Role,
   ): Promise<{ stream: Readable; mimeType: string; name: string }> {
-    const access = await this.driveAccess.findDrive({ organizationId, userId });
-    if (!access) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
-    const drive = access.drive;
-    const file = await this.fileRepository.createQueryBuilder('file')
-      .innerJoin('file.folder', 'folder')
-      .where('file.id = :fileId', { fileId })
-      .andWhere('file.organizationId = :organizationId', { organizationId })
-      .andWhere('file.isDeleted = false')
-      .andWhere('folder.driveId = :driveId', { driveId: drive.id })
-      .andWhere('folder.isDeleted = false')
-      .getOne();
+    const located = await this.driveAccess.locateFile({ organizationId, userId, role }, fileId);
+    const file = located && !located.folder.isDeleted && !located.file.isDeleted ? located.file : null;
     if (!file || !file.currentVersionId) {
       throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
     }
@@ -1300,12 +1350,7 @@ export class FilesService {
         throw this.businessError(HttpStatus.CONFLICT, 'PARENT_FOLDER_UNAVAILABLE', 'La carpeta contenedora no está disponible');
       }
 
-      const nameTaken = await folderRepo.exists({
-        where: { organizationId, driveId: drive.id, parentId: root.parentId, name: root.name, isDeleted: false },
-      });
-      if (nameTaken) {
-        throw this.businessError(HttpStatus.CONFLICT, 'FOLDER_NAME_CONFLICT', 'Ya existe una carpeta con ese nombre');
-      }
+      await this.requireAvailableFolderName(folderRepo, organizationId, root.parentId, root.name);
 
       await manager.query(
         'UPDATE files.folder SET is_deleted = false, deleted_at = NULL ' +
@@ -1321,7 +1366,7 @@ export class FilesService {
       const usage = await this.readStorageUsage(manager, organizationId);
       await this.writeQuotaCounters(manager, organizationId, usage);
       return { id: root.id, name: root.name, parentFolderId: root.parentId };
-    });
+    }).catch((error: unknown) => this.rethrowFolderNameConflict(error));
 
     void this.auditService?.logEvent({
       organizationId,

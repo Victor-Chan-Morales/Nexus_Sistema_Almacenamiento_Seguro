@@ -194,15 +194,13 @@ describe('SPEC-801: compensación de una carga en el destino donde se escribió'
 
 describe('SPEC-801: almacén por destino de la versión', () => {
   const buildDownloadService = (destinationId: string) => {
-    const qb: Record<string, unknown> = {};
-    for (const method of ['innerJoin', 'where', 'andWhere']) qb[method] = jest.fn(() => qb);
-    qb.getOne = jest.fn().mockResolvedValue({
+    const file = {
       id: 'file-1',
       name: 'informe.pdf',
       mimeType: 'application/pdf',
       currentVersionId: 'v-1',
-    });
-    const fileRepository = { createQueryBuilder: jest.fn(() => qb) };
+      isDeleted: false,
+    };
     const versionRepository = {
       findOne: jest.fn().mockResolvedValue({
         id: 'v-1',
@@ -220,12 +218,12 @@ describe('SPEC-801: almacén por destino de la versión', () => {
     const storageRouter = { forRead: jest.fn().mockResolvedValue(storage), forWrite: jest.fn() };
     const crypto = { decryptFile: jest.fn().mockReturnValue(Buffer.from('texto plano')) };
     const driveAccess = new DriveAccessService({} as never);
-    jest.spyOn(driveAccess, 'findDrive').mockResolvedValue({
-      drive: { id: 'drive-1' } as never,
-      level: 'owner',
+    jest.spyOn(driveAccess, 'locateFile').mockResolvedValue({
+      file: file as never, folder: { isDeleted: false } as never,
+      access: { drive: { id: 'drive-1' } as never, level: 'owner' },
     });
     const service = new FilesService(
-      fileRepository as never, {} as never, versionRepository as never,
+      {} as never, {} as never, versionRepository as never,
       {} as never, storageRouter as never, {} as never, crypto as never, driveAccess,
       undefined, {} as never,
     );
@@ -588,10 +586,12 @@ describe('SPEC-221: un Drive ajeno responde 404 en cada operación', () => {
   });
 
   it('downloadFileStream filtra por el Drive del solicitante y responde 404 al archivo ajeno', async () => {
-    const { service, qb, storage } = buildForeignDriveService();
+    const { service, fileRepo, storage } = buildForeignDriveService();
 
     await expect(service.downloadFileStream('file-ajeno', SPEC221_ORG, SPEC221_USER)).rejects.toBeInstanceOf(NotFoundException);
-    expect(qb.andWhere).toHaveBeenCalledWith('folder.driveId = :driveId', { driveId: 'drive-1' });
+    expect(fileRepo.findOne).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'file-ajeno', organizationId: SPEC221_ORG },
+    }));
     expect(storage.get).not.toHaveBeenCalled();
   });
 

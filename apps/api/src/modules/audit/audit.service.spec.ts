@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, FindManyOptions, MoreThan } from 'typeorm';
 import { computeRecordHash, AuditHashFields } from './audit-hash';
 import { AuditService } from './audit.service';
 import { AuditChainWriter } from './audit-chain-writer';
@@ -13,6 +13,64 @@ const ACTOR_ID = '33333333-3333-4333-8333-333333333333';
 const RESOURCE_ID = '44444444-4444-4444-8444-444444444444';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 type Row = { occurredAt: Date; [column: string]: unknown };
+
+describe('AuditService.verifyChain (SPEC-404)', () => {
+  function buildEvents(count: number, organizationId = ORG_ID) {
+    const events: AuditEvent[] = [];
+    for (let index = 0; index < count; index++) {
+      const fields: AuditHashFields = {
+        eventId: `event-${index + 1}`, organizationId, chainSeq: String(index + 1),
+        prevHash: events[index - 1]?.recordHash ?? null, occurredAt: new Date('2026-11-09T12:00:00.123Z'),
+        actorType: AuditActorType.SYSTEM, actorId: null, actionType: AuditAction.FILE_PURGE,
+        resourceType: null, resourceId: null, safeReason: null, result: AuditResult.SUCCESS,
+        correlationId: 'test-correlation',
+      };
+      events.push({ ...fields, recordHash: computeRecordHash(fields) });
+    }
+    return events;
+  }
+
+  function setup(events: AuditEvent[]) {
+    const find = jest.fn(async ({ where, take }: FindManyOptions<AuditEvent>) => {
+      const criteria = where as { organizationId: string; chainSeq: ReturnType<typeof MoreThan<string>> };
+      return events.filter((event) => event.organizationId === criteria.organizationId
+        && BigInt(event.chainSeq) > BigInt(criteria.chainSeq.value)).slice(0, take);
+    });
+    const dataSource = { transaction: jest.fn(async (_isolation, work) => work({ getRepository: () => ({ find }) })) };
+    return { find, service: new AuditService(dataSource as unknown as DataSource, {} as AuditChainWriter, {} as AuditOutboxService) };
+  }
+
+  it.each([0, 2])('valida una cadena con %i eventos sin leer los de otra organización', async (count) => {
+    const foreign = { ...buildEvents(1, OTHER_ORG_ID)[0], recordHash: 'alterado' };
+    const { service } = setup([...buildEvents(count), foreign]);
+    await expect(service.verifyChain(ORG_ID)).resolves.toEqual({
+      valid: true, checkedEvents: count, firstBrokenEventId: null, reason: null,
+      verifiedAt: expect.any(String),
+    });
+  });
+
+  it.each([
+    ['HASH_MISMATCH', { actionType: AuditAction.FILE_UPLOAD }],
+    ['PREV_HASH_MISMATCH', { prevHash: 'alterado' }],
+    ['SEQUENCE_GAP', { chainSeq: '3' }],
+  ] as const)('reporta %s en el primer evento afectado', async (reason, change) => {
+    const [first, second] = buildEvents(2);
+    const { service } = setup([first, { ...second, ...change }]);
+    await expect(service.verifyChain(ORG_ID)).resolves.toMatchObject({
+      valid: false, checkedEvents: 2, firstBrokenEventId: second.eventId, reason,
+    });
+  });
+
+  it('recorre 10 000 eventos en lotes de 500 con cursor y conserva el enlace entre lotes', async () => {
+    const { find, service } = setup(buildEvents(10_000));
+    await expect(service.verifyChain(ORG_ID)).resolves.toMatchObject({ valid: true, checkedEvents: 10_000 });
+    expect(find).toHaveBeenCalledTimes(21);
+    expect(find).toHaveBeenNthCalledWith(2, {
+      where: { organizationId: ORG_ID, chainSeq: MoreThan('500') },
+      order: { chainSeq: 'ASC' }, take: 500,
+    });
+  });
+});
 
 describe('AuditService — Pruebas unitarias del registro encadenado (SPEC-401)', () => {
   let service: AuditService;

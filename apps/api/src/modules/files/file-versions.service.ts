@@ -14,6 +14,7 @@ import { AuditService } from '../audit/audit.service';
 import { AuditAction, AuditResource } from '../audit/audit.types';
 import { StorageRouter } from '../storage/storage-router.service';
 import { DriveAccessService, DriveActor } from './drive-access.service';
+import { Role } from '../iam/domain/enums';
 import { FileVersionsResponseDto } from './dto/versions.dto';
 import { FileRecord } from './entities/file-record.entity';
 import { FileVersion } from './entities/file-version.entity';
@@ -56,8 +57,9 @@ export class FileVersionsService {
     fileId: string,
     organizationId: string,
     userId: string,
+    role?: Role,
   ): Promise<FileVersionsResponseDto> {
-    const located = await this.driveAccess.locateFile({ organizationId, userId }, fileId);
+    const located = await this.driveAccess.locateFile({ organizationId, userId, ...(role ? { role } : {}) }, fileId);
     if (!located || located.file.isDeleted || located.folder.isDeleted) {
       throw this.notFound(fileId);
     }
@@ -137,7 +139,9 @@ export class FileVersionsService {
     versionId: string,
     actor: DriveActor,
   ): Promise<RestoredVersionDto> {
-    const { file, version } = await this.locateVersion(fileId, versionId, actor);
+    const { file, version } = await this.locateVersion(fileId, versionId, {
+      organizationId: actor.organizationId, userId: actor.userId,
+    });
     if (file.currentVersionId === version.id) throw versionAlreadyCurrentError();
 
     const plaintext = await this.readVersionBytes(actor.organizationId, file, version);

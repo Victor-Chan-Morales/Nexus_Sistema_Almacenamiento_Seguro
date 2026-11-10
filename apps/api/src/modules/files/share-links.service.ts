@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
 import { AuditService } from '../audit/audit.service';
@@ -167,7 +167,8 @@ export class ShareLinksService {
     if (!version) throw this.linkNotFound(linkId);
 
     const located = await this.driveAccess.locateFile(actor, version.fileId);
-    if (!located || !this.canWrite(located.access)) throw this.linkNotFound(linkId);
+    if (!located) throw this.linkNotFound(linkId);
+    this.requireWriteAccess(located.access);
 
     const result = await this.linkRepository.update(
       { id: linkId, organizationId: actor.organizationId, revokedAt: IsNull() },
@@ -196,14 +197,20 @@ export class ShareLinksService {
     const located = await this.driveAccess.locateFile(actor, fileId, options);
     if (!located) throw this.fileNotFound(fileId);
     const { file, folder, access } = located;
-    if (file.isDeleted || folder.isDeleted || !file.currentVersionId || !this.canWrite(access)) {
+    if (file.isDeleted || folder.isDeleted || !file.currentVersionId) {
       throw this.fileNotFound(fileId);
     }
+    this.requireWriteAccess(access);
     return { currentVersionId: file.currentVersionId, access };
   }
 
-  private canWrite(access: DriveAccess): boolean {
-    return access.level === 'write' || access.level === 'owner';
+  private requireWriteAccess(access: DriveAccess): void {
+    if (access.level === 'read') {
+      throw new ForbiddenException({
+        code: 'DRIVE_PERMISSION_DENIED',
+        message: 'Tu acceso al Drive es de solo lectura.',
+      });
+    }
   }
 
   private fileNotFound(fileId: string): NotFoundException {

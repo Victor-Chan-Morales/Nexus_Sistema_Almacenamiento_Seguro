@@ -1,8 +1,10 @@
 import { NotFoundException } from '@nestjs/common';
+import { Role } from '../iam/domain/enums';
 import { DriveAccessService } from './drive-access.service';
 import { Drive } from './entities/drive.entity';
 import { FileRecord } from './entities/file-record.entity';
 import { Folder } from './entities/folder.entity';
+import { TeamMember } from './entities/team-member.entity';
 
 /**
  * SPEC-221: DriveAccessService decide qué Drive ve cada miembro.
@@ -12,6 +14,26 @@ import { Folder } from './entities/folder.entity';
 const ORG = 'org-1';
 const ACTOR = { organizationId: ORG, userId: 'user-1' };
 const PERSONAL_DRIVE = Object.assign(new Drive(), { id: 'drive-1', organizationId: ORG, ownerUserId: 'user-1', type: 'personal' as const, teamId: null, name: 'Mi espacio' });
+
+describe('SPEC-222: acceso a Drives de equipo', () => {
+  it('relee la membresía y nunca da acceso a un Drive de otra organización', async () => {
+    const teamDrive = { id: 'drive-equipo', organizationId: ORG, type: 'team', teamId: 'team-1' };
+    const findOne = jest.fn(async ({ where }: { where: { id: string; organizationId: string } }) =>
+      where.id === teamDrive.id && where.organizationId === ORG ? teamDrive : null);
+    const findOneBy = jest.fn().mockResolvedValueOnce({ level: 'read' }).mockResolvedValueOnce({ level: 'write' }).mockResolvedValue(null);
+    const service = new DriveAccessService({
+      getRepository: (entity: unknown) => entity === TeamMember ? { findOneBy } : { findOne },
+    } as never);
+    const member = { ...ACTOR, role: Role.COLABORADOR };
+    await expect(service.findDrive(member, teamDrive.id)).resolves.toMatchObject({ level: 'read' });
+    await expect(service.findDrive(member, teamDrive.id)).resolves.toMatchObject({ level: 'write' });
+    await expect(service.findDrive(member, teamDrive.id)).resolves.toBeNull();
+    expect(findOneBy).toHaveBeenCalledWith({ teamId: 'team-1', userId: ACTOR.userId });
+    await expect(service.findDrive({ ...ACTOR, role: Role.TENANT_ADMIN }, teamDrive.id)).resolves.toMatchObject({ level: 'write' });
+    await expect(service.findDrive({ ...ACTOR, organizationId: 'otra', role: Role.TENANT_ADMIN }, teamDrive.id)).resolves.toBeNull();
+    expect(findOneBy).toHaveBeenCalledTimes(3);
+  });
+});
 
 /**
  * Simula la consulta real: solo devuelve un Drive si coincide con el filtro recibido.
