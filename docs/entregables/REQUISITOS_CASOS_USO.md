@@ -249,7 +249,7 @@ El diagrama de casos de uso está en `DIAGRAMAS_UML.md` (§1).
 - **Endpoint:** `GET /dashboard`. **Flujo:** el sistema devuelve la organización, el plan vigente, el almacenamiento usado y el límite, todo en bytes; la interfaz solo los formatea. Sin suscripción vigente, el límite es 0.
 
 #### UC-12 Crear carpeta · ✅ · RF-007
-- **Endpoint:** `POST /folders`. **Flujo:** el usuario indica el nombre y la carpeta padre (por defecto la raíz); el sistema la crea en su espacio personal. **Brecha:** ADR-003 y las reglas de negocio exigen nombres únicos dentro del mismo padre sin distinguir mayúsculas, pero **hoy ni la API ni la BD lo validan** (no hay índice único): se pueden crear carpetas duplicadas. La corrige SPEC-218.
+- **Endpoint:** `POST /folders`. **Flujo:** el usuario indica el nombre y la carpeta padre (por defecto la raíz); el sistema la crea en su espacio personal. El nombre de una carpeta activa es único dentro del mismo padre sin distinguir mayúsculas (SPEC-218).
 
 #### UC-13 Explorar carpetas y archivos · ✅ · RF-007
 - **Endpoints:** `GET /folders`, `GET /folders/:id/items`. **Flujo:** el sistema devuelve el espacio personal y, para cada carpeta, sus subcarpetas (con tamaño y fecha) y archivos (nombre, tipo, tamaño, versión y fecha). Una carpeta ajena responde `404`.
@@ -323,7 +323,6 @@ El diagrama de casos de uso está en `DIAGRAMAS_UML.md` (§1).
 3. **Sin rotación de llaves**: cambiar `FILES_MASTER_KEY` deja ilegibles los archivos existentes (ADR-006). Lo resuelve SPEC-005.
 4. **Cuota y papelera**: sin purga automática, los archivos eliminados hace más de 30 días dejan de contar para la cuota pero siguen almacenados. Lo resuelve SPEC-215.
 5. **Sin límite de intentos ni cabeceras de seguridad** (HSTS/CSP) en la API. Los resuelven SPEC-112 y SPEC-806.
-6. **Carpetas duplicadas:** la unicidad de nombres por carpeta padre que exige ADR-003 no está implementada; la agrega SPEC-218.
 
 ---
 
