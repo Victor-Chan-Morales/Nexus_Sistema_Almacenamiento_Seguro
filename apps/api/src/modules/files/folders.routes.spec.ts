@@ -7,6 +7,7 @@ import { DeploymentModel } from '../iam/domain/enums';
 import { DriveAccessService } from './drive-access.service';
 import { FoldersController } from './files.controller';
 import { FilesService } from './files.service';
+import { FileOrganizerService } from './file-organizer.service';
 import { Destination } from './entities/destination.entity';
 import { Folder } from './entities/folder.entity';
 import { TenantEncryptionKey } from './entities/tenant-encryption-key.entity';
@@ -89,7 +90,7 @@ describe('Rutas de carpetas (SPEC-803) por HTTP', () => {
     const guards: unknown[] = Reflect.getMetadata(GUARDS_METADATA, FoldersController) ?? [];
     const moduleRef = await Test.createTestingModule({
       controllers: [FoldersController],
-      providers: [{ provide: FilesService, useValue: files }],
+      providers: [{ provide: FilesService, useValue: files }, { provide: FileOrganizerService, useValue: {} }],
     })
       .overrideGuard(guards[0] as never)
       .useValue({

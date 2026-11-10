@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { FilesController, FoldersController } from './files.controller';
 import { DrivesController } from './drives.controller';
 import { FilesService } from './files.service';
+import { FileOrganizerService } from './file-organizer.service';
 import { TrashRetentionService } from './trash-retention.service';
 import { FileVersionsService } from './file-versions.service';
 import { ShareLinksService } from './share-links.service';
@@ -74,6 +75,7 @@ import { OrganizationRepository } from '../iam/ports/repositories';
   ],
   providers: [
     FilesService,
+    FileOrganizerService,
     TrashRetentionService,
     FileVersionsService,
     FilesCryptoService,
