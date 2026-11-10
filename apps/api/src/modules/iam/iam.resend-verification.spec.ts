@@ -40,7 +40,7 @@ function setup() {
     }),
   };
   const service = new EmailVerificationService(uow as never, tokenRows as never, users as never, {} as never, tokens as never, outbox as never);
-  const controller = new IamController({} as never, {} as never, {} as never, {} as never, {} as never, service);
+  const controller = new IamController({} as never, {} as never, {} as never, {} as never, {} as never, service, {} as never);
   return { controller, service, order, users, tokenRows, tokens, outbox, uow };
 }
 
