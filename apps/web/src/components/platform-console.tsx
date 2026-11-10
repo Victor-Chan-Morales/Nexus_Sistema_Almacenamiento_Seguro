@@ -94,6 +94,9 @@ export function PlatformConsole() {
   const { session } = useSession();
   return <>
     <div className="page-heading"><p className="eyebrow">CONSOLA DE PLATAFORMA</p><h1>Resumen global</h1><p>Estado general de Nexus y sus organizaciones.</p></div>
+    <nav aria-label="Secciones de la consola"><p>
+      <a href="#resumen">Resumen</a> · <a href="#organizaciones">Organizaciones</a> · <a href="#instalaciones">Instalaciones</a> · <a href="#planes">Planes</a>
+    </p></nav>
     {session && <PlatformContent token={session.accessToken} selfOrganizationId={session.organization.id} />}
   </>;
 }
@@ -607,6 +610,9 @@ function PlansSection({ token, onChanged }: { token: string; onChanged: () => Pr
 
 function PlanRow({ plan, onEdit }: { plan: PlatformPlan; onEdit: () => void }) {
   const validity = plan.validityDays === null ? "Sin vigencia" : plan.validityDays === 1 ? "1 día" : `${plan.validityDays} días`;
+  // Solo evita un intento inútil: la API sigue siendo la que decide (responde 422 PLAN_NOT_EDITABLE).
+  const isDemo = plan.name === "Demo";
+  const noteId = `plan-demo-note-${plan.id}`;
   return <tr>
     <td className="settings-cell-name">{plan.name}</td>
     <td>{plan.priceMonthly.toFixed(2)}</td>
@@ -614,7 +620,8 @@ function PlanRow({ plan, onEdit }: { plan: PlatformPlan; onEdit: () => void }) {
     <td>{plan.userLimit}</td>
     <td className="settings-cell-muted">{validity}</td>
     <td><div className="settings-actions-cell">
-      <button id={`plan-edit-${plan.id}`} type="button" className="settings-action-btn" aria-label={`Editar plan ${plan.name}`} onClick={onEdit}>Editar</button>
+      <button id={`plan-edit-${plan.id}`} type="button" className="settings-action-btn" aria-label={`Editar plan ${plan.name}`} disabled={isDemo} aria-describedby={isDemo ? noteId : undefined} onClick={onEdit}>Editar</button>
+      {isDemo && <span id={noteId} className="settings-cell-muted">El plan Demo no se puede editar.</span>}
     </div></td>
   </tr>;
 }
