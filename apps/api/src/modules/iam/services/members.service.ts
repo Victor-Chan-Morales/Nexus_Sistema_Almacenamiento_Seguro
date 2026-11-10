@@ -21,6 +21,7 @@ import {
 } from '../ports/repositories';
 import { PasswordHasher, OpaqueTokens } from '../ports/security';
 import { TransactionContext, UnitOfWork } from '../ports/transaction';
+import { AccountNotices } from './account-notices.service';
 import { EmailOutboxService } from './email-outbox.service';
 
 /**
@@ -42,6 +43,7 @@ export class MembersService {
     private readonly admission: MemberAdmission,
     private readonly audit: AuditService,
     private readonly sessions: SessionRepository,
+    private readonly notices: AccountNotices,
   ) {}
 
   /**
@@ -174,6 +176,7 @@ export class MembersService {
       }
 
       const reactivating = statusChanged && dto.status === MembershipStatus.ACTIVE;
+      const suspending = statusChanged && dto.status === MembershipStatus.SUSPENDED;
       if (reactivating && (await this.memberships.countActiveInOrganization(tx, actor.organizationId)) >= limit) {
         throw IamErrors.userLimitExceeded();
       }
@@ -182,7 +185,7 @@ export class MembersService {
       if (statusChanged) await this.memberships.updateStatus(tx, target.id, dto.status as MembershipStatus);
       // Suspender cierra las sesiones: el refresh deja de servir. El access token vigente ya muere con el 401 de
       // JwtStrategy, que revalida la membresía en cada solicitud.
-      if (statusChanged && dto.status === MembershipStatus.SUSPENDED) {
+      if (suspending) {
         await this.sessions.revokeAllActiveOf(tx, target.userId);
       }
 
@@ -200,10 +203,11 @@ export class MembersService {
         status: statusChanged ? (dto.status as MembershipStatus) : target.status,
         joinedAt: target.createdAt.toISOString(),
       };
-      return { member, actions };
+      return { member, actions, suspending };
     });
 
     this.auditAfterCommit(actor, outcome.member.id, outcome.actions);
+    if (outcome.suspending) await this.notices.memberStatusChanged(outcome.member);
     return outcome.member;
   }
 
@@ -212,7 +216,7 @@ export class MembersService {
    * revocan sus sesiones. Sus archivos no se borran: siguen ocupando cuota y nadie puede abrirlos.
    */
   async remove(actor: AuthUser, membershipId: string): Promise<void> {
-    await this.uow.run(async (tx) => {
+    const recipient = await this.uow.run(async (tx) => {
       const { target } = await this.loadTarget(tx, actor, membershipId);
 
       if (target.userId === actor.userId) throw IamErrors.cannotModifySelf();
@@ -227,9 +231,11 @@ export class MembersService {
       await this.memberships.remove(tx, target.id);
       await this.users.setStatus(tx, target.userId, UserStatus.INACTIVE);
       await this.sessions.revokeAllActiveOf(tx, target.userId);
+      return { userId: target.userId, email: target.user.email };
     });
 
     this.auditAfterCommit(actor, membershipId, [AuditAction.MEMBER_REMOVED]);
+    await this.notices.memberStatusChanged(recipient);
   }
 
   /**

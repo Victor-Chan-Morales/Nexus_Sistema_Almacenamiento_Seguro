@@ -14,6 +14,7 @@ import { AuthUser } from '../iam/interfaces/auth-user.interface';
 import { OrganizationRepository, UserRepository } from '../iam/ports/repositories';
 import { PasswordHasher } from '../iam/ports/security';
 import { UnitOfWork } from '../iam/ports/transaction';
+import { AccountNotices } from '../iam/services/account-notices.service';
 import { SessionService } from '../iam/services/session.service';
 import { CloseOrganizationDto } from './dto/close-organization.dto';
 
@@ -39,6 +40,7 @@ export class OrganizationClosureService {
     private readonly users: UserRepository,
     private readonly hasher: PasswordHasher,
     private readonly uow: UnitOfWork,
+    private readonly notices: AccountNotices,
     @Optional() private readonly audit?: AuditService,
   ) {}
 
@@ -53,7 +55,7 @@ export class OrganizationClosureService {
     }
 
     // 2. Transacción atómica de cierre
-    await this.uow.run(async (tx) => {
+    const recipients = await this.uow.run(async (tx) => {
       const org = await this.organizations.findByIdForUpdate(actor.organizationId, tx);
       if (!org) {
         throw new NotFoundException({
@@ -69,6 +71,10 @@ export class OrganizationClosureService {
         });
       }
 
+      const recipients = org.status === OrgStatus.ACTIVE
+        ? await this.notices.captureClosureRecipients(tx, org.id)
+        : [];
+
       // Paso A: UPDATE admin.organization SET status = 'cancelled'
       await this.organizations.setStatus(tx, org.id, OrgStatus.CANCELLED);
 
@@ -77,7 +83,10 @@ export class OrganizationClosureService {
 
       // Paso C: UPDATE iam.session SET revoked_at = NOW() masivo
       await this.sessions.revokeAllOfOrganization(tx, org.id);
+      return recipients;
     });
+
+    await this.notices.organizationClosed(recipients);
 
     // 3. Auditoría posterior al commit (best-effort, SPEC-114 §8): un fallo no revierte el cierre, pero se registra.
     void this.audit?.logEvent({

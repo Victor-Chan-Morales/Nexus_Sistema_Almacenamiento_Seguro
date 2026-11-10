@@ -1,5 +1,5 @@
 Levantar proyecto nexus
-1. npm run infra:up ------ levantar docker
+1. npm run infra:up ------ levantar Postgres, SeaweedFS y Mailpit (http://localhost:8025)
 2. npm run migration:run ------ crear tablas base de datos
 3. npm run dev:api ------ encender motores del backend en terminal 1
 4. npm run dev:web ------ encender motor frontend en terminal 2

@@ -9,7 +9,9 @@ export const PASSWORD_RESET_TOKEN_TTL_MINUTES = 15;
 export const MEMBER_INVITATION_TOKEN_TTL_HOURS = 24;
 
 /** Tipos de mensaje de iam.email_outbox (coinciden con el CHECK ck_email_outbox_kind). */
-export const OUTBOX_KINDS = ['email_verification', 'password_reset', 'member_invitation'] as const;
+export const ACCOUNT_NOTICE_KINDS = ['plan_changed', 'member_status_changed', 'organization_closed'] as const;
+export type AccountNoticeKind = (typeof ACCOUNT_NOTICE_KINDS)[number];
+export const OUTBOX_KINDS = ['email_verification', 'password_reset', 'member_invitation', ...ACCOUNT_NOTICE_KINDS] as const;
 export type OutboxKind = (typeof OUTBOX_KINDS)[number];
 
 /**

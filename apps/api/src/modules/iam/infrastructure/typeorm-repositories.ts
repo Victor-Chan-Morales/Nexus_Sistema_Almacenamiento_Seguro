@@ -125,10 +125,14 @@ export class TypeOrmOrganizationRepository implements OrganizationRepository {
     );
   }
 
-  async lockById(tx: TransactionContext, organizationId: string): Promise<boolean> {
+  async lockById(
+    tx: TransactionContext,
+    organizationId: string,
+    options?: { allowReferences: boolean },
+  ): Promise<boolean> {
     const row = await tx.findOne(Organization, {
       where: { id: organizationId },
-      lock: { mode: 'pessimistic_write' },
+      lock: { mode: options?.allowReferences ? 'for_no_key_update' : 'pessimistic_write' },
     });
     return row !== null;
   }
@@ -200,8 +204,8 @@ export class TypeOrmMembershipRepository implements MembershipRepository {
     });
   }
 
-  listByOrganization(organizationId: string): Promise<Membership[]> {
-    return this.dataSource.getRepository(Membership).find({
+  listByOrganization(organizationId: string, tx?: TransactionContext): Promise<Membership[]> {
+    return managerOf(this.dataSource, tx).find(Membership, {
       where: { organizationId },
       relations: { user: true, roleRef: true },
       select: {
@@ -209,7 +213,7 @@ export class TypeOrmMembershipRepository implements MembershipRepository {
         userId: true,
         status: true,
         createdAt: true,
-        user: { fullName: true, email: true },
+        user: { fullName: true, email: true, status: true },
         roleRef: { name: true },
       },
       order: { createdAt: 'ASC' },

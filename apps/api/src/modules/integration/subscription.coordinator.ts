@@ -9,6 +9,8 @@ import { BillingService } from '../billing/billing.service';
 import { FilesService } from '../files/files.service';
 import { Subscription, SubscriptionStatus } from '../billing/entities/subscription.entity';
 import { PaymentInput, resolveSimulatedPayment } from '../billing/simulated-payment';
+import { OrganizationRepository } from '../iam/ports/repositories';
+import { AccountNotices } from '../iam/services/account-notices.service';
 
 /**
  * SubscriptionCoordinator — Coordinador de Integración entre Billing y Files
@@ -39,6 +41,8 @@ export class SubscriptionCoordinator {
     private readonly billingService: BillingService,
     private readonly filesService: FilesService,
     private readonly dataSource: DataSource,
+    private readonly organizations: OrganizationRepository,
+    private readonly notices: AccountNotices,
   ) {}
 
   /**
@@ -51,7 +55,9 @@ export class SubscriptionCoordinator {
   ): Promise<Subscription> {
     const targetPlan = await this.billingService.findPlanById(planId);
 
-    return this.dataSource.transaction(async (manager: EntityManager) => {
+    const { subscription, changed } = await this.dataSource.transaction(async (manager: EntityManager) => {
+      // Serializa incluso sin suscripción previa, sin bloquear las referencias que crean las cargas.
+      await this.organizations.lockById(manager, organizationId, { allowReferences: true });
       // 1. Lectura de estado vigente con bloqueo pesimista para prevenir carreras concurrentes
       // Sin cargar el plan: PostgreSQL rechaza FOR UPDATE sobre el lado nulo de un LEFT JOIN,
       // y aquí solo hacen falta planId y el estado para cancelar la suscripción vigente.
@@ -63,7 +69,7 @@ export class SubscriptionCoordinator {
 
       // 2. Idempotencia: Si ya está activo el mismo plan, retornar la suscripción vigente sin recrear
       if (currentActive && currentActive.planId === targetPlan.id) {
-        return currentActive;
+        return { subscription: currentActive, changed: false };
       }
 
       // 3. Validación de Downgrade contra FilesModule (Uso Confirmado + Reservas Activas)
@@ -99,7 +105,10 @@ export class SubscriptionCoordinator {
       const cardLast4 = resolveSimulatedPayment(targetPlan, payment, new Date());
 
       // 5. Delegar la persistencia atómica en BillingService.persistSubscription
-      return this.billingService.persistSubscription(organizationId, targetPlan, manager, cardLast4);
+      const subscription = await this.billingService.persistSubscription(organizationId, targetPlan, manager, cardLast4);
+      return { subscription, changed: true };
     });
+    if (changed) await this.notices.planChanged(organizationId);
+    return subscription;
   }
 }

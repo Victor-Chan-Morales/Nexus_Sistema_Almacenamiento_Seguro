@@ -39,6 +39,7 @@ const build = (claimed: unknown[] = []) => {
     sendVerification: jest.fn().mockResolvedValue(undefined),
     sendPasswordReset: jest.fn().mockResolvedValue(undefined),
     sendMemberInvitation: jest.fn().mockResolvedValue(undefined),
+    sendAccountNotice: jest.fn().mockResolvedValue(undefined),
   };
   const uow = { run: jest.fn((work: (tx: unknown) => unknown) => work('tx')) };
   const tokens = {
@@ -50,6 +51,24 @@ const build = (claimed: unknown[] = []) => {
 };
 
 describe('EmailOutboxService (outbox persistente de correo)', () => {
+  it.each(['plan_changed', 'member_status_changed', 'organization_closed'])(
+    'SPEC-115: %s usa el canal de avisos sin pasar tokens ni nombres al correo',
+    async (kind) => {
+      const t = build([message({ kind, encryptedPayload: cipher.encrypt(''), recipientName: '' })]);
+      await t.service.dispatch('out-1');
+      expect(t.mailer.sendAccountNotice).toHaveBeenCalledWith(EMAIL, kind);
+      expect(t.tokens.issue).not.toHaveBeenCalled();
+      expect(t.outbox.markSent).toHaveBeenCalledWith('out-1');
+    },
+  );
+
+  it('SPEC-115: un fallo SMTP deja el aviso pendiente de reintento', async () => {
+    const t = build([message({ kind: 'plan_changed', encryptedPayload: cipher.encrypt('') })]);
+    t.mailer.sendAccountNotice.mockRejectedValueOnce(new Error('SMTP inaccesible'));
+    await expect(t.service.dispatchDue()).resolves.toBeUndefined();
+    expect(t.outbox.markFailed).toHaveBeenCalledWith('out-1', expect.objectContaining({ attempts: 1 }));
+    expect(t.outbox.markSent).not.toHaveBeenCalled();
+  });
   it('al encolar guarda el token cifrado, nunca en claro', async () => {
     const t = build();
     await t.service.enqueue('tx' as never, {
