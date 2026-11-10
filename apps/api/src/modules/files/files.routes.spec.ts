@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 import { Readable } from 'stream';
 import * as request from 'supertest';
 import { FileVersionsService } from './file-versions.service';
+import { FileOrganizerService } from './file-organizer.service';
 import { FilesController } from './files.controller';
 import { FilesService } from './files.service';
 
@@ -31,6 +32,7 @@ describe('Rutas de versiones (SPEC-210) por HTTP', () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [FilesController],
       providers: [
+        { provide: FileOrganizerService, useValue: {} },
         { provide: FilesService, useValue: {} },
         { provide: FileVersionsService, useValue: fileVersions },
       ],

@@ -18,7 +18,7 @@ describe('SPEC-405: Files Audit Hooks', () => {
   let driveAccess: DriveAccessService;
   let filesController: FilesController;
   let mockAuditService: { logEvent: jest.Mock };
-  let mockFileRepo: { createQueryBuilder: jest.Mock; save: jest.Mock };
+  let mockFileRepo: { save: jest.Mock };
   let mockDataSource: { transaction: jest.Mock };
 
   beforeEach(() => {
@@ -29,7 +29,6 @@ describe('SPEC-405: Files Audit Hooks', () => {
     };
 
     mockFileRepo = {
-      createQueryBuilder: jest.fn(),
       save: jest.fn(),
     };
 
@@ -68,6 +67,7 @@ describe('SPEC-405: Files Audit Hooks', () => {
     filesController = new FilesController(
       filesService,
       fileVersions,
+      {} as never,
       mockAuditService as unknown as AuditService,
     );
   });
@@ -208,23 +208,13 @@ describe('SPEC-405: Files Audit Hooks', () => {
       const userId = 'usr-test-1';
       const fileId = 'file-abc-123';
 
-      jest.spyOn(filesService, 'getOrCreateUserDrive').mockResolvedValue({
-        id: 'drive-1',
-        name: 'Drive',
-        rootFolderId: 'root-1',
+      jest.spyOn(driveAccess, 'locateFile').mockResolvedValue({
+        file: { id: fileId, organizationId: orgId, isDeleted: false } as FileRecord,
+        folder: { isDeleted: false } as never,
+        access: { drive: { id: 'drive-1' } as never, level: 'owner' },
       });
-
-      const qbMock: any = {
-        innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        getOne: jest.fn().mockResolvedValue({
-          id: fileId,
-          organizationId: orgId,
-          isDeleted: false,
-        }),
-      };
-      mockFileRepo.createQueryBuilder.mockReturnValue(qbMock);
+      mockDataSource.transaction.mockImplementation((work) =>
+        work({ query: jest.fn().mockResolvedValue([]), getRepository: () => mockFileRepo }));
       mockFileRepo.save.mockImplementation(async (entity: FileRecord) => ({ ...entity, id: fileId }));
 
       const result = await filesService.softDelete(fileId, orgId, userId);
@@ -241,19 +231,9 @@ describe('SPEC-405: Files Audit Hooks', () => {
     });
 
     it('no registra auditoría si el archivo no existe (fallo previo)', async () => {
-      jest.spyOn(filesService, 'getOrCreateUserDrive').mockResolvedValue({
-        id: 'drive-1',
-        name: 'Drive',
-        rootFolderId: 'root-1',
-      });
-
-      const qbMock: any = {
-        innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        getOne: jest.fn().mockResolvedValue(null),
-      };
-      mockFileRepo.createQueryBuilder.mockReturnValue(qbMock);
+      jest.spyOn(driveAccess, 'locateFile').mockResolvedValue(null);
+      mockDataSource.transaction.mockImplementation((work) =>
+        work({ query: jest.fn().mockResolvedValue([]), getRepository: () => mockFileRepo }));
 
       await expect(filesService.softDelete('file-inexistente', 'org-1', 'usr-1'))
         .rejects
@@ -265,19 +245,13 @@ describe('SPEC-405: Files Audit Hooks', () => {
     it('no bloquea la operación si logEvent falla o lanza excepción', async () => {
       mockAuditService.logEvent.mockRejectedValueOnce(new Error('Audit DB down'));
 
-      jest.spyOn(filesService, 'getOrCreateUserDrive').mockResolvedValue({
-        id: 'drive-1',
-        name: 'Drive',
-        rootFolderId: 'root-1',
+      jest.spyOn(driveAccess, 'locateFile').mockResolvedValue({
+        file: { id: 'file-1', organizationId: 'org-1', isDeleted: false } as FileRecord,
+        folder: { isDeleted: false } as never,
+        access: { drive: { id: 'drive-1' } as never, level: 'owner' },
       });
-
-      const qbMock: any = {
-        innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        getOne: jest.fn().mockResolvedValue({ id: 'file-1', organizationId: 'org-1' }),
-      };
-      mockFileRepo.createQueryBuilder.mockReturnValue(qbMock);
+      mockDataSource.transaction.mockImplementation((work) =>
+        work({ query: jest.fn().mockResolvedValue([]), getRepository: () => mockFileRepo }));
       mockFileRepo.save.mockImplementation(async (entity: FileRecord) => entity);
 
       const result = await filesService.softDelete('file-1', 'org-1', 'usr-1');

@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
 import { AuditService } from '../audit/audit.service';
@@ -168,7 +168,7 @@ export class ShareLinksService {
 
     const located = await this.driveAccess.locateFile(actor, version.fileId);
     if (!located) throw this.linkNotFound(linkId);
-    this.requireWriteAccess(located.access);
+    this.driveAccess.assertCanWrite(located.access);
 
     const result = await this.linkRepository.update(
       { id: linkId, organizationId: actor.organizationId, revokedAt: IsNull() },
@@ -200,17 +200,8 @@ export class ShareLinksService {
     if (file.isDeleted || folder.isDeleted || !file.currentVersionId) {
       throw this.fileNotFound(fileId);
     }
-    this.requireWriteAccess(access);
+    this.driveAccess.assertCanWrite(access);
     return { currentVersionId: file.currentVersionId, access };
-  }
-
-  private requireWriteAccess(access: DriveAccess): void {
-    if (access.level === 'read') {
-      throw new ForbiddenException({
-        code: 'DRIVE_PERMISSION_DENIED',
-        message: 'Tu acceso al Drive es de solo lectura.',
-      });
-    }
   }
 
   private fileNotFound(fileId: string): NotFoundException {

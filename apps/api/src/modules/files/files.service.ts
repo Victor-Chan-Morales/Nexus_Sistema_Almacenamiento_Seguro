@@ -14,7 +14,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { Readable } from 'stream';
-import { DataSource, EntityManager, In, IsNull, QueryFailedError, Raw, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, Not, QueryFailedError, Raw, Repository } from 'typeorm';
 import { BillingService } from '../billing/billing.service';
 import { StorageRouter } from '../storage/storage-router.service';
 import { Role } from '../iam/domain/enums';
@@ -98,6 +98,7 @@ export interface RestoreTarget {
 export interface UploadParams {
   organizationId: string;
   ownerId: string;
+  role?: Role;
   folderId: string;
   file: any;
   idempotencyKey?: string;
@@ -424,11 +425,12 @@ export class FilesService {
   private async calculateFolderSizes(
     organizationId: string,
     folderIds: string[],
+    executor: DataSource | EntityManager = this.dataSource,
   ): Promise<Map<string, number>> {
     const folderSizes = new Map<string, number>();
     if (!folderIds || folderIds.length === 0) return folderSizes;
 
-    const sizeRows = await this.dataSource.query(
+    const sizeRows = await executor.query(
       `WITH RECURSIVE folder_tree AS (
         SELECT folder_id, folder_id AS root_folder_id
         FROM files.folder
@@ -452,6 +454,16 @@ export class FilesService {
       folderSizes.set(row.folderId, Number(row.totalSizeBytes));
     }
     return folderSizes;
+  }
+
+  async describeFolder(folder: Folder, manager: EntityManager): Promise<FolderSummary> {
+    const sizes = await this.calculateFolderSizes(folder.organizationId, [folder.id], manager);
+    const destination = folder.destinationId ? await manager.findOne(Destination, {
+      select: { id: true, location: true },
+      where: { id: folder.destinationId, organizationId: folder.organizationId },
+    }) : null;
+    const locations = new Map(destination ? [[destination.id, destination.location]] : []);
+    return this.toFolderSummary(folder, sizes, locations);
   }
 
   async listFolders(
@@ -536,6 +548,7 @@ export class FilesService {
     name: string,
     parentId?: string,
     destinationId?: string,
+    role?: Role,
   ): Promise<CreatedFolder> {
     const normalizedName = name?.trim();
     if (!normalizedName || normalizedName.length > 255) {
@@ -544,12 +557,13 @@ export class FilesService {
 
     const created = await this.dataSource.transaction(async (manager) => {
       await this.lockTenantQuota(manager, organizationId);
-      const drive = await this.ensureUserDrive(manager, organizationId, userId);
-      const { folder: parentFolder } = await this.driveAccess.requireFolder(
-        { organizationId, userId },
-        parentId || drive.rootFolderId,
+      const effectiveParentId = parentId || (await this.ensureUserDrive(manager, organizationId, userId)).rootFolderId;
+      const { folder: parentFolder, access } = await this.driveAccess.requireFolder(
+        { organizationId, userId, role },
+        effectiveParentId,
         { manager },
       );
+      this.driveAccess.assertCanWrite(access);
       const folderRepo = manager.getRepository(Folder);
       await this.requireAvailableFolderName(folderRepo, organizationId, parentFolder.id, normalizedName);
       const { destination: defaultDestination } = await this.ensureTenantResources(manager, organizationId);
@@ -561,7 +575,7 @@ export class FilesService {
       });
       const saved = await folderRepo.save(folderRepo.create({
         organizationId,
-        driveId: drive.id,
+        driveId: access.drive.id,
         parentId: parentFolder.id,
         destinationId: destination.id,
         name: normalizedName,
@@ -591,15 +605,17 @@ export class FilesService {
     return created;
   }
 
-  private async requireAvailableFolderName(
+  async requireAvailableFolderName(
     repository: Repository<Folder>,
     organizationId: string,
     parentId: string,
     name: string,
+    exceptId?: string,
   ): Promise<void> {
     const exists = await repository.exists({
       where: {
         organizationId, parentId, isDeleted: false,
+        ...(exceptId ? { id: Not(exceptId) } : {}),
         name: Raw((column) => `lower(${column}) = lower(:folderName)`, { folderName: name }),
       },
     });
@@ -610,7 +626,7 @@ export class FilesService {
     return this.businessError(HttpStatus.CONFLICT, 'FOLDER_NAME_CONFLICT', 'Ya existe una carpeta con ese nombre');
   }
 
-  private rethrowFolderNameConflict(error: unknown): never {
+  rethrowFolderNameConflict(error: unknown): never {
     if (error instanceof QueryFailedError) {
       const cause = error.driverError as { code?: string; constraint?: string };
       if (cause.code === '23505' && cause.constraint === 'uq_folder_active_name_per_parent') {
@@ -674,7 +690,7 @@ export class FilesService {
     return files.map((file) => this.toUploadedFileDto(file, file.versions ?? []));
   }
 
-  private toUploadedFileDto(file: FileRecord, versions: FileVersion[]): UploadedFileDto {
+  toUploadedFileDto(file: FileRecord, versions: FileVersion[]): UploadedFileDto {
     const current = versions.find((version) => version.id === file.currentVersionId)
       ?? versions.reduce<FileVersion | undefined>(
         (latest, version) => !latest || version.versionNumber > latest.versionNumber ? version : latest,
@@ -734,7 +750,7 @@ export class FilesService {
     return { usedBytes, reservedBytes, totalBytes: usedBytes + reservedBytes };
   }
 
-  private async lockTenantQuota(manager: EntityManager, organizationId: string): Promise<void> {
+  async lockTenantQuota(manager: EntityManager, organizationId: string): Promise<void> {
     await manager.query(
       'INSERT INTO files.tenant_quota (organization_id) VALUES ($1) ' +
       'ON CONFLICT (organization_id) DO NOTHING',
@@ -813,8 +829,10 @@ export class FilesService {
         );
       }
 
-      await this.getOrCreateUserDrive(organizationId, ownerId);
-      await this.driveAccess.requireFolder({ organizationId, userId: ownerId }, folderId);
+      const actor = { organizationId, userId: ownerId, role: params.role };
+      if (!params.role) await this.getOrCreateUserDrive(organizationId, ownerId);
+      const { access } = await this.driveAccess.requireFolder(actor, folderId);
+      this.driveAccess.assertCanWrite(access);
       const reservation = await this.reserveUpload({
         organizationId,
         ownerId,
@@ -829,11 +847,12 @@ export class FilesService {
       try {
         const uploaded = await this.dataSource.transaction(async (manager) => {
           await this.lockTenantQuota(manager, organizationId);
-          const { folder } = await this.driveAccess.requireFolder(
-            { organizationId, userId: ownerId },
+          const { folder, access } = await this.driveAccess.requireFolder(
+            actor,
             folderId,
             { manager, lock: true },
           );
+          this.driveAccess.assertCanWrite(access);
           const fileRepo = manager.getRepository(FileRecord);
           const versionRepo = manager.getRepository(FileVersion);
           const uploadRepo = manager.getRepository(Upload);
@@ -1111,7 +1130,7 @@ export class FilesService {
     }
   }
 
-  private normalizeFileName(value: unknown): string {
+  normalizeFileName(value: unknown): string {
     if (typeof value !== 'string' || !value.trim()) {
       throw new BadRequestException('El archivo debe tener un nombre válido');
     }
@@ -1251,23 +1270,19 @@ export class FilesService {
     return Buffer.concat(chunks);
   }
 
-  async softDelete(fileId: string, organizationId: string, userId: string): Promise<FileRecord> {
-    const access = await this.driveAccess.findDrive({ organizationId, userId });
-    if (!access) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
-    const drive = access.drive;
-    const file = await this.fileRepository.createQueryBuilder('file')
-      .innerJoin('file.folder', 'folder')
-      .where('file.id = :fileId', { fileId })
-      .andWhere('file.organizationId = :organizationId', { organizationId })
-      .andWhere('file.isDeleted = false')
-      .andWhere('folder.driveId = :driveId', { driveId: drive.id })
-      .andWhere('folder.isDeleted = false')
-      .getOne();
-    if (!file) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
-
-    file.isDeleted = true;
-    file.deletedAt = new Date();
-    const saved = await this.fileRepository.save(file);
+  async softDelete(fileId: string, organizationId: string, userId: string, role?: Role): Promise<FileRecord> {
+    const actor = { organizationId, userId, role };
+    const saved = await this.dataSource.transaction(async (manager) => {
+      await this.lockTenantQuota(manager, organizationId);
+      const located = await this.driveAccess.locateFile(actor, fileId, { manager, lock: true });
+      if (!located || located.file.isDeleted || located.folder.isDeleted) {
+        throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
+      }
+      this.driveAccess.assertCanWrite(located.access);
+      located.file.isDeleted = true;
+      located.file.deletedAt = new Date();
+      return manager.getRepository(FileRecord).save(located.file);
+    });
 
     // Enganche SPEC-405: FILE_DELETE tras guardar el borrado lógico
     void this.auditService?.logEvent({
@@ -1282,18 +1297,15 @@ export class FilesService {
   }
 
   /** Mueve una carpeta y todo su árbol de contenido a la papelera como una unidad restaurable. */
-  async softDeleteFolder(folderId: string, organizationId: string, userId: string): Promise<{ success: true; id: string }> {
-    const access = await this.driveAccess.findDrive({ organizationId, userId });
-    if (!access) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
-    const drive = access.drive;
-
+  async softDeleteFolder(folderId: string, organizationId: string, userId: string, role?: Role): Promise<{ success: true; id: string }> {
+    const actor = { organizationId, userId, role };
     await this.dataSource.transaction(async (manager) => {
       await this.lockTenantQuota(manager, organizationId);
-      const folderRepo = manager.getRepository(Folder);
-      const root = await folderRepo.findOne({
-        where: { id: folderId, organizationId, driveId: drive.id },
-        lock: { mode: 'pessimistic_write' },
+      const { folder: root, access } = await this.driveAccess.requireFolder(actor, folderId, {
+        manager, lock: true, includeDeleted: true,
       });
+      this.driveAccess.assertCanWrite(access);
+      const drive = access.drive;
       if (!root || root.isDeleted || !root.parentId) {
         throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
       }
@@ -1325,18 +1337,16 @@ export class FilesService {
   }
 
   /** Restaura la unidad de carpeta; archivos previamente eliminados individualmente permanecen en la papelera. */
-  async restoreFolder(folderId: string, organizationId: string, userId: string): Promise<RestoreFolderResponseDto> {
-    const access = await this.driveAccess.findDrive({ organizationId, userId });
-    if (!access) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
-    const drive = access.drive;
-
+  async restoreFolder(folderId: string, organizationId: string, userId: string, role?: Role): Promise<RestoreFolderResponseDto> {
+    const actor = { organizationId, userId, role };
     const restored = await this.dataSource.transaction(async (manager) => {
       await this.lockTenantQuota(manager, organizationId);
-      const folderRepo = manager.getRepository(Folder);
-      const root = await folderRepo.findOne({
-        where: { id: folderId, organizationId, driveId: drive.id },
-        lock: { mode: 'pessimistic_write' },
+      const { folder: root, access } = await this.driveAccess.requireFolder(actor, folderId, {
+        manager, lock: true, includeDeleted: true,
       });
+      this.driveAccess.assertCanWrite(access);
+      const drive = access.drive;
+      const folderRepo = manager.getRepository(Folder);
       if (!root || !root.isDeleted || !root.deletedAt || !root.parentId) {
         throw new NotFoundException('Carpeta ' + folderId + ' no encontrada en la papelera');
       }
@@ -1380,18 +1390,15 @@ export class FilesService {
   }
 
   /** Purga una carpeta con todo su contenido y elimina los objetos tras confirmar la transacción. */
-  async purgeFolder(folderId: string, organizationId: string, userId: string): Promise<PurgeFileResponseDto> {
-    const access = await this.driveAccess.findDrive({ organizationId, userId });
-    if (!access) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
-    const drive = access.drive;
-
+  async purgeFolder(folderId: string, organizationId: string, userId: string, role?: Role): Promise<PurgeFileResponseDto> {
+    const actor = { organizationId, userId, role };
     const purged = await this.dataSource.transaction(async (manager) => {
       await this.lockTenantQuota(manager, organizationId);
-      const folderRepo = manager.getRepository(Folder);
-      const root = await folderRepo.findOne({
-        where: { id: folderId, organizationId, driveId: drive.id },
-        lock: { mode: 'pessimistic_write' },
+      const { folder: root, access } = await this.driveAccess.requireFolder(actor, folderId, {
+        manager, lock: true, includeDeleted: true,
       });
+      this.driveAccess.assertCanPurge(access, actor);
+      const drive = access.drive;
       if (!root || !root.isDeleted || !root.parentId) {
         throw new NotFoundException('Carpeta ' + folderId + ' no encontrada en la papelera');
       }
@@ -1470,13 +1477,13 @@ export class FilesService {
   /**
    * SPEC-203: devuelve un archivo de la papelera del solicitante a su carpeta original.
    */
-  async restoreFile(fileId: string, organizationId: string, userId: string): Promise<RestoreFileResponseDto> {
-    // Sin Drive no hay transacción: no se bloquea la cuota ni se escribe nada.
-    const access = await this.driveAccess.findDrive({ organizationId, userId });
-    if (!access) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
-
+  async restoreFile(fileId: string, organizationId: string, userId: string, role?: Role): Promise<RestoreFileResponseDto> {
+    const actor = { organizationId, userId, role };
+    if (!role && !await this.driveAccess.findDrive(actor)) {
+      throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
+    }
     const restored = await this.dataSource.transaction((manager) =>
-      this.applyRestore({ organizationId, userId }, manager, fileId),
+      this.applyRestore(actor, manager, fileId),
     );
 
     // Enganche SPEC-405: FILE_RESTORE tras el commit
@@ -1500,10 +1507,9 @@ export class FilesService {
     // Serializa con las cargas de la organización (mismo lock que uploadMultipartFile)
     await this.lockTenantQuota(manager, organizationId);
     const located = await this.driveAccess.locateFile(actor, fileId, { manager, lock: true });
-    if (!located || !located.file.isDeleted) {
-      throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
-    }
-
+    if (!located) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
+    this.driveAccess.assertCanWrite(located.access);
+    if (!located.file.isDeleted) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
     const { file, folder } = located;
     if (folder.isDeleted) {
       throw this.businessError(HttpStatus.CONFLICT, 'PARENT_FOLDER_UNAVAILABLE', 'La carpeta original ya no está disponible');
@@ -1528,13 +1534,13 @@ export class FilesService {
    * SPEC-204: purga definitiva de un archivo de la papelera del solicitante.
    * Los objetos de SeaweedFS se borran después del commit, con mejor esfuerzo y sin bloquear la respuesta.
    */
-  async purgeFile(fileId: string, organizationId: string, userId: string): Promise<PurgeFileResponseDto> {
-    // Sin Drive no hay transacción: no se bloquea la cuota ni se borra nada.
-    const access = await this.driveAccess.findDrive({ organizationId, userId });
-    if (!access) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
-
+  async purgeFile(fileId: string, organizationId: string, userId: string, role?: Role): Promise<PurgeFileResponseDto> {
+    const actor = { organizationId, userId, role };
+    if (!role && !await this.driveAccess.findDrive(actor)) {
+      throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
+    }
     const purged = await this.dataSource.transaction((manager) =>
-      this.applyPurge({ organizationId, userId }, manager, fileId),
+      this.applyPurge(actor, manager, fileId),
     );
 
     // Enganche SPEC-405: FILE_PURGE tras el commit
@@ -1560,6 +1566,7 @@ export class FilesService {
     await this.lockTenantQuota(manager, organizationId);
     const located = await this.driveAccess.locateFile(actor, fileId, { manager, lock: true });
     if (!located) throw new NotFoundException('Archivo ' + fileId + ' no encontrado');
+    this.driveAccess.assertCanPurge(located.access, actor);
     if (!located.file.isDeleted) {
       throw this.businessError(
         HttpStatus.UNPROCESSABLE_ENTITY,

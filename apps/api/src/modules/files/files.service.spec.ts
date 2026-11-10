@@ -596,10 +596,12 @@ describe('SPEC-221: un Drive ajeno responde 404 en cada operación', () => {
   });
 
   it('softDelete filtra por el Drive del solicitante y no marca el archivo ajeno', async () => {
-    const { service, qb, fileRepo } = buildForeignDriveService();
+    const { service, fileRepo } = buildForeignDriveService();
 
     await expect(service.softDelete('file-ajeno', SPEC221_ORG, SPEC221_USER)).rejects.toBeInstanceOf(NotFoundException);
-    expect(qb.andWhere).toHaveBeenCalledWith('folder.driveId = :driveId', { driveId: 'drive-1' });
+    expect(fileRepo.findOne).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'file-ajeno', organizationId: SPEC221_ORG },
+    }));
     expect(fileRepo.save).not.toHaveBeenCalled();
   });
 
