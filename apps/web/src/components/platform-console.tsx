@@ -4,6 +4,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import { Dialog } from "@/components/dialog";
 import { Notice } from "@/components/notice";
 import { LoadingIndicator, useToast } from "@/components/toast";
+import { getPlans } from "@/lib/api/billing";
 import { ApiError } from "@/lib/api/client";
 import {
   approveInstallationRequest,
@@ -15,7 +16,9 @@ import {
   rejectInstallationRequest,
   suspendOrganization,
   updateInstallationStatus,
+  updatePlatformPlan,
 } from "@/lib/api/platform";
+import type { PlatformPlan, PlatformPlanUpdateInput } from "@/lib/api/platform";
 import type {
   PlatformInstallationRequest,
   PlatformInstallationRequestsResponse,
@@ -43,6 +46,19 @@ const STALE_ORGANIZATION_CODES: ReadonlySet<string> = new Set(["INVALID_ORGANIZA
 const STALE_INSTALLATION_CODES: ReadonlySet<string> = new Set(["INVALID_INSTALLATION_TRANSITION", "INSTALLATION_NOT_FOUND"]);
 const ALREADY_REVIEWED_CODES: ReadonlySet<string> = new Set(["REQUEST_ALREADY_REVIEWED"]);
 const INSTALLATION_PAGE_SIZE = 10;
+
+/* SPEC-504: catálogo de planes. La API valida reglas de negocio; aquí solo la forma de los campos. */
+const PLANS_LOAD_ERROR = "No pudimos cargar los planes. Inténtalo de nuevo.";
+const PLANS_REFRESH_ERROR = "No pudimos actualizar la lista de planes. Recarga la página.";
+const PLAN_SAVE_FALLBACK = "No se pudo guardar el plan.";
+/** NOT_FOUND: el plan ya no existe, así que la lista se recarga. */
+const PLAN_STALE_CODES: ReadonlySet<string> = new Set(["NOT_FOUND"]);
+/** Errores que cierran el diálogo: no tienen arreglo desde el formulario. */
+const PLAN_CLOSING_CODES: ReadonlySet<string> = new Set(["NOT_FOUND", "PLAN_NOT_EDITABLE"]);
+/** Errores que se muestran dentro del diálogo para corregir el dato sin cerrarlo. */
+const PLAN_INLINE_CODES: ReadonlySet<string> = new Set(["PLAN_LIMIT_BELOW_USAGE", "VALIDATION_ERROR"]);
+const BYTES_PER_GB = 1e9;
+const PLAN_DESCRIPTION_MAX = 500;
 
 const ORGANIZATION_STATUS_LABELS: Record<PlatformOrganization["status"], string> = {
   active: "Activa",
@@ -78,6 +94,9 @@ export function PlatformConsole() {
   const { session } = useSession();
   return <>
     <div className="page-heading"><p className="eyebrow">CONSOLA DE PLATAFORMA</p><h1>Resumen global</h1><p>Estado general de Nexus y sus organizaciones.</p></div>
+    <nav aria-label="Secciones de la consola"><p>
+      <a href="#resumen">Resumen</a> · <a href="#organizaciones">Organizaciones</a> · <a href="#instalaciones">Instalaciones</a> · <a href="#planes">Planes</a>
+    </p></nav>
     {session && <PlatformContent token={session.accessToken} selfOrganizationId={session.organization.id} />}
   </>;
 }
@@ -97,10 +116,18 @@ function PlatformContent({ token, selfOrganizationId }: { token: string; selfOrg
     }
   }, [token, failSession, notify, setMetrics]);
 
+  // SPEC-504: un cambio de plan altera los límites que muestran las organizaciones; se recargan con una clave nueva.
+  const [organizationsKey, setOrganizationsKey] = useState(0);
+  const refreshAfterPlanChange = useCallback(async () => {
+    setOrganizationsKey((key) => key + 1);
+    await refreshMetrics();
+  }, [refreshMetrics]);
+
   return <>
     <MetricsSection state={metrics} onRetry={reloadMetrics} />
-    <OrganizationsSection token={token} selfOrganizationId={selfOrganizationId} onChanged={refreshMetrics} />
+    <OrganizationsSection key={organizationsKey} token={token} selfOrganizationId={selfOrganizationId} onChanged={refreshMetrics} />
     <InstallationsSection token={token} />
+    <PlansSection token={token} onChanged={refreshAfterPlanChange} />
   </>;
 }
 
@@ -486,6 +513,209 @@ function ApproveDialog({ request, busy, onCancel, onApprove }: { request: Platfo
       <div className="drive-modal-actions">
         <button type="button" className="drive-subtle-button" onClick={onCancel} disabled={busy}>Cancelar</button>
         <button type="submit" className="drive-primary-button" disabled={busy}>{busy ? "Aprobando…" : "Aprobar"}</button>
+      </div>
+    </form>
+  </Dialog>;
+}
+
+type PlanForm = { price: string; storageGb: string; userLimit: string; description: string };
+type PlanFormErrors = Partial<Record<keyof PlanForm, string>>;
+
+/** GB enteros a partir de bytes: la API guarda bytes y el formulario edita GB. */
+function storageGbOf(plan: PlatformPlan) {
+  return Math.round(plan.storageLimitBytes / BYTES_PER_GB);
+}
+
+/** SPEC-504: catálogo de planes (GET /plans, público) y edición por Super Admin (PATCH /platform/plans/:id). */
+function PlansSection({ token, onChanged }: { token: string; onChanged: () => Promise<void> }) {
+  const { failSession } = useSession();
+  const notify = useToast();
+  const fetchPlans = useCallback((signal: AbortSignal) => getPlans({ signal }), []);
+  const { state, reload, set } = useLoad(fetchPlans, true, PLANS_LOAD_ERROR);
+  const [editing, setEditing] = useState<PlatformPlan | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+  const busy = useBusyIds();
+  // Plan cuyo botón Editar recupera el foco al cerrar el diálogo.
+  const returnFocusId = useRef<string | null>(null);
+
+  // Recarga silenciosa: la tabla no se desmonta, así el foco puede volver a su botón.
+  const refreshPlans = useCallback(async () => {
+    try {
+      set({ status: "ready", data: await getPlans() });
+    } catch (error) {
+      if (!failSession(error)) notify("error", PLANS_REFRESH_ERROR);
+    }
+  }, [failSession, notify, set]);
+
+  useEffect(() => {
+    if (editing) return;
+    const id = returnFocusId.current;
+    if (!id) return;
+    returnFocusId.current = null;
+    document.getElementById(`plan-edit-${id}`)?.focus();
+  }, [editing]);
+
+  function openEditor(plan: PlatformPlan) {
+    setEditError(null);
+    setEditing(plan);
+  }
+
+  function closeEditor(planId: string) {
+    returnFocusId.current = planId;
+    setEditError(null);
+    setEditing(null);
+  }
+
+  async function savePlan(plan: PlatformPlan, input: PlatformPlanUpdateInput) {
+    setEditError(null);
+    busy.start(plan.id);
+    try {
+      await updatePlatformPlan(token, plan.id, input);
+      closeEditor(plan.id);
+      notify("success", "Plan actualizado.");
+      void refreshPlans();
+      void onChanged();
+    } catch (error) {
+      if (failSession(error)) return;
+      const message = platformErrorMessage(error, PLAN_SAVE_FALLBACK);
+      if (hasCode(error, PLAN_CLOSING_CODES)) {
+        closeEditor(plan.id);
+        notify("error", message);
+        if (hasCode(error, PLAN_STALE_CODES)) void refreshPlans();
+      } else if (hasCode(error, PLAN_INLINE_CODES)) {
+        // Validación o límite de uso: el diálogo sigue abierto para corregir el dato.
+        setEditError(message);
+      } else {
+        // Resto de errores (403, red, otros): aviso como en las demás secciones; el diálogo sigue abierto.
+        notify("error", message);
+      }
+    } finally {
+      busy.finish(plan.id);
+    }
+  }
+
+  return <section id="planes" className="panel platform-section" aria-labelledby="planes-title">
+    <div className="settings-header-row"><div><h2 id="planes-title" className="settings-section-title">Planes</h2><p className="settings-section-subtitle">Catálogo de planes. Los cambios afectan a las organizaciones suscritas.</p></div></div>
+    {state.status === "loading" && <LoadingIndicator>Cargando planes…</LoadingIndicator>}
+    {state.status === "error" && <Notice title="No se pudieron cargar los planes" message={state.message} onRetry={reload} />}
+    {state.status === "ready" && (state.data.items.length === 0
+      ? <p className="settings-state-box">No hay planes registrados</p>
+      : <div className="settings-table-wrapper"><table className="settings-table">
+        <thead><tr><th>Plan</th><th>Precio (US$/mes)</th><th>Almacenamiento (GB)</th><th>Usuarios</th><th>Vigencia</th><th>Acción</th></tr></thead>
+        <tbody>{state.data.items.map((plan) => <PlanRow key={plan.id} plan={plan} onEdit={() => openEditor(plan)} />)}</tbody>
+      </table></div>)}
+    {editing && <PlanEditDialog plan={editing} busy={busy.ids.has(editing.id)} error={editError} onCancel={() => closeEditor(editing.id)} onSave={(input) => void savePlan(editing, input)} />}
+  </section>;
+}
+
+function PlanRow({ plan, onEdit }: { plan: PlatformPlan; onEdit: () => void }) {
+  const validity = plan.validityDays === null ? "Sin vigencia" : plan.validityDays === 1 ? "1 día" : `${plan.validityDays} días`;
+  // Solo evita un intento inútil: la API sigue siendo la que decide (responde 422 PLAN_NOT_EDITABLE).
+  const isDemo = plan.name === "Demo";
+  const noteId = `plan-demo-note-${plan.id}`;
+  return <tr>
+    <td className="settings-cell-name">{plan.name}</td>
+    <td>{plan.priceMonthly.toFixed(2)}</td>
+    <td>{storageGbOf(plan)}</td>
+    <td>{plan.userLimit}</td>
+    <td className="settings-cell-muted">{validity}</td>
+    <td><div className="settings-actions-cell">
+      <button id={`plan-edit-${plan.id}`} type="button" className="settings-action-btn" aria-label={`Editar plan ${plan.name}`} disabled={isDemo} aria-describedby={isDemo ? noteId : undefined} onClick={onEdit}>Editar</button>
+      {isDemo && <span id={noteId} className="settings-cell-muted">El plan Demo no se puede editar.</span>}
+    </div></td>
+  </tr>;
+}
+
+/** Reglas de forma del formulario de plan. La regla de negocio (p. ej. uso frente al límite) la decide la API. */
+function validatePlanForm(form: PlanForm): PlanFormErrors {
+  const errors: PlanFormErrors = {};
+  if (!/^\d+(\.\d{1,2})?$/.test(form.price.trim())) errors.price = "Escribe un precio en dólares, con punto decimal y hasta 2 decimales (por ejemplo, 19.99).";
+  if (!/^\d+$/.test(form.storageGb.trim()) || Number(form.storageGb) < 1) errors.storageGb = "Escribe un número entero de GB, mayor que 0.";
+  if (!/^\d+$/.test(form.userLimit.trim()) || Number(form.userLimit) < 1) errors.userLimit = "Escribe un número entero de usuarios, mayor que 0.";
+  const description = form.description.trim();
+  if (description.length === 0) errors.description = "Escribe una descripción para el plan.";
+  else if (Array.from(description).length > PLAN_DESCRIPTION_MAX) errors.description = `La descripción no puede tener más de ${PLAN_DESCRIPTION_MAX} caracteres.`;
+  return errors;
+}
+
+/** Solo los campos que cambiaron, comparados en las unidades que muestra el formulario. */
+function planChanges(plan: PlatformPlan, form: PlanForm): PlatformPlanUpdateInput {
+  const input: PlatformPlanUpdateInput = {};
+  const priceMonthly = Number(form.price.trim());
+  if (priceMonthly !== plan.priceMonthly) input.priceMonthly = priceMonthly;
+  const storageLimitGb = Number(form.storageGb.trim());
+  if (storageLimitGb !== storageGbOf(plan)) input.storageLimitGb = storageLimitGb;
+  const userLimit = Number(form.userLimit.trim());
+  if (userLimit !== plan.userLimit) input.userLimit = userLimit;
+  const description = form.description.trim();
+  if (description !== plan.description.trim()) input.description = description;
+  return input;
+}
+
+function PlanEditDialog({ plan, busy, error, onCancel, onSave }: { plan: PlatformPlan; busy: boolean; error: string | null; onCancel: () => void; onSave: (input: PlatformPlanUpdateInput) => void }) {
+  const [form, setForm] = useState<PlanForm>(() => ({
+    price: String(plan.priceMonthly),
+    storageGb: String(storageGbOf(plan)),
+    userLimit: String(plan.userLimit),
+    description: plan.description,
+  }));
+  const [errors, setErrors] = useState<PlanFormErrors>({});
+  const [noChanges, setNoChanges] = useState(false);
+  const firstFieldRef = useRef<HTMLInputElement>(null);
+
+  // Dialog enfoca al abrir su primer elemento (la × de cierre). Este efecto corre después y deja el foco en el primer campo.
+  useEffect(() => {
+    firstFieldRef.current?.focus();
+  }, []);
+
+  function update(field: keyof PlanForm, value: string) {
+    setForm((current) => ({ ...current, [field]: value }));
+    setNoChanges(false);
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (busy) return;
+    const nextErrors = validatePlanForm(form);
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+    const input = planChanges(plan, form);
+    if (Object.keys(input).length === 0) {
+      setNoChanges(true);
+      return;
+    }
+    onSave(input);
+  }
+
+  return <Dialog labelledBy="plan-edit-title" onClose={onCancel} disabled={busy}>
+    <h2 id="plan-edit-title">Editar plan «{plan.name}»</h2>
+    <p>Los cambios se aplican a las organizaciones suscritas a este plan.</p>
+    <form onSubmit={handleSubmit} noValidate>
+      <div className="field">
+        <label htmlFor="plan-price">Precio mensual (US$)</label>
+        <input id="plan-price" ref={firstFieldRef} className="drive-modal-input" inputMode="decimal" autoComplete="off" value={form.price} aria-invalid={errors.price ? true : undefined} aria-describedby={errors.price ? "plan-price-error" : undefined} onChange={(event) => update("price", event.target.value)} />
+        {errors.price && <p id="plan-price-error" className="platform-field-error" role="alert">{errors.price}</p>}
+      </div>
+      <div className="field">
+        <label htmlFor="plan-storage">Almacenamiento (GB)</label>
+        <input id="plan-storage" className="drive-modal-input" inputMode="numeric" autoComplete="off" value={form.storageGb} aria-invalid={errors.storageGb ? true : undefined} aria-describedby={errors.storageGb ? "plan-storage-error" : undefined} onChange={(event) => update("storageGb", event.target.value)} />
+        {errors.storageGb && <p id="plan-storage-error" className="platform-field-error" role="alert">{errors.storageGb}</p>}
+      </div>
+      <div className="field">
+        <label htmlFor="plan-users">Usuarios</label>
+        <input id="plan-users" className="drive-modal-input" inputMode="numeric" autoComplete="off" value={form.userLimit} aria-invalid={errors.userLimit ? true : undefined} aria-describedby={errors.userLimit ? "plan-users-error" : undefined} onChange={(event) => update("userLimit", event.target.value)} />
+        {errors.userLimit && <p id="plan-users-error" className="platform-field-error" role="alert">{errors.userLimit}</p>}
+      </div>
+      <div className="field">
+        <label htmlFor="plan-description">Descripción</label>
+        <textarea id="plan-description" className="drive-modal-input" rows={3} style={{ padding: "10px 12px", resize: "vertical" }} value={form.description} aria-invalid={errors.description ? true : undefined} aria-describedby={errors.description ? "plan-description-error" : undefined} onChange={(event) => update("description", event.target.value)} />
+        {errors.description && <p id="plan-description-error" className="platform-field-error" role="alert">{errors.description}</p>}
+      </div>
+      {error && <p className="platform-field-error" role="alert">{error}</p>}
+      {noChanges && <p className="settings-cell-muted" role="status">No hay cambios que guardar.</p>}
+      <div className="drive-modal-actions">
+        <button type="button" className="drive-subtle-button" onClick={onCancel} disabled={busy}>Cancelar</button>
+        <button type="submit" className="drive-primary-button" disabled={busy}>{busy ? "Guardando…" : "Guardar"}</button>
       </div>
     </form>
   </Dialog>;

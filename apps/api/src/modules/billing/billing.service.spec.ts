@@ -1,13 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import {
   BadRequestException,
   ConflictException,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { BillingService } from './billing.service';
+import { BillingService, PlanChanges } from './billing.service';
 import { Plan, StorageLocation } from './entities/plan.entity';
 import { Subscription, SubscriptionStatus } from './entities/subscription.entity';
 import { BillingOperation, BillingOperationType } from './entities/billing-operation.entity';
@@ -746,6 +746,100 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
       expect(error).toBeInstanceOf(UnprocessableEntityException);
       expect((error as UnprocessableEntityException).getResponse()).toMatchObject({ code: 'PLAN_NOT_RENEWABLE' });
       expect(mockManager.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('SPEC-504: edición del catálogo', () => {
+    let manager: { findOne: jest.Mock; save: jest.Mock };
+    const asManager = (): EntityManager => manager as unknown as EntityManager;
+
+    beforeEach(() => {
+      manager = {
+        findOne: jest.fn(),
+        save: jest.fn((entity: Plan) => Promise.resolve(entity)),
+      };
+    });
+
+    it('lockPlanForUpdate devuelve el plan y consulta con lock pessimistic_write', async () => {
+      manager.findOne.mockResolvedValue(mockTeamPlan);
+
+      const plan = await service.lockPlanForUpdate(asManager(), mockTeamPlan.id);
+
+      expect(plan).toBe(mockTeamPlan);
+      expect(manager.findOne).toHaveBeenCalledWith(
+        Plan,
+        expect.objectContaining({ where: { id: mockTeamPlan.id }, lock: { mode: 'pessimistic_write' } }),
+      );
+    });
+
+    it('lockPlanForUpdate con plan inexistente lanza NotFoundException con code NOT_FOUND', async () => {
+      manager.findOne.mockResolvedValue(null);
+
+      const error = await service.lockPlanForUpdate(asManager(), 'plan-inexistente').catch((err: unknown) => err);
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as NotFoundException).getResponse()).toMatchObject({ code: 'NOT_FOUND' });
+    });
+
+    it('lockPlanForUpdate sobre el plan Demo lanza UnprocessableEntityException PLAN_NOT_EDITABLE y no guarda', async () => {
+      manager.findOne.mockResolvedValue(mockDemoPlan);
+
+      const error = await service.lockPlanForUpdate(asManager(), mockDemoPlan.id).catch((err: unknown) => err);
+
+      expect(error).toBeInstanceOf(UnprocessableEntityException);
+      expect((error as UnprocessableEntityException).getResponse()).toMatchObject({ code: 'PLAN_NOT_EDITABLE' });
+      expect(manager.save).not.toHaveBeenCalled();
+    });
+
+    it('applyPlanChanges con solo priceCents cambia solo ese campo', async () => {
+      const plan = { ...mockTeamPlan };
+      const changes: PlanChanges = { priceCents: 4999 };
+
+      const saved = await service.applyPlanChanges(asManager(), plan, changes);
+
+      expect(manager.save).toHaveBeenCalledWith(plan);
+      expect(saved.priceCents).toBe(4999);
+      expect(saved).toMatchObject({
+        storageLimitBytes: mockTeamPlan.storageLimitBytes,
+        maxMembers: mockTeamPlan.maxMembers,
+        description: mockTeamPlan.description,
+      });
+    });
+
+    it('applyPlanChanges con storageLimitBytes guarda el string en bytes (150 GB)', async () => {
+      const plan = { ...mockTeamPlan };
+      const changes: PlanChanges = { storageLimitBytes: (150n * 1_000_000_000n).toString() };
+
+      const saved = await service.applyPlanChanges(asManager(), plan, changes);
+
+      expect(saved.storageLimitBytes).toBe('150000000000');
+      expect(manager.save).toHaveBeenCalledWith(expect.objectContaining({ storageLimitBytes: '150000000000' }));
+    });
+
+    it('applyPlanChanges con maxMembers y description actualiza esos campos', async () => {
+      const plan = { ...mockTeamPlan };
+      const changes: PlanChanges = { maxMembers: 25, description: 'Para equipos grandes' };
+
+      const saved = await service.applyPlanChanges(asManager(), plan, changes);
+
+      expect(saved).toMatchObject({
+        maxMembers: 25,
+        description: 'Para equipos grandes',
+        priceCents: mockTeamPlan.priceCents,
+        storageLimitBytes: mockTeamPlan.storageLimitBytes,
+      });
+    });
+
+    it('applyPlanChanges sin cambios definidos no altera los campos del plan', async () => {
+      const plan = { ...mockTeamPlan };
+
+      const saved = await service.applyPlanChanges(asManager(), plan, {});
+      expect(saved).toEqual(mockTeamPlan);
+
+      const undefinedChanges: PlanChanges = { priceCents: undefined, maxMembers: undefined };
+      const savedWithUndefined = await service.applyPlanChanges(asManager(), plan, undefinedChanges);
+      expect(savedWithUndefined.priceCents).toBe(mockTeamPlan.priceCents);
+      expect(savedWithUndefined.maxMembers).toBe(mockTeamPlan.maxMembers);
     });
   });
 });

@@ -246,6 +246,19 @@ Se aprobaron las propuestas 1 a 12: correo mediante EmailService, sesiones con a
   - Escenario 10: `npm run seed:super-admin` contra la base externa de Render con `POSTGRES_SSL=true`. No ejecutado.
 - Pendiente de decisión: PR a `main` y paso de la fila de `specs/README.md` a ✅ Hecho tras el merge.
 
+
+## 2026-11-10 — SPEC-504: editar el catálogo de planes
+
+- Implementado en `feat/504-editar-planes`, desde `origin/main` (`100e7ed`). No se partió de la rama local `main` ni de `feat/109-114`. Commits locales; sin push ni PR.
+- Piezas: `billing.service.ts` (`lockPlanForUpdate` con la regla de Demo y `applyPlanChanges`); `platform-admin.service.ts` (`updatePlan`: transacción, comprobación de uso con bloqueo de organizaciones en orden de `organization_id`, auditoría después del commit); `platform.controller.ts` (`PATCH /platform/plans/:id` y su DTO con `ValidateIf`, que hace que `null` responda 400); `audit.types.ts` (`PLAN_UPDATED` y recurso `plan`); consola con la sección "Planes" y su diálogo de edición.
+- Decisiones tomadas (defaults, confirmar en la PR): `PLAN_UPDATED` queda en la organización del Super Admin porque `audit_event.organization_id` es `NOT NULL`; auditoría posterior al commit, como SPEC-503; 404 `NOT_FOUND`; la respuesta tiene la forma de `GET /plans`; body vacío → 400 `VALIDATION_ERROR`; descripción de 1 a 500 caracteres; etiqueta `[v0.7, SPEC-504]` en `CONTRACTS.md`.
+- Pendiente de Víctor: bajar `userLimit` por debajo de los miembros activos **no** se valida (la spec no lo define).
+- Limitación R-RACE: una activación concurrente puede leer el límite anterior, porque `subscription.coordinator.ts` lee el plan fuera de su transacción. Está fuera de alcance.
+- Verificación: `test:api` 1211 pruebas en verde (línea base 1155 más 56 nuevas); `lint:api` sin errores (61 avisos previos); `build:api` y `build:web` correctos; `lint:web` sin errores (1 aviso previo). QA contra una base PostgreSQL efímera: E1 a E6 y restauración pasan; `test:e2e` de plataforma 8/8, que cubre SPEC-503 y no el PATCH de planes; la pantalla pasa salvo Enter, que no fue concluyente.
+- Decisiones confirmadas por Víctor: (1) P1: `userLimit` no se valida frente a los miembros; solo se valida el almacenamiento. (2) El botón Editar de Demo está deshabilitado con un aviso. La UI compara el nombre "Demo", lo que duplica una regla del backend; la API sigue siendo la autoridad y responde 422 `PLAN_NOT_EDITABLE`. (3) Índice de enlaces a las secciones al inicio de la consola, sin tocar `app-shell.tsx`. (4) Si Files falla, la respuesta es `500 INTERNAL_ERROR` por el filtro común; está documentado en `CONTRACTS.md`. (5) La auditoría se registra después del commit, como SPEC-503: si falla, solo queda el aviso en el log. (6) La carrera R-RACE queda documentada como limitación.
+- Coordinación: SPEC-306 toca `billing.service.ts` y SPEC-113 toca `audit/audit.types.ts`. Ambos cambios de SPEC-504 son aditivos; quien integre al segundo debe resolver el conflicto.
+- Pendiente: PR a `main` (requiere autorización); marcar SPEC-504 en `specs/README.md` y en `Orden de ejecucion specs` tras el merge.
+
 ## 2026-11-10 — SPEC-306: comprobantes descargables
 
 - Implementado en `feat/306-comprobantes`, desde `origin/main` (`100e7ed`), que ya contiene SPEC-305 (PR #75). Base de la rama: `origin/main`, no el `main` local ni `feat/109-114`.
@@ -256,3 +269,4 @@ Se aprobaron las propuestas 1 a 12: correo mediante EmailService, sesiones con a
 - Verificación en ejecución: base local dedicada `nexus_qa_306`, con migraciones aplicadas con dbmate y seed demo. HTTP 16/16 y navegador 22/22, incluidos aislamiento entre organizaciones y el 403 del colaborador. La base `nexus_dev` no se tocó.
 - Impresión verificada con emulación de medios `print` (captura). Ctrl+P real queda como prueba manual de Víctor.
 - PR abierta contra `main` desde `feat/306-comprobantes`, sin merge: la fusiona Víctor. Tras el merge, pasar SPEC-306 a ✅ en `Orden de ejecucion specs` y a "Hecho" en `specs/README.md`.
+

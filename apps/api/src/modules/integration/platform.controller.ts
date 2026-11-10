@@ -12,8 +12,20 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import {
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateIf,
+} from 'class-validator';
 import { CurrentUser } from '../iam/decorators/current-user.decorator';
 import { SuperAdminGuard } from '../iam/guards/super-admin.guard';
 import { AuthUser } from '../iam/interfaces/auth-user.interface';
@@ -24,6 +36,7 @@ import {
   PlatformAdminService,
   PlatformMetrics,
   PlatformOrganizationsPage,
+  PlatformPlanItem,
 } from './platform-admin.service';
 
 export const DEFAULT_PAGE_SIZE = 20;
@@ -78,6 +91,38 @@ export class ApprovePlatformInstallationRequestDto {
 export class UpdatePlatformInstallationStatusDto {
   @IsIn(INSTALLATION_STATUSES)
   status!: InstallationStatus;
+}
+
+/**
+ * Cuerpo de PATCH /platform/plans/:id (SPEC-504). Todos los campos son opcionales, pero se usa ValidateIf y no
+ * IsOptional: IsOptional dejaría pasar un null, que llegaría a la BD como NOT NULL (500); con ValidateIf el null se
+ * valida y responde 400. Que el cuerpo tenga al menos un campo lo comprueba el servicio.
+ */
+export class UpdatePlatformPlanDto {
+  @ValidateIf((o: UpdatePlatformPlanDto) => o.priceMonthly !== undefined)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(99999999.99)
+  priceMonthly?: number;
+
+  @ValidateIf((o: UpdatePlatformPlanDto) => o.storageLimitGb !== undefined)
+  @IsInt()
+  @Min(1)
+  @Max(2147483647)
+  storageLimitGb?: number;
+
+  @ValidateIf((o: UpdatePlatformPlanDto) => o.userLimit !== undefined)
+  @IsInt()
+  @Min(1)
+  @Max(2147483647)
+  userLimit?: number;
+
+  @ValidateIf((o: UpdatePlatformPlanDto) => o.description !== undefined)
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MinLength(1)
+  @MaxLength(500)
+  description?: string;
 }
 
 /**
@@ -155,5 +200,14 @@ export class PlatformController {
     @Body() body: UpdatePlatformInstallationStatusDto,
   ): Promise<{ id: string; status: InstallationStatus }> {
     return this.actions.updateInstallationStatus(actor, id, body.status);
+  }
+
+  @Patch('plans/:id')
+  updatePlan(
+    @CurrentUser() actor: AuthUser,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() body: UpdatePlatformPlanDto,
+  ): Promise<PlatformPlanItem> {
+    return this.platform.updatePlan(actor, id, body);
   }
 }

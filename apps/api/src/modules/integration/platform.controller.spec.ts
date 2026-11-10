@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ExecutionContext,
   INestApplication,
+  ParseUUIDPipe,
   UnauthorizedException,
   UnprocessableEntityException,
   ValidationPipe,
@@ -21,6 +22,7 @@ import {
   PlatformInstallationRequestsQuery,
   PlatformOrganizationsQuery,
   UpdatePlatformInstallationStatusDto,
+  UpdatePlatformPlanDto,
 } from './platform.controller';
 
 describe('PlatformController (SPEC-501)', () => {
@@ -148,7 +150,7 @@ describe('Rutas de acciones de plataforma (SPEC-503) por HTTP', () => {
     isSuperAdmin: true,
   };
 
-  const platform = { listOrganizations: jest.fn(), getMetrics: jest.fn() };
+  const platform = { listOrganizations: jest.fn(), getMetrics: jest.fn(), updatePlan: jest.fn() };
   const actions = {
     suspendOrganization: jest.fn(),
     reactivateOrganization: jest.fn(),
@@ -212,6 +214,7 @@ describe('Rutas de acciones de plataforma (SPEC-503) por HTTP', () => {
       { method: 'post' as const, path: `/platform/installation-requests/${REQUEST_ID}/approve` },
       { method: 'post' as const, path: `/platform/installation-requests/${REQUEST_ID}/reject` },
       { method: 'patch' as const, path: `/platform/installations/${INSTALLATION_ID}` },
+      { method: 'patch' as const, path: `/platform/plans/${INSTALLATION_ID}` },
     ];
 
     it.each(allRoutes)('$method $path sin sesión responde 401 UNAUTHORIZED', async ({ method, path }) => {
@@ -369,5 +372,132 @@ describe('Rutas de acciones de plataforma (SPEC-503) por HTTP', () => {
     const res = await http().get('/platform/metrics');
     expect(res.status).toBe(200);
     expect(platform.getMetrics).toHaveBeenCalledTimes(1);
+  });
+
+  describe('PATCH /platform/plans/:id (SPEC-504) por HTTP', () => {
+    const PLAN_ID = '55555555-5555-4555-8555-555555555555';
+    const planPath = `/platform/plans/${PLAN_ID}`;
+
+    it('delega el cuerpo validado con el actor de la sesión y responde 200 con el plan', async () => {
+      const plan = {
+        id: PLAN_ID,
+        name: 'Team',
+        description: 'Plan de equipo',
+        priceMonthly: 24.99,
+        storageLimitBytes: 150000000000,
+        userLimit: 10,
+        validityDays: null,
+      };
+      platform.updatePlan.mockResolvedValue(plan);
+
+      const res = await http().patch(planPath).send({ priceMonthly: 24.99, description: ' Texto ' });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual(plan);
+      expect(platform.updatePlan).toHaveBeenCalledWith(superAdmin, PLAN_ID, { priceMonthly: 24.99, description: 'Texto' });
+    });
+
+    it.each([
+      { priceMonthly: 1.005 },
+      { storageLimitGb: 0 },
+      { userLimit: '12' },
+      { description: null },
+      { organizationId: ORG_ID },
+    ])('cuerpo inválido %j: responde 400 VALIDATION_ERROR y no llama al servicio', async (body) => {
+      const res = await http().patch(planPath).send(body);
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+      expect(platform.updatePlan).not.toHaveBeenCalled();
+    });
+
+    it('un :id que no es UUID responde 400 y no llama al servicio', async () => {
+      const res = await http().patch(`/platform/plans/${NOT_A_UUID}`).send({ priceMonthly: 10 });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+      expect(platform.updatePlan).not.toHaveBeenCalled();
+    });
+
+    it('un error de negocio del servicio llega con su código (422 PLAN_NOT_EDITABLE)', async () => {
+      platform.updatePlan.mockRejectedValue(
+        new UnprocessableEntityException({ code: 'PLAN_NOT_EDITABLE', message: 'El plan Demo no se puede editar' }),
+      );
+      const res = await http().patch(planPath).send({ priceMonthly: 10 });
+      expect(res.status).toBe(422);
+      expect(res.body.code).toBe('PLAN_NOT_EDITABLE');
+    });
+  });
+});
+
+/** SPEC-504: validación de PATCH /platform/plans/:id con el mismo ValidationPipe de producción. */
+describe('PATCH /platform/plans/:id (SPEC-504): DTO y ruta', () => {
+  const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
+  const toPlanDto = (body: Record<string, unknown>) =>
+    pipe.transform(body, { type: 'body', metatype: UpdatePlatformPlanDto }) as Promise<UpdatePlatformPlanDto>;
+
+  const PLAN_ID = '44444444-4444-4444-8444-444444444444';
+  const actor: AuthUser = {
+    userId: 'admin-1',
+    organizationId: 'org-interna',
+    role: Role.TENANT_ADMIN,
+    email: 'admin@ejemplo.test',
+    fullName: 'Super Admin',
+    organizationName: 'Organización interna',
+    isSuperAdmin: true,
+  };
+
+  it.each([
+    { priceMonthly: -1 },
+    { priceMonthly: 1.005 },
+    { priceMonthly: '24.99' },
+    { storageLimitGb: 0 },
+    { storageLimitGb: 1.5 },
+    { storageLimitGb: 2147483648 },
+    { userLimit: '12' },
+    { userLimit: 0 },
+    { description: '' },
+    { description: '   ' },
+    { description: 'x'.repeat(501) },
+    { organizationId: 'org-2' },
+    { priceMonthly: null },
+    { storageLimitGb: null },
+    { userLimit: null },
+    { description: null },
+  ])('rechaza el cuerpo inválido %j con 400', async (body) => {
+    await expect(toPlanDto(body)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('acepta los valores válidos y recorta la descripción', async () => {
+    await expect(toPlanDto({ priceMonthly: 24.99, storageLimitGb: 150, description: ' Texto ' })).resolves.toMatchObject({
+      priceMonthly: 24.99,
+      storageLimitGb: 150,
+      description: 'Texto',
+    });
+    await expect(toPlanDto({ priceMonthly: 0, storageLimitGb: 1, userLimit: 2147483647 })).resolves.toMatchObject({
+      priceMonthly: 0,
+      storageLimitGb: 1,
+      userLimit: 2147483647,
+    });
+    await expect(toPlanDto({ priceMonthly: 99999999.99, description: 'x'.repeat(500) })).resolves.toBeDefined();
+  });
+
+  it('un cuerpo sin campos pasa el DTO: que haya al menos un cambio lo exige el servicio', async () => {
+    await expect(toPlanDto({})).resolves.toEqual({});
+  });
+
+  it('PlatformController.updatePlan delega en platform.updatePlan con el actor, el id y el cuerpo', async () => {
+    const plan = { id: PLAN_ID, name: 'Team', description: 'Plan de equipo', priceMonthly: 24.99 };
+    const platform = { updatePlan: jest.fn().mockResolvedValue(plan) };
+    const controller = new PlatformController(platform as never, {} as never);
+    const body = { priceMonthly: 24.99 };
+
+    expect(await controller.updatePlan(actor, PLAN_ID, body)).toBe(plan);
+    expect(platform.updatePlan).toHaveBeenCalledWith(actor, PLAN_ID, body);
+  });
+
+  it('el :id de PATCH /platform/plans/:id pasa por ParseUUIDPipe: un UUID válido sí, otro valor no', async () => {
+    const idPipe = new ParseUUIDPipe();
+    const param = { type: 'param' as const, metatype: String, data: 'id' };
+    await expect(idPipe.transform(PLAN_ID, param)).resolves.toBe(PLAN_ID);
+    await expect(idPipe.transform('no-es-un-uuid', param)).rejects.toBeInstanceOf(BadRequestException);
   });
 });
