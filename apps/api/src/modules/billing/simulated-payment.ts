@@ -60,7 +60,7 @@ export function validatePaymentFields(input: PaymentInput, now: Date): void {
 }
 
 /** Pure, no I/O. Compares exactly against the two fixed test cards. */
-export function simulatePayment(input: PaymentInput, _now: Date): PaymentResult {
+export function simulatePayment(input: PaymentInput): PaymentResult {
   const cardNumber = normalizeCardNumber(input.cardNumber);
   if (cardNumber === TEST_CARD_APPROVED) {
     return { status: 'approved', last4: cardNumber.slice(-4) };
@@ -104,7 +104,7 @@ export function resolveSimulatedPayment(
   }
 
   validatePaymentFields(payment, now);
-  const result = simulatePayment(payment, now);
+  const result = simulatePayment(payment);
 
   switch (result.status) {
     case 'approved':

@@ -49,14 +49,14 @@ function expectNoSensitiveData(error: HttpException, input: PaymentInput): void 
 
 describe('simulatePayment', () => {
   it('approves the approved test card and returns last4 (escenario 1)', () => {
-    expect(simulatePayment(payment({ cardNumber: TEST_CARD_APPROVED }), NOW)).toEqual({
+    expect(simulatePayment(payment({ cardNumber: TEST_CARD_APPROVED }))).toEqual({
       status: 'approved',
       last4: '4242',
     });
   });
 
   it('declines the declined test card (escenario 2)', () => {
-    expect(simulatePayment(payment({ cardNumber: TEST_CARD_DECLINED }), NOW)).toEqual({
+    expect(simulatePayment(payment({ cardNumber: TEST_CARD_DECLINED }))).toEqual({
       status: 'declined',
     });
   });
@@ -64,16 +64,16 @@ describe('simulatePayment', () => {
   it.each(['5555555555554444', '4242424242424241', '424242424242424', '', 'abcd'])(
     'returns not_test_card for every other number (escenario 3): %s',
     (cardNumber) => {
-      expect(simulatePayment(payment({ cardNumber }), NOW)).toEqual({ status: 'not_test_card' });
+      expect(simulatePayment(payment({ cardNumber }))).toEqual({ status: 'not_test_card' });
     },
   );
 
   it('normalizes spaces in the card number', () => {
-    expect(simulatePayment(payment({ cardNumber: ' 4242 4242  4242 4242 ' }), NOW)).toEqual({
+    expect(simulatePayment(payment({ cardNumber: ' 4242 4242  4242 4242 ' }))).toEqual({
       status: 'approved',
       last4: '4242',
     });
-    expect(simulatePayment(payment({ cardNumber: '4000 0000 0000 0002' }), NOW)).toEqual({
+    expect(simulatePayment(payment({ cardNumber: '4000 0000 0000 0002' }))).toEqual({
       status: 'declined',
     });
   });
