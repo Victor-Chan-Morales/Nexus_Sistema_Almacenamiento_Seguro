@@ -13,7 +13,7 @@
 | **Prioridad** | P1 |
 | **Estimación** | 5 h |
 | **Hito Objetivo** | Entrega final del curso |
-| **Estado** | Borrador |
+| **Estado** | Aprobada (2026-11-10) |
 
 ---
 
@@ -299,3 +299,4 @@ Script `apps/api/src/scripts/mail-check.ts`, expuesto como `mail:check` en `pack
 | 2026-11-10 | Claude Code (borrador) | Proveedor decidido: Brevo. Resend descartado. |
 | 2026-11-10 | Claude Code (borrador) | Decididos: no desplegar con Mailpit (punto 3), fallo DNS deja pasar (punto 4), sin restricción por dominio (punto 5), `VALIDATION_ERROR` (punto 6). |
 | 2026-11-10 | Claude Code (borrador) | Cambio a Gmail SMTP: sin dominio propio, Brevo y Resend quedan descartados. Se reescriben §1, §2, §3, §4 (criterios 1 a 5), §8.1 a §8.6 y §9. Se agrega el criterio 13 (límite diario). Pendiente: elegir la cuenta de Gmail (§8.1). |
+| 2026-11-10 | Víctor Chán Morales | Aprobada. La cuenta de Gmail se elige antes de T1 (§8.1, pregunta 7). |
