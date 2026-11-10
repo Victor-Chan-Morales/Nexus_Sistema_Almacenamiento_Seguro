@@ -87,7 +87,7 @@ Sección "Zona de riesgo" en `/configuracion`, visible solo para `tenant_admin`.
 - [ ] **T3 (40 min)**: Pantalla.
 - [ ] **T4 (30 min)**: Pruebas.
 
-**Archivos permitidos:** `integration/organization-closure.service.ts` y su spec (nuevos), `integration/organizations.controller.ts` (nuevo), `integration/integration.module.ts`, `billing/billing.service.ts` (solo `cancelActive`), `iam/ports/repositories.ts`, `iam/infrastructure/typeorm-repositories.ts`, `audit/audit.types.ts`, `app/configuracion/page.tsx`, `lib/api/members.ts`.
+**Archivos permitidos:** `integration/organization-closure.service.ts` y su spec (nuevos), `integration/organizations.controller.ts` (nuevo), `integration/integration.module.ts`, `billing/billing.service.ts` (solo `cancelActive`), `iam/ports/repositories.ts`, `iam/infrastructure/typeorm-repositories.ts`, `iam/services/session.service.ts` (`revokeAllOfOrganization`), `iam/iam.module.ts` (exports para la orquestación), `audit/audit.types.ts`, `app/configuracion/page.tsx`, `lib/api/members.ts`.
 
 ## 10. Estrategia de Pruebas
 
@@ -113,3 +113,4 @@ Ninguna.
 | 2026-11-04 | Claude Code (borrador) | Versión inicial. |
 | 2026-11-04 | Víctor Chán Morales | Aprobada. |
 | 2026-11-04 | Claude Code (revisión) | Se aclara cómo distingue la pantalla una contraseña incorrecta de una sesión vencida. Aprobado por el coordinador (2026-11-04). |
+| 2026-11-09 | Claude Code (registro, a petición del coordinador) | Se registran en "Archivos permitidos" `iam/services/session.service.ts` e `iam/iam.module.ts`, que la versión inicial no listaba, con acuerdo de IAM (Sebastián) y Billing (Anthony). Se acepta la PR por encima de 400 líneas (≈689) por aprobación del coordinador. |
