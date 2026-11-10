@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Dialog } from "@/components/dialog";
@@ -19,8 +18,7 @@ const roleLabels: Record<MemberRole, string> = {
 };
 
 export default function SettingsPage() {
-  const router = useRouter();
-  const { session, signOut, failSession } = useSession();
+  const { session, failSession } = useSession();
   const isAdmin = session?.role === "tenant_admin";
   const accessToken = session?.accessToken;
   const orgName = session?.organization?.name || "";
@@ -124,9 +122,8 @@ export default function SettingsPage() {
         { organizationName: typedOrgName.trim(), password: adminPassword },
         accessToken,
       );
-      await signOut();
-      router.push("/login?empresa=cerrada");
     } catch (err) {
+      setCloseSubmitting(false);
       // SPEC-114 §8: se revisa `code` antes de failSession, que cierra la sesión ante cualquier 401.
       if (err instanceof ApiError && err.code === "INVALID_CREDENTIALS") {
         setCloseError("Contraseña incorrecta.");
@@ -142,9 +139,14 @@ export default function SettingsPage() {
         return;
       }
       setCloseError("Error de conexión. Intenta nuevamente.");
-    } finally {
-      setCloseSubmitting(false);
+      return;
     }
+
+    // Éxito: el servidor ya revocó las sesiones y limpió la cookie de refresco. Recarga completa en
+    // vez de navegación SPA: así no compite con la redirección de RequireSession (que reacciona al
+    // cierre de sesión local) y se descarta el access token de memoria. replace evita que "atrás"
+    // vuelva a /configuracion. closeSubmitting queda en true para bloquear un segundo envío.
+    window.location.replace("/login?empresa=cerrada");
   }
 
   const members = state.status === "ready" ? state.data.members || [] : [];
