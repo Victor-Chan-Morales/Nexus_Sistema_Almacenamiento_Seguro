@@ -6,6 +6,8 @@
 
 > **Versión 0.6 — aplica `docs/decisions/ADR-008-alcance-final.md`, aprobado por Víctor, coordinador, el 2026-11-04.** Las reglas marcadas **[v0.6]** son el contrato acordado. Cada una indica la spec que la implementa: hasta que esa spec se fusione, el código puede seguir con la regla anterior. Cada spec nueva agrega sus rutas en la sección "Alcance final [v0.6]" antes de programar.
 
+> **Versión 0.7 — SPEC-116.** Añade el reenvío del correo de verificación de una cuenta.
+
 Los tipos del frontend viven en `apps/web/src/lib/api/types.ts`. Son tipos de compilación; la API también debe validar los datos en tiempo de ejecución.
 
 ## Reglas comunes
@@ -26,6 +28,7 @@ Los tipos del frontend viven en `apps/web/src/lib/api/types.ts`. Son tipos de co
 | IAM | `POST /auth/login` | `{ email, password }` | `{ accessToken, expiresAt, user: { id, fullName, email }, organization: { id, name }, role }` | Sebastián |
 | IAM | `GET /auth/me` | Bearer token | `{ user, organization, role }` | Sebastián |
 | IAM | `POST /auth/verify-email` | `{ token }` | `{ verified: true }` | Sebastián |
+| IAM **[v0.7]** | `POST /auth/resend-verification` | `{ email }` | `200 { message }` genérico | Miguel |
 | IAM | `POST /auth/refresh` | Cookie `nexus_refresh` | Misma respuesta de sesión que login; renovar cookie | Sebastián |
 | IAM | `POST /auth/logout` | Cookie `nexus_refresh` | `204 No Content`; revocar esa sesión y limpiar cookie | Sebastián |
 | Billing | `GET /plans` | Sin autenticación | `{ items: [{ id, name, description, priceMonthly, storageLimitBytes, userLimit, validityDays: number \| null }] }` | Anthony |
@@ -59,6 +62,8 @@ Los tipos del frontend viven en `apps/web/src/lib/api/types.ts`. Son tipos de co
 - Login y refresh devuelven el mismo formato de sesión: access token, expiración, usuario, organización activa y rol.
 - Después de validar correo y contraseña, si la cuenta aún no verificó su correo, `POST /auth/login` responde HTTP `403` con el error común y `code: "EMAIL_NOT_VERIFIED"`. No emite access token ni cookie de refresh en ese caso.
 - `POST /auth/verify-email` recibe `{ token }`. El enlace del correo debe abrir `/verificar-correo?token=...`; el token vence en 15 minutos y solo se usa una vez.
+- **[v0.7, SPEC-116]** `POST /auth/resend-verification` es público. Recibe `{ email }`, recorta espacios y valida el formato y el máximo de 254 caracteres. Un valor inválido responde `400 VALIDATION_FAILED`.
+- Para un correo válido, responde `200 { "message": "Si la cuenta existe y aún no está verificada, recibirás un nuevo enlace de verificación." }` y procesa la solicitud en segundo plano. Solo una cuenta activa sin verificar puede recibir un nuevo enlace, con 120 segundos desde la última emisión y menos de cinco tokens de verificación emitidos en 24 horas, incluido el del registro. Un reenvío aceptado invalida los tokens anteriores sin usar. Los reenvíos suprimidos conservan la misma respuesta y el estado de los tokens.
 - El registro agrega en la misma transacción un mensaje de salida para enviar el correo de verificación. El envío SMTP ocurre después del commit y se reintenta desde una cola/outbox persistente si el proveedor falla; no se revierte una cuenta ya creada por una falla temporal de correo ni se devuelve el token al navegador. No hay endpoint de reenvío manual en este corte.
 - Si el token de 15 minutos vence mientras el proveedor SMTP sigue caído, el reintento emite uno nuevo antes de enviar: el enlace que recibe la persona siempre está vigente y una caída temporal del correo no deja la cuenta sin forma de verificarse. Los reintentos se abandonan 24 horas después del registro.
 - El enlace del correo se arma con `WEB_URL`, la única variable de origen de la web (la misma que autoriza el CORS).
@@ -261,11 +266,12 @@ Aplica a `POST /subscriptions/activate` y `POST /subscriptions/renew` (ADR-008 �
 
 ## Códigos de error [v0.5]
 
-Catálogo común. El filtro emite `VALIDATION_ERROR` para cualquier `400` de validación (no existe `VALIDATION_FAILED`).
+Catálogo común. El filtro usa `VALIDATION_ERROR` por defecto. La ruta de reenvío de verificación usa el código de SPEC-116.
 
 | HTTP | `code` | Uso |
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | Entrada inválida. **[v0.6, SPEC-305]** En pago: falta `payment` en un plan de pago; vencimiento vencido o mal formado; CVV que no tiene exactamente 3 dígitos. |
+| 400 | `VALIDATION_FAILED` **[v0.7, SPEC-116]** | Correo ausente, mal formado o superior a 254 caracteres al pedir un reenvío de verificación. |
 | 400 | `INVALID_OR_EXPIRED_TOKEN` | Token de recuperación inválido, vencido o usado. |
 | 401 | `UNAUTHORIZED` | Sin sesión válida (token ausente, inválido o vencido). |
 | 402 | `PAYMENT_DECLINED` **[v0.6, SPEC-305]** | Tarjeta de prueba rechazada (`4000 0000 0000 0002`). No hay cobro ni cambio en la suscripción ni en el historial. |

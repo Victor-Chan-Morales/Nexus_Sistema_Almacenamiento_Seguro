@@ -5,6 +5,15 @@
 
 Registro dinámico de decisiones, acuerdos pendientes y bloqueos. Añada entradas nuevas al principio; no borre historia. Los contratos de integración v0.3 fueron aprobados por el integrador para implementación el 2026-10-18.
 
+## 2026-11-10 — SPEC-116: reenvío del correo de verificación
+
+- [x] Chrome en `/verificar-correo` sin token. Un correo mal formado mostró «Escribe un correo válido.» y no llamó a la API. Durante la solicitud el botón mostró «Enviando…» y quedó deshabilitado.
+- [x] Escenario 11. El reenvío real devolvió la confirmación genérica y mostró «Reenviar en 120 s». Se adelantó el reloj del navegador 120 segundos y el botón volvió a habilitarse.
+- [x] Escenario 12. Al interrumpir la conexión con la API desde Chrome, apareció «No pudimos conectar. Intenta de nuevo.» y el botón quedó activo.
+- [x] Mailpit recibió un enlace distinto para una cuenta de prueba. El anterior fue rechazado, el nuevo verificó el correo y el login funcionó después.
+- El contrato v0.7 documenta la ruta de reenvío. El escenario 10 conserva el código HTTP 403 de login del contrato vigente.
+- [Capturas y resultados de SPEC-116](docs/evidencia/spec-116/README.md).
+
 ## 2026-11-10 — SPEC-305: pago simulado con tarjetas de prueba
 
 - **Estado:** Implementada y verificada en `feat/305-pago-simulado-tarjetas` (desde `main`), lista para PR. La documentación se alinea con el plan: `CONTRACTS.md` en v0.6 (`payment` opcional en `activate`, cuerpo opcional `{ payment }` en `renew`, `cardLast4` en `GET /billing/operations`, errores 402 `PAYMENT_DECLINED` y 422 `TEST_CARD_REQUIRED`, subsección «Pago simulado»), `BUSINESS_RULES.md` (rechazo 402 y planes gratuitos) y el README de billing (`card_last4`). El código (migración `card_last4`, `PAYMENT_DECLINED` en auditoría, formulario de tarjeta) se verifica antes de abrir la PR; SPEC-407 ya estaba en `main`.

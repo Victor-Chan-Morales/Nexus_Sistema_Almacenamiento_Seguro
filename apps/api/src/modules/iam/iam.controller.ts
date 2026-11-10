@@ -1,11 +1,15 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res, UseGuards } from '@nestjs/common';
+import {
+  ArgumentsHost, BadRequestException, Body, Catch, Controller, Get, HttpCode, HttpStatus, Post, Req, Res, UseFilters, UseGuards,
+} from '@nestjs/common';
 import type { CookieOptions, Request, Response } from 'express';
+import { ApiExceptionFilter } from '../../common/filters/api-exception.filter';
 import { REFRESH_COOKIE_NAME, REFRESH_COOKIE_PATH, REFRESH_TOKEN_TTL_DAYS } from './constants';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { AuthResult } from './domain/auth-result';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -18,9 +22,18 @@ import {
   RegisterResponse,
 } from './interfaces/auth-user.interface';
 import { AuthService } from './services/auth.service';
+import { EmailVerificationService } from './services/email-verification.service';
 import { PasswordResetService } from './services/password-reset.service';
 import { RegistrationService } from './services/registration.service';
 import { SessionService } from './services/session.service';
+
+/** El contrato v0.7 distingue la validación de esta ruta del código general de IAM. */
+@Catch(BadRequestException)
+class ResendVerificationValidationFilter extends ApiExceptionFilter {
+  catch(_error: BadRequestException, host: ArgumentsHost): void {
+    super.catch(new BadRequestException({ code: 'VALIDATION_FAILED', message: 'Escribe un correo válido.' }), host);
+  }
+}
 
 /** Solo traduce HTTP ↔ casos de uso. Ninguna ruta lee organizationId del cliente. */
 @Controller('auth')
@@ -31,6 +44,7 @@ export class IamController {
     private readonly sessions: SessionService,
     private readonly settings: IamSettings,
     private readonly passwordReset: PasswordResetService,
+    private readonly verification: EmailVerificationService,
   ) {}
 
   @Post('register')
@@ -44,6 +58,14 @@ export class IamController {
   async verifyEmail(@Body() dto: VerifyEmailDto): Promise<{ verified: true }> {
     await this.auth.verifyEmail(dto.token);
     return { verified: true };
+  }
+
+  @Post('resend-verification')
+  @HttpCode(HttpStatus.OK)
+  @UseFilters(ResendVerificationValidationFilter)
+  resendVerification(@Body() dto: ResendVerificationDto): { message: string } {
+    void this.verification.resend(dto.email);
+    return { message: 'Si la cuenta existe y aún no está verificada, recibirás un nuevo enlace de verificación.' };
   }
 
   /** Pública. Respuesta idéntica exista o no el correo (anti-enumeración). */

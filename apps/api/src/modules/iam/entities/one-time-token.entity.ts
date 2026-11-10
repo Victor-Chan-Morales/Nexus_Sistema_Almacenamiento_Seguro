@@ -22,6 +22,9 @@ export class OneTimeToken {
   @Column({ name: 'expires_at', type: 'timestamptz' })
   expiresAt!: Date;
 
+  @Column({ name: 'created_at', type: 'timestamptz' })
+  createdAt!: Date;
+
   @Column({ name: 'used_at', type: 'timestamptz', nullable: true })
   usedAt!: Date | null;
 }

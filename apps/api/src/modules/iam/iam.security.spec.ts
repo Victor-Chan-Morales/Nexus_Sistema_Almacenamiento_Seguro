@@ -180,11 +180,12 @@ describe('TypeOrmMembershipRepository (con EntityManager simulado, sin base de d
 describe('EmailVerificationService (token de un solo uso, 15 minutos, propósito email_verification)', () => {
   const build = (record: unknown) => {
     const tokensRepo = {
+      findByHash: jest.fn().mockResolvedValue(record),
       findByHashForUpdate: jest.fn().mockResolvedValue(record),
       markUsed: jest.fn(),
       create: jest.fn(),
     };
-    const users = { markEmailVerified: jest.fn() };
+    const users = { findByIdForUpdate: jest.fn().mockResolvedValue({ id: 'u1' }), markEmailVerified: jest.fn() };
     const opaque = { hash: jest.fn((t: string) => `h(${t})`), generate: jest.fn().mockReturnValue('raw') };
     const uow = { run: jest.fn((work: (tx: unknown) => unknown) => work('tx')) };
     const outbox = { enqueue: jest.fn().mockResolvedValue('out-1') };
@@ -225,7 +226,7 @@ describe('EmailVerificationService (token de un solo uso, 15 minutos, propósito
   it('un token de otro propósito (p. ej. restablecer contraseña) no puede verificar un correo: la búsqueda siempre filtra por propósito', async () => {
     const t = build(null); // el repositorio no encuentra tokens con ese hash y propósito email_verification
     expect(await codeOf(t.service.verify('token-de-password-reset'))).toBe('INVALID_VERIFICATION_TOKEN');
-    const call = (t.tokensRepo.findByHashForUpdate as unknown as { mock: { calls: unknown[][] } }).mock.calls[0];
+    const call = (t.tokensRepo.findByHash as unknown as { mock: { calls: unknown[][] } }).mock.calls[0];
     expect(call[2]).toBe('email_verification');
     expect(call[2]).not.toBe(TokenPurpose.PASSWORD_RESET);
   });
