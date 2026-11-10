@@ -3,19 +3,36 @@
 import { FormEvent, useCallback, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Dialog } from "@/components/dialog";
+import { MemberRow } from "@/components/member-row";
 import { UiIcon } from "@/components/ui-icon";
 import { ApiError } from "@/lib/api/client";
-import { addMember, getMembers } from "@/lib/api/members";
+import { addMember, getMembers, removeMember, updateMember } from "@/lib/api/members";
 import { closeOrganization } from "@/lib/api/organizations";
-import type { MemberRole, OrganizationMembersResponse } from "@/lib/api/types";
-import { formatIsoDate } from "@/lib/format";
+import type { MemberRole, MemberStatus, OrganizationMember, OrganizationMembersResponse } from "@/lib/api/types";
 import { useSession } from "@/lib/session";
 import { useLoad } from "@/lib/use-load";
 
-const roleLabels: Record<MemberRole, string> = {
-  tenant_admin: "Administrador",
-  colaborador: "Colaborador",
-};
+function mapMemberError(err: unknown): string {
+  if (err instanceof ApiError) {
+    switch (err.code) {
+      case "LAST_ADMIN_REQUIRED":
+        return "No puedes quitar el rol de administrador al único administrador de la organización.";
+      case "CANNOT_MODIFY_SELF":
+        return "No puedes suspenderte ni eliminarte a ti mismo.";
+      case "USER_LIMIT_EXCEEDED":
+        return "La organización alcanzó el límite de usuarios de su plan.";
+      case "MEMBER_ALREADY_EXISTS":
+        return "Este correo ya es miembro de la organización.";
+      case "EMAIL_BELONGS_TO_OTHER_ORGANIZATION":
+        return "El correo electrónico ya pertenece a otra organización.";
+      case "VALIDATION_ERROR":
+        return err.message || "Los datos ingresados no son válidos.";
+      default:
+        return err.message || "Error al procesar la solicitud.";
+    }
+  }
+  return "Error de conexión. Intenta nuevamente.";
+}
 
 export default function SettingsPage() {
   const { session, failSession } = useSession();
@@ -96,6 +113,39 @@ export default function SettingsPage() {
       }
     } finally {
       setFormSubmitting(false);
+    }
+  }
+
+  async function handleUpdateRole(member: OrganizationMember, newRole: MemberRole) {
+    if (!accessToken) return;
+    try {
+      await updateMember(member.id, { role: newRole }, accessToken);
+      reload();
+    } catch (err) {
+      if (failSession(err)) return;
+      throw new Error(mapMemberError(err));
+    }
+  }
+
+  async function handleToggleStatus(member: OrganizationMember, newStatus: MemberStatus) {
+    if (!accessToken) return;
+    try {
+      await updateMember(member.id, { status: newStatus }, accessToken);
+      reload();
+    } catch (err) {
+      if (failSession(err)) return;
+      throw new Error(mapMemberError(err));
+    }
+  }
+
+  async function handleRemoveMember(member: OrganizationMember) {
+    if (!accessToken) return;
+    try {
+      await removeMember(member.id, accessToken);
+      reload();
+    } catch (err) {
+      if (failSession(err)) return;
+      throw new Error(mapMemberError(err));
     }
   }
 
@@ -304,28 +354,20 @@ export default function SettingsPage() {
                         <th>Correo</th>
                         <th>Rol</th>
                         <th>Fecha de ingreso</th>
+                        {isAdmin && <th>Acciones</th>}
                       </tr>
                     </thead>
                     <tbody>
                       {members.map((m) => (
-                        <tr key={m.id}>
-                          <td className="settings-cell-name">{m.fullName}</td>
-                          <td className="settings-cell-muted">{m.email}</td>
-                          <td>
-                            <span
-                              className={`settings-badge ${
-                                m.role === "tenant_admin"
-                                  ? "settings-badge-admin"
-                                  : "settings-badge-colab"
-                              }`}
-                            >
-                              {roleLabels[m.role] || m.role}
-                            </span>
-                          </td>
-                          <td className="settings-cell-muted">
-                            {formatIsoDate(m.joinedAt || m.createdAt)}
-                          </td>
-                        </tr>
+                        <MemberRow
+                          key={m.id}
+                          member={m}
+                          currentUserId={session?.user?.id}
+                          isAdmin={isAdmin}
+                          onUpdateRole={handleUpdateRole}
+                          onToggleStatus={handleToggleStatus}
+                          onRemove={handleRemoveMember}
+                        />
                       ))}
                     </tbody>
                   </table>
