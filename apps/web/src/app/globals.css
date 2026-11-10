@@ -1243,3 +1243,48 @@ button.storage-model-card:hover { border-color: var(--brand); }
   .storage-model-grid, .storage-form-grid { grid-template-columns: 1fr; }
   .storage-section .settings-header-row .button { width: 100%; }
 }
+
+.settings-badge-suspended {
+  background: #fff0f1;
+  color: var(--color-coral);
+  border: 1px solid color-mix(in srgb, var(--color-coral) 25%, transparent);
+}
+
+.settings-actions-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.settings-action-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--foreground);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.settings-action-btn:hover:not(:disabled) {
+  background: var(--surface-hover, #f8f9fa);
+  border-color: var(--muted);
+}
+
+.settings-action-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.settings-action-danger {
+  color: var(--color-coral);
+  border-color: color-mix(in srgb, var(--color-coral) 30%, transparent);
+}
+
+.settings-action-danger:hover:not(:disabled) {
+  background: #fff0f1;
+  border-color: var(--color-coral);
+}
