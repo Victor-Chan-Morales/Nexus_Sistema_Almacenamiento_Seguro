@@ -1,8 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { DataSource, EntityManager, IsNull } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull } from 'typeorm';
+import { Role } from '../iam/domain/enums';
 import { Drive } from './entities/drive.entity';
 import { FileRecord } from './entities/file-record.entity';
 import { Folder } from './entities/folder.entity';
+import { TeamMember } from './entities/team-member.entity';
 
 export type DriveAccessLevel = 'read' | 'write' | 'owner';
 
@@ -10,6 +12,8 @@ export type DriveAccessLevel = 'read' | 'write' | 'owner';
 export interface DriveActor {
   organizationId: string;
   userId: string;
+  /** Las rutas de lectura y enlaces lo pasan para habilitar el acceso a equipos. */
+  role?: Role;
 }
 
 export interface DriveAccess {
@@ -25,9 +29,8 @@ interface DriveAccessOptions {
 /**
  * SPEC-221: decide a qué Drive puede acceder un miembro y en qué nivel.
  *
- * Es el único punto de Files que consulta Drives para autorizar una operación. Por ahora solo
- * existe el Drive personal (nivel `owner`); los Drives de equipo llegarán con SPEC-220 a 224 sin
- * tocar cada operación. Todas las búsquedas filtran por organización: un Drive ajeno, o de otra
+ * Es el único punto de Files que consulta Drives para autorizar una operación.
+ * Todas las búsquedas filtran por organización: un Drive ajeno, o de otra
  * organización, responde como inexistente (404).
  */
 @Injectable()
@@ -40,6 +43,17 @@ export class DriveAccessService {
    */
   async findDrive(actor: DriveActor, driveId?: string, manager?: EntityManager): Promise<DriveAccess | null> {
     const driveRepo = (manager ?? this.dataSource).getRepository(Drive);
+    if (driveId && actor.role) {
+      const drive = await driveRepo.findOne({ where: { id: driveId, organizationId: actor.organizationId } });
+      if (!drive) return null;
+      if (drive.type === 'personal') return drive.ownerUserId === actor.userId ? { drive, level: 'owner' } : null;
+      if (!drive.teamId) return null;
+      if (actor.role === Role.TENANT_ADMIN) return { drive, level: 'write' };
+      const member = await (manager ?? this.dataSource).getRepository(TeamMember).findOneBy({
+        teamId: drive.teamId, userId: actor.userId,
+      });
+      return member ? { drive, level: member.level } : null;
+    }
     const drive = await driveRepo.findOne({
       where: {
         ...(driveId ? { id: driveId } : {}),
@@ -53,12 +67,53 @@ export class DriveAccessService {
     return drive ? { drive, level: 'owner' } : null;
   }
 
+  async listDrives(actor: DriveActor) {
+    const repository = this.dataSource.getRepository(Drive);
+    const personal = await this.findDrive(actor);
+    const memberships = actor.role === Role.TENANT_ADMIN ? [] : await this.dataSource.getRepository(TeamMember)
+      .findBy({ userId: actor.userId });
+    const levels = new Map(memberships.map((member) => [member.teamId, member.level]));
+    const teams = await repository.find({
+      where: {
+        organizationId: actor.organizationId, type: 'team',
+        ...(actor.role === Role.TENANT_ADMIN ? {} : { teamId: In([...levels.keys()]) }),
+      },
+      order: { name: 'ASC', id: 'ASC' },
+    });
+    const accesses: DriveAccess[] = personal ? [personal] : [];
+    for (const drive of teams) {
+      const level = actor.role === Role.TENANT_ADMIN ? 'write' : levels.get(drive.teamId ?? '');
+      if (level) accesses.push({ drive, level });
+    }
+    const roots = await this.dataSource.getRepository(Folder).findBy({
+      organizationId: actor.organizationId, driveId: In(accesses.map(({ drive }) => drive.id)),
+      parentId: IsNull(), isDeleted: false,
+    });
+    const rootByDrive = new Map(roots.map((root) => [root.driveId, root.id]));
+    return { items: accesses.flatMap(({ drive, level }) => {
+      const rootFolderId = rootByDrive.get(drive.id);
+      return rootFolderId ? [{
+        id: drive.id, name: drive.name, type: drive.type, teamId: drive.teamId,
+        rootFolderId, myLevel: level,
+      }] : [];
+    }) };
+  }
+
   /** Carpeta activa dentro de un Drive accesible; 404 si no existe o no es accesible. */
   async requireFolder(
     actor: DriveActor,
     folderId: string,
     options: DriveAccessOptions = {},
   ): Promise<{ folder: Folder; access: DriveAccess }> {
+    if (actor.role) {
+      const folder = await (options.manager ?? this.dataSource).getRepository(Folder).findOne({
+        where: { id: folderId, organizationId: actor.organizationId, isDeleted: false },
+        ...(options.lock && options.manager ? { lock: { mode: 'pessimistic_write' as const } } : {}),
+      });
+      const access = folder && await this.findDrive(actor, folder.driveId, options.manager);
+      if (!folder || !access) throw new NotFoundException('Carpeta ' + folderId + ' no encontrada');
+      return { folder, access };
+    }
     const access = await this.findDrive(actor, undefined, options.manager);
     const folder = access
       ? await (options.manager ?? this.dataSource).getRepository(Folder).findOne({
@@ -84,8 +139,8 @@ export class DriveAccessService {
     fileId: string,
     options: DriveAccessOptions = {},
   ): Promise<{ file: FileRecord; folder: Folder; access: DriveAccess } | null> {
-    const access = await this.findDrive(actor, undefined, options.manager);
-    if (!access) return null;
+    let access = actor.role ? null : await this.findDrive(actor, undefined, options.manager);
+    if (!actor.role && !access) return null;
 
     const repos = options.manager ?? this.dataSource;
     const file = await repos.getRepository(FileRecord).findOne({
@@ -97,7 +152,8 @@ export class DriveAccessService {
     const folder = await repos.getRepository(Folder).findOne({
       where: { id: file.folderId, organizationId: actor.organizationId },
     });
-    if (!folder || folder.driveId !== access.drive.id) return null;
+    if (folder && actor.role) access = await this.findDrive(actor, folder.driveId, options.manager);
+    if (!folder || !access || folder.driveId !== access.drive.id) return null;
     return { file, folder, access };
   }
 }

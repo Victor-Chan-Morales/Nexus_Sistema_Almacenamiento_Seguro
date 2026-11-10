@@ -70,10 +70,11 @@ export class FoldersController {
     @Request() req: any,
     @Query('parentId') parentId?: string,
     @Query('parentFolderId') parentFolderId?: string,
+    @Query('driveId', new ParseUUIDPipe({ optional: true })) driveId?: string,
   ) {
     const orgId = req.user.organizationId;
     const userId = req.user.userId || req.user.id;
-    return this.filesService.listFolders(orgId, userId, parentId || parentFolderId);
+    return this.filesService.listFolders(orgId, userId, parentId || parentFolderId, driveId, req.user.role);
   }
 
   @Post()
@@ -93,7 +94,7 @@ export class FoldersController {
   async getFolderItems(@Request() req: any, @Param('id') folderId: string) {
     const orgId = req.user.organizationId;
     const userId = req.user.userId || req.user.id;
-    return this.filesService.getFolderItems(orgId, userId, folderId);
+    return this.filesService.getFolderItems(orgId, userId, folderId, req.user.role);
   }
 
   /** Mueve una carpeta y sus descendientes a la papelera como unidad. */
@@ -138,8 +139,11 @@ export class FilesController {
    * Se ubica antes de rutas dinámicas con :id para evitar colisiones de enrutamiento.
    */
   @Get('trash')
-  async getTrash(@CurrentUser() user: AuthUser): Promise<TrashResponseDto> {
-    return this.filesService.listTrash(user.organizationId, user.userId);
+  async getTrash(
+    @CurrentUser() user: AuthUser,
+    @Query('driveId', new ParseUUIDPipe({ optional: true })) driveId?: string,
+  ): Promise<TrashResponseDto> {
+    return this.filesService.listTrash(user.organizationId, user.userId, driveId, user.role);
   }
 
   /** SPEC-206: historial de versiones (solo lectura) de un archivo propio y activo. */
@@ -148,7 +152,7 @@ export class FilesController {
     @CurrentUser() user: AuthUser,
     @Param('id') fileId: string,
   ): Promise<FileVersionsResponseDto> {
-    return this.fileVersions.listVersions(fileId, user.organizationId, user.userId);
+    return this.fileVersions.listVersions(fileId, user.organizationId, user.userId, user.role);
   }
 
   /** SPEC-210: bytes exactos de una versión propia y activa, con las mismas cabeceras que la descarga actual. */
@@ -162,6 +166,7 @@ export class FilesController {
     const { stream, mimeType, name } = await this.fileVersions.downloadVersion(fileId, versionId, {
       organizationId: user.organizationId,
       userId: user.userId,
+      ...(user.role ? { role: user.role } : {}),
     });
 
     // Enganche SPEC-405: FILE_DOWNLOAD tras resolver la versión exitosamente
@@ -213,7 +218,7 @@ export class FilesController {
   async listFiles(@Request() req: any, @Query('folderId') folderId?: string) {
     const orgId = req.user.organizationId;
     const userId = req.user.userId || req.user.id;
-    return this.filesService.listFiles(orgId, userId, folderId);
+    return this.filesService.listFiles(orgId, userId, folderId, req.user.role);
   }
 
   @Post('upload')
@@ -252,6 +257,7 @@ export class FilesController {
       fileId,
       orgId,
       userId,
+      req.user.role,
     );
 
     // Enganche SPEC-405: FILE_DOWNLOAD tras resolver el archivo exitosamente

@@ -35,6 +35,7 @@ export class ShareLinksController {
     return this.shareLinks.createLink(fileId, dto, {
       organizationId: user.organizationId,
       userId: user.userId,
+      role: user.role,
     });
   }
 
@@ -47,6 +48,7 @@ export class ShareLinksController {
     return this.shareLinks.listLinks(fileId, {
       organizationId: user.organizationId,
       userId: user.userId,
+      role: user.role,
     });
   }
 
@@ -60,6 +62,7 @@ export class ShareLinksController {
     await this.shareLinks.revokeLink(linkId, {
       organizationId: user.organizationId,
       userId: user.userId,
+      role: user.role,
     });
   }
 }
