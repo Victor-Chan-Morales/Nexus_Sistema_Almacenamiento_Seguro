@@ -11,6 +11,7 @@ import {
 import { buildVerificationLink } from '../iam.utils';
 import { VerificationMailer } from '../ports/verification-mailer';
 import { createMailTransport, MailTransport } from './mail-transport';
+import { renderNexusEmail } from './nexus-email-template';
 
 const ACCOUNT_NOTICE_COPY: Record<AccountNoticeKind, { subject: string; text: string }> = {
   plan_changed: {
@@ -62,11 +63,16 @@ export class EmailService implements VerificationMailer {
         `Hola ${fullName},\n\nConfirma tu correo con este enlace (vence en ` +
         `${VERIFICATION_TOKEN_TTL_MINUTES} minutos y solo sirve una vez):\n${link}\n\n` +
         `Si no creaste esta cuenta, ignora este mensaje.`,
-      html:
-        `<p>Hola ${escapeHtml(fullName)},</p>` +
-        `<p>Confirma tu correo con este enlace (vence en ${VERIFICATION_TOKEN_TTL_MINUTES} ` +
-        `minutos y solo sirve una vez):</p><p><a href="${link}">Verificar correo</a></p>` +
-        `<p>Si no creaste esta cuenta, ignora este mensaje.</p>`,
+      html: renderNexusEmail({
+        heading: 'Verifica tu correo',
+        greeting: `Hola ${fullName},`,
+        message: 'Confirma tu dirección de correo para activar tu cuenta en Nexus.',
+        action: {
+          label: 'Verificar correo', url: link,
+          detail: `El enlace vence en ${VERIFICATION_TOKEN_TTL_MINUTES} minutos y solo se puede usar una vez.`,
+        },
+        note: 'Si no creaste esta cuenta, ignora este mensaje.',
+      }),
     });
     this.logger.log('Correo de verificación enviado');
   }
@@ -79,11 +85,16 @@ export class EmailService implements VerificationMailer {
         `Hola ${fullName},\n\nRestablece tu contraseña con este enlace (vence en ` +
         `${PASSWORD_RESET_TOKEN_TTL_MINUTES} minutos y solo sirve una vez):\n${link}\n\n` +
         `Si no lo solicitaste, ignora este mensaje: tu contraseña no cambiará.`,
-      html:
-        `<p>Hola ${escapeHtml(fullName)},</p>` +
-        `<p>Restablece tu contraseña con este enlace (vence en ${PASSWORD_RESET_TOKEN_TTL_MINUTES} ` +
-        `minutos y solo sirve una vez):</p><p><a href="${link}">Restablecer contraseña</a></p>` +
-        `<p>Si no lo solicitaste, ignora este mensaje: tu contraseña no cambiará.</p>`,
+      html: renderNexusEmail({
+        heading: 'Restablece tu contraseña',
+        greeting: `Hola ${fullName},`,
+        message: 'Abre el enlace para elegir una nueva contraseña para tu cuenta de Nexus.',
+        action: {
+          label: 'Restablecer contraseña', url: link,
+          detail: `El enlace vence en ${PASSWORD_RESET_TOKEN_TTL_MINUTES} minutos y solo se puede usar una vez.`,
+        },
+        note: 'Si no lo solicitaste, ignora este mensaje. Tu contraseña seguirá siendo la misma.',
+      }),
     });
     this.logger.log('Correo de recuperación de contraseña enviado');
   }
@@ -96,19 +107,23 @@ export class EmailService implements VerificationMailer {
         `Hola ${fullName},\n\nTe invitaron a unirte a una organización en Nexus. Define tu contraseña ` +
         `con este enlace (vence en ${MEMBER_INVITATION_TOKEN_TTL_HOURS} horas y solo sirve una vez):\n${link}\n\n` +
         `Si no esperabas esta invitación, ignora este mensaje.`,
-      html:
-        `<p>Hola ${escapeHtml(fullName)},</p>` +
-        `<p>Te invitaron a unirte a una organización en Nexus. Define tu contraseña con este enlace ` +
-        `(vence en ${MEMBER_INVITATION_TOKEN_TTL_HOURS} horas y solo sirve una vez):</p>` +
-        `<p><a href="${link}">Definir contraseña</a></p>` +
-        `<p>Si no esperabas esta invitación, ignora este mensaje.</p>`,
+      html: renderNexusEmail({
+        heading: 'Te invitaron a Nexus',
+        greeting: `Hola ${fullName},`,
+        message: 'Te invitaron a unirte a una organización. Define tu contraseña para acceder a Nexus.',
+        action: {
+          label: 'Definir contraseña', url: link,
+          detail: `El enlace vence en ${MEMBER_INVITATION_TOKEN_TTL_HOURS} horas y solo se puede usar una vez.`,
+        },
+        note: 'Si no esperabas esta invitación, ignora este mensaje.',
+      }),
     });
     this.logger.log('Correo de invitación enviado');
   }
 
   async sendAccountNotice(to: string, kind: AccountNoticeKind): Promise<void> {
     const { subject, text } = ACCOUNT_NOTICE_COPY[kind];
-    await this.send(to, subject, { text, html: `<p>${escapeHtml(text)}</p>` });
+    await this.send(to, subject, { text, html: renderNexusEmail({ heading: subject, message: text }) });
   }
 
   private linkTo(path: string, token: string): string {
@@ -119,12 +134,4 @@ export class EmailService implements VerificationMailer {
   private async send(to: string, subject: string, body: { text: string; html: string }): Promise<void> {
     await this.transporter.sendMail({ to, subject, ...body });
   }
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
