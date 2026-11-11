@@ -6,7 +6,7 @@
 > - **Contratos:** `CONTRACTS.md`. Cada spec nueva agrega sus rutas a la sección **v0.6** antes de programar.
 > - **Numeración de requisitos:** la de la propuesta (RF-001…RF-016, RNF-001…RNF-011). Lo que exige el curso y la propuesta no numera se cita como "Curso §4.1/§4.2".
 > - **Estado:** el coordinador aprobó las specs pendientes el 2026-11-04. Aún no tienen responsable asignado, salvo las que ya lo indicaban.
-> - **Implementación:** la columna Estado refleja lo fusionado en `origin/main` (commit `8da4b0c`, verificado el 2026-11-10). Lo que solo existe en ramas sin fusionar no se marca como hecho.
+> - **Implementación:** la columna Estado refleja lo fusionado en `origin/main` (commit `5db5ef2`, verificado el 2026-11-10). Lo que solo existe en ramas sin fusionar no se marca como hecho.
 
 ---
 
