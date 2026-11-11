@@ -1436,3 +1436,6 @@ button.storage-model-card:hover { border-color: var(--brand); }
 .drive-readonly-badge { display: inline-flex; align-items: center; width: fit-content; margin: 6px 0; padding: 3px 9px; border-radius: 999px; background: var(--color-ice); color: var(--brand); font-size: 11px; font-weight: 800; letter-spacing: .04em; }
 .trash-drive-select { display: inline-flex; align-items: center; gap: 10px; margin: 0 0 16px; font-size: 13px; font-weight: 600; color: #606779; }
 .trash-drive-select select { min-width: 220px; min-height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: white; }
+
+/* SPEC-212: renombrar en el explorador. */
+.drive-row-actions { flex-wrap: wrap; row-gap: 4px; }

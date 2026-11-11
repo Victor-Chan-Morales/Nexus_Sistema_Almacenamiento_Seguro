@@ -180,6 +180,18 @@ export type FolderListResponse = {
   items: Folder[];
 };
 
+/** SPEC-211/212: `PATCH /files/:id`. Al menos un campo; `folderId` es la carpeta destino. */
+export type UpdateFileInput = {
+  name?: string;
+  folderId?: UUID;
+};
+
+/** SPEC-211/212: `PATCH /folders/:id`. Al menos un campo; `parentId` es la carpeta destino. */
+export type UpdateFolderInput = {
+  name?: string;
+  parentId?: UUID;
+};
+
 export type CreateFolderInput = {
   name: string;
   parentFolderId?: UUID;
