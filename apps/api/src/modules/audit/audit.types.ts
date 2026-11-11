@@ -6,6 +6,7 @@ export { AuditActorType, AuditResult };
 export enum AuditAction {
   AUTH_LOGIN = 'AUTH_LOGIN',
   AUTH_PASSWORD_RESET = 'AUTH_PASSWORD_RESET',
+  AUTH_PASSWORD_CHANGED = 'AUTH_PASSWORD_CHANGED',
   MEMBER_ADDED = 'MEMBER_ADDED',
   MEMBER_ROLE_CHANGED = 'MEMBER_ROLE_CHANGED',
   MEMBER_SUSPENDED = 'MEMBER_SUSPENDED',
@@ -46,6 +47,7 @@ export enum AuditAction {
   INSTALLATION_REQUEST_APPROVED = 'INSTALLATION_REQUEST_APPROVED',
   INSTALLATION_REQUEST_REJECTED = 'INSTALLATION_REQUEST_REJECTED',
   INSTALLATION_STATUS_CHANGED = 'INSTALLATION_STATUS_CHANGED',
+  PLAN_UPDATED = 'PLAN_UPDATED',
 }
 
 /** Recurso afectado. `resource_type` es varchar(20). */
@@ -61,6 +63,7 @@ export enum AuditResource {
   ORGANIZATION = 'organization',
   INSTALLATION_REQUEST = 'installation_request',
   INSTALLATION = 'installation',
+  PLAN = 'plan',
 }
 
 /**

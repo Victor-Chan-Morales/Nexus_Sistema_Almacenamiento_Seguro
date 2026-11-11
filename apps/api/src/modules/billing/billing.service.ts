@@ -13,9 +13,25 @@ import {
   BillingOperation,
   BillingOperationType,
 } from './entities/billing-operation.entity';
-import { BillingOperationItemResponse } from './billing.dto';
+import { BillingOperationItemResponse, BillingReceiptData } from './billing.dto';
 import { priceUsd, todayUtcDate } from './billing.utils';
 import { PaymentInput, resolveSimulatedPayment } from './simulated-payment';
+
+/** SPEC-306 D3: un id que no es UUID se trata como inexistente, sin consultar la base. */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** SPEC-306 D2: número de comprobante derivado de operation_id (función pura, única fuente del formato). */
+function deriveReceiptNumber(operationId: string): string {
+  return `NX-${operationId.replace(/-/g, '').toUpperCase()}`;
+}
+
+/** SPEC-306: la misma respuesta para una operación inexistente, ajena o con id mal formado. */
+function receiptNotFound(): NotFoundException {
+  return new NotFoundException({
+    code: 'NOT_FOUND',
+    message: 'El comprobante no existe o no pertenece a tu organización.',
+  });
+}
 
 /**
  * BillingService — Lógica de dominio para planes, cuotas y persistencia de suscripciones.
@@ -123,6 +139,41 @@ export class BillingService implements OnModuleInit {
           ? op.simulatedAt.toISOString()
           : new Date(op.simulatedAt).toISOString(),
     }));
+  }
+
+  /**
+   * SPEC-306: comprobante de una operación de la organización indicada.
+   * La consulta filtra por sub.organizationId: una operación ajena responde igual que una inexistente.
+   * El organizationName no sale de aquí; lo agrega el controlador desde la sesión.
+   */
+  async getReceipt(organizationId: string, operationId: string): Promise<BillingReceiptData> {
+    if (!UUID_PATTERN.test(operationId)) {
+      throw receiptNotFound();
+    }
+
+    const operation = await this.billingOperationRepo
+      .createQueryBuilder('op')
+      .innerJoinAndSelect('op.subscription', 'sub')
+      .innerJoinAndSelect('sub.plan', 'plan')
+      .where('op.id = :operationId', { operationId })
+      .andWhere('sub.organizationId = :organizationId', { organizationId })
+      .getOne();
+
+    if (!operation) {
+      throw receiptNotFound();
+    }
+
+    return {
+      receiptNumber: deriveReceiptNumber(operation.id),
+      planName: operation.subscription?.plan?.name ?? '',
+      type: operation.type,
+      amount: Number(operation.amount ?? 0),
+      cardLast4: operation.cardLast4 ?? null,
+      occurredAt:
+        operation.simulatedAt instanceof Date
+          ? operation.simulatedAt.toISOString()
+          : new Date(operation.simulatedAt).toISOString(),
+    };
   }
 
   // ── Provisión Inicial Atómica (Hook de Registro de IAM) ───────────────────
@@ -456,4 +507,54 @@ export class BillingService implements OnModuleInit {
       },
     };
   }
+
+  // ── SPEC-504: edición del catálogo ────────────────────────────────────────
+
+  /**
+   * Bloquea la fila del plan (SELECT ... FOR UPDATE) dentro de la transacción del llamador.
+   * El plan Demo no es editable: se rechaza antes de cualquier escritura.
+   */
+  async lockPlanForUpdate(manager: EntityManager, planId: string): Promise<Plan> {
+    const plan = await manager.findOne(Plan, {
+      where: { id: planId },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!plan) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'El plan solicitado no existe' });
+    }
+    if (plan.name === 'Demo') {
+      throw new UnprocessableEntityException({ code: 'PLAN_NOT_EDITABLE', message: 'El plan Demo no se puede editar' });
+    }
+    return plan;
+  }
+
+  /**
+   * Aplica solo los campos definidos en `changes` y guarda el plan.
+   * Unidades: `priceCents` en centavos (el transformer lo convierte a USD); `storageLimitBytes` en bytes, nunca en GB.
+   */
+  async applyPlanChanges(manager: EntityManager, plan: Plan, changes: PlanChanges): Promise<Plan> {
+    if (changes.priceCents !== undefined) {
+      plan.priceCents = changes.priceCents;
+    }
+    if (changes.storageLimitBytes !== undefined) {
+      plan.storageLimitBytes = changes.storageLimitBytes;
+    }
+    if (changes.maxMembers !== undefined) {
+      plan.maxMembers = changes.maxMembers;
+    }
+    if (changes.description !== undefined) {
+      plan.description = changes.description;
+    }
+    return manager.save(plan);
+  }
+}
+
+// ── SPEC-504: edición del catálogo ──
+
+/** Cambios parciales de un plan (SPEC-504). Solo se aplican los campos presentes. */
+export interface PlanChanges {
+  priceCents?: number;
+  storageLimitBytes?: string;
+  maxMembers?: number;
+  description?: string;
 }

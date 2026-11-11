@@ -663,6 +663,8 @@ h1, h2, h3 { font-family: "Inter", Arial, sans-serif; }
 .billing-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12.6px; }
 .billing-table th, .billing-table td { padding: 8px 12px; border-bottom: 1px solid var(--line); }
 .billing-table th { color: var(--muted); font-weight: 600; }
+/* SPEC-306: el enlace "Comprobante" va en línea dentro de la celda, sin el bloque centrado de los enlaces sueltos. */
+.billing-table .billing-secondary-link { display: inline-block; margin: 0; text-align: left; }
 .billing-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--canvas); color: var(--muted); font-size: 10.5px; }
 .audit-badge-auth { background: var(--color-ice); color: var(--brand); }
 .audit-badge-files { background: color-mix(in srgb, var(--color-purple) 10%, white); color: var(--color-purple-deep); }
@@ -1402,4 +1404,18 @@ button.storage-model-card:hover { border-color: var(--brand); }
   .share-row-action { justify-content: flex-end; }
   .share-row-action:empty { display: none; }
   .share-created-row { flex-direction: column; }
+}
+
+/* SPEC-306: el comprobante se imprime sin navegación ni controles de acción. */
+@media print {
+  .no-print,
+  .sidebar,
+  .side-nav,
+  .topbar {
+    display: none !important;
+  }
+
+  .billing-card {
+    box-shadow: none !important;
+  }
 }

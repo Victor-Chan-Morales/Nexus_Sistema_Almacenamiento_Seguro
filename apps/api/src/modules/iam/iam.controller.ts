@@ -1,16 +1,18 @@
 import {
-  ArgumentsHost, BadRequestException, Body, Catch, Controller, Get, HttpCode, HttpStatus, Post, Req, Res, UseFilters, UseGuards,
+  ArgumentsHost, BadRequestException, Body, Catch, Controller, Get, HttpCode, HttpStatus, Patch, Post, Req, Res, UseFilters, UseGuards,
 } from '@nestjs/common';
 import type { CookieOptions, Request, Response } from 'express';
 import { ApiExceptionFilter } from '../../common/filters/api-exception.filter';
 import { REFRESH_COOKIE_NAME, REFRESH_COOKIE_PATH, REFRESH_TOKEN_TTL_DAYS } from './constants';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { AuthResult } from './domain/auth-result';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { IamSettings } from './iam.settings';
@@ -21,6 +23,7 @@ import {
   MeResponse,
   RegisterResponse,
 } from './interfaces/auth-user.interface';
+import { AccountService } from './services/account.service';
 import { AuthService } from './services/auth.service';
 import { EmailVerificationService } from './services/email-verification.service';
 import { PasswordResetService } from './services/password-reset.service';
@@ -45,6 +48,7 @@ export class IamController {
     private readonly settings: IamSettings,
     private readonly passwordReset: PasswordResetService,
     private readonly verification: EmailVerificationService,
+    private readonly account: AccountService,
   ) {}
 
   @Post('register')
@@ -118,15 +122,44 @@ export class IamController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   me(@CurrentUser() user: AuthUser): MeResponse {
+    return this.toMeResponse(user, user.fullName);
+  }
+
+  /** SPEC-113. Solo cambia el nombre; la respuesta es el mismo MeResponse que GET. */
+  @Patch('me')
+  @UseGuards(JwtAuthGuard)
+  async updateMe(@CurrentUser() user: AuthUser, @Body() dto: UpdateProfileDto): Promise<MeResponse> {
+    const fullName = await this.account.updateProfile(user, dto.fullName);
+    return this.toMeResponse(user, fullName);
+  }
+
+  /**
+   * SPEC-113. Revoca todas las sesiones del usuario (ADR-003) y borra la cookie de refresh de este navegador.
+   * Los access tokens ya emitidos siguen válidos hasta 15 minutos, igual que tras SPEC-103 (ADR-003).
+   */
+  @Post('change-password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(JwtAuthGuard)
+  async changePassword(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: ChangePasswordDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<void> {
+    await this.account.changePassword(user, dto);
+    res.clearCookie(REFRESH_COOKIE_NAME, this.cookieOptions(false));
+  }
+
+  // ───────────── Traducción a HTTP ─────────────
+
+  /** MeResponse de GET y PATCH /auth/me. `fullName` va aparte porque PATCH devuelve el valor recién guardado. */
+  private toMeResponse(user: AuthUser, fullName: string): MeResponse {
     return {
-      user: { id: user.userId, fullName: user.fullName, email: user.email },
+      user: { id: user.userId, fullName, email: user.email },
       organization: { id: user.organizationId, name: user.organizationName },
       role: user.role,
       isSuperAdmin: user.isSuperAdmin,
     };
   }
-
-  // ───────────── Traducción a HTTP ─────────────
 
   private deliver(res: Response, result: AuthResult): LoginResponse {
     res.cookie(REFRESH_COOKIE_NAME, result.refreshToken, this.cookieOptions(true));

@@ -33,6 +33,7 @@ await this.auditService.logEvent({
 |---|---|
 | `AUTH_LOGIN` | `user` |
 | `AUTH_PASSWORD_RESET` | `user` |
+| `AUTH_PASSWORD_CHANGED` | `user` |
 | `MEMBER_ADDED` | `membership` |
 | `FILE_UPLOAD` | `file` |
 | `FILE_DOWNLOAD` | `file` |

@@ -303,7 +303,7 @@ describe('Validación de entrada y rutas (ValidationPipe como en main.ts)', () =
   });
 
   const controllerWith = (passwordReset: unknown) =>
-    new IamController({} as never, {} as never, {} as never, {} as never, passwordReset as never, {} as never);
+    new IamController({} as never, {} as never, {} as never, {} as never, passwordReset as never, {} as never, {} as never);
 
   it('Escenarios 1 y 2: forgot-password responde el MISMO mensaje exista o no el correo', async () => {
     const service = { requestReset: jest.fn().mockResolvedValue(undefined) };

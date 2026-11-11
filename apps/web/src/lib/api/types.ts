@@ -247,6 +247,19 @@ export type BillingOperationsResponse = {
   items: BillingOperationItem[];
 };
 
+// SPEC-306: comprobante de una operación. Sin datos de tarjeta distintos de cardLast4.
+export type BillingReceipt = {
+  receiptNumber: string;
+  organizationName: string;
+  planName: string;
+  type: BillingOperationType;
+  amount: number;
+  currency: "USD";
+  cardLast4: string | null;
+  occurredAt: ISODateTime;
+  simulated: true;
+};
+
 export type RenewSubscriptionResponse = ActivateSubscriptionResponse;
 
 // SPEC-106: Gestión de miembros

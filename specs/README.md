@@ -85,7 +85,7 @@ Todas siguen el flujo normal de aprobación y fusión.
 | `SPEC-108` | [Administrar miembros: backend](108-administrar-miembros.md) | N2 | RF-003 | P1 | 004 | Aprobada |
 | `SPEC-109` | [Administrar miembros: pantalla](109-frontend-administrar-miembros.md) | N1 | RF-003 | P1 | 108 | Aprobada |
 | `SPEC-112` | [Bloqueo progresivo por intentos fallidos](112-bloqueo-intentos-fallidos.md) | N2 | Riesgos §16 | P1 | 004 | Aprobada |
-| `SPEC-113` | [Editar perfil y cambiar contraseña](113-perfil-cambiar-contrasena.md) | N2 | RF-001, Curso §4.1 | P2 | 601 | Aprobada |
+| `SPEC-113` | [Editar perfil y cambiar contraseña](113-perfil-cambiar-contrasena.md) | N2 | RF-001, Curso §4.1 | P2 | 601 | ✅ Hecho |
 | `SPEC-114` | [Eliminar empresa (bloquear y conservar)](114-eliminar-empresa.md) | N2 | Administración §8 | P1 | 108 | Aprobada |
 | `SPEC-115` | [Correos informativos en Mailpit](115-correos-mailpit.md) | N2 | Curso §4.1 | P2 | 108, 114 | Aprobada |
 | `SPEC-116` | [Reenviar el correo de verificación](116-reenviar-verificacion.md) | N2 | RF-001, Curso §4.1 | P1 | 004 | ✅ Hecho |

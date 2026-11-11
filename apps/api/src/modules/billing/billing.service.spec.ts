@@ -1,12 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import {
   BadRequestException,
   ConflictException,
+  NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { BillingService } from './billing.service';
+import { BillingService, PlanChanges } from './billing.service';
 import { Plan, StorageLocation } from './entities/plan.entity';
 import { Subscription, SubscriptionStatus } from './entities/subscription.entity';
 import { BillingOperation, BillingOperationType } from './entities/billing-operation.entity';
@@ -385,6 +386,102 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
     });
   });
 
+  describe('5 bis. Comprobante de operación (getReceipt — SPEC-306 Escenarios 1, 4 y 5)', () => {
+    const receiptOperationId = '3f9a2c1b-8d7e-4f60-a1b2-c3d4e5f60718';
+
+    const mockReceiptQuery = (result: unknown) => {
+      const qb = {
+        innerJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(result),
+      };
+      (billingOperationRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+      return qb;
+    };
+
+    it('SPEC-306 Escenario 1: devuelve número derivado de operation_id, plan, tipo, importe, fecha y últimos cuatro dígitos', async () => {
+      const qb = mockReceiptQuery({
+        id: receiptOperationId,
+        subscriptionId: 'sub-team',
+        type: BillingOperationType.CHARGE,
+        amount: '19.99' as unknown as number,
+        simulatedAt: new Date('2026-10-29T18:00:00.000Z'),
+        subscription: { id: 'sub-team', organizationId: 'org-123', plan: mockTeamPlan },
+        cardLast4: '4242',
+      });
+
+      const receipt = await service.getReceipt('org-123', receiptOperationId);
+
+      expect(receipt).toEqual({
+        receiptNumber: 'NX-3F9A2C1B8D7E4F60A1B2C3D4E5F60718',
+        planName: 'Team',
+        type: 'charge',
+        amount: 19.99,
+        cardLast4: '4242',
+        occurredAt: '2026-10-29T18:00:00.000Z',
+      });
+      expect(qb.where).toHaveBeenCalledWith('op.id = :operationId', { operationId: receiptOperationId });
+      expect(qb.andWhere).toHaveBeenCalledWith('sub.organizationId = :organizationId', {
+        organizationId: 'org-123',
+      });
+    });
+
+    it('SPEC-306 Escenario 1: el número de comprobante es determinista para el mismo operation_id', async () => {
+      mockReceiptQuery({
+        id: receiptOperationId,
+        type: BillingOperationType.RENEWAL,
+        amount: '19.99' as unknown as number,
+        simulatedAt: new Date('2026-10-29T18:00:00.000Z'),
+        subscription: { id: 'sub-team', organizationId: 'org-123', plan: mockTeamPlan },
+        cardLast4: null,
+      });
+
+      const first = await service.getReceipt('org-123', receiptOperationId);
+      const second = await service.getReceipt('org-123', receiptOperationId);
+
+      expect(first.receiptNumber).toBe(second.receiptNumber);
+      expect(first.receiptNumber).toBe('NX-3F9A2C1B8D7E4F60A1B2C3D4E5F60718');
+    });
+
+    it('SPEC-306 Escenario 4: operación ajena o inexistente responde NotFound con código NOT_FOUND', async () => {
+      mockReceiptQuery(null);
+
+      const error = await service.getReceipt('org-123', receiptOperationId).catch((err: unknown) => err);
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as NotFoundException).getResponse()).toEqual({
+        code: 'NOT_FOUND',
+        message: 'El comprobante no existe o no pertenece a tu organización.',
+      });
+    });
+
+    it('SPEC-306 Escenario 4: un id que no es UUID responde NotFound sin consultar la base', async () => {
+      const qb = mockReceiptQuery(null);
+
+      await expect(service.getReceipt('org-123', 'no-es-uuid')).rejects.toBeInstanceOf(NotFoundException);
+      expect(billingOperationRepo.createQueryBuilder).not.toHaveBeenCalled();
+      expect(qb.getOne).not.toHaveBeenCalled();
+    });
+
+    it('SPEC-306 Escenario 5: operación sin tarjeta (Demo, US$0) devuelve cardLast4 null e importe 0', async () => {
+      mockReceiptQuery({
+        id: receiptOperationId,
+        type: BillingOperationType.CHARGE,
+        amount: '0.00' as unknown as number,
+        simulatedAt: new Date('2026-10-01T18:00:00.000Z'),
+        subscription: { id: 'sub-demo', organizationId: 'org-123', plan: mockDemoPlan },
+        cardLast4: null,
+      });
+
+      const receipt = await service.getReceipt('org-123', receiptOperationId);
+
+      expect(receipt.cardLast4).toBeNull();
+      expect(receipt.amount).toBe(0);
+      expect(receipt.planName).toBe('Demo');
+    });
+  });
+
   describe('6. Renovación de suscripción (renewSubscription — SPEC-302 Escenarios 1, 2, 3, 5 y 6)', () => {
     afterEach(() => {
       jest.useRealTimers();
@@ -649,6 +746,100 @@ describe('BillingService — Pruebas unitarias de reglas de negocio', () => {
       expect(error).toBeInstanceOf(UnprocessableEntityException);
       expect((error as UnprocessableEntityException).getResponse()).toMatchObject({ code: 'PLAN_NOT_RENEWABLE' });
       expect(mockManager.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('SPEC-504: edición del catálogo', () => {
+    let manager: { findOne: jest.Mock; save: jest.Mock };
+    const asManager = (): EntityManager => manager as unknown as EntityManager;
+
+    beforeEach(() => {
+      manager = {
+        findOne: jest.fn(),
+        save: jest.fn((entity: Plan) => Promise.resolve(entity)),
+      };
+    });
+
+    it('lockPlanForUpdate devuelve el plan y consulta con lock pessimistic_write', async () => {
+      manager.findOne.mockResolvedValue(mockTeamPlan);
+
+      const plan = await service.lockPlanForUpdate(asManager(), mockTeamPlan.id);
+
+      expect(plan).toBe(mockTeamPlan);
+      expect(manager.findOne).toHaveBeenCalledWith(
+        Plan,
+        expect.objectContaining({ where: { id: mockTeamPlan.id }, lock: { mode: 'pessimistic_write' } }),
+      );
+    });
+
+    it('lockPlanForUpdate con plan inexistente lanza NotFoundException con code NOT_FOUND', async () => {
+      manager.findOne.mockResolvedValue(null);
+
+      const error = await service.lockPlanForUpdate(asManager(), 'plan-inexistente').catch((err: unknown) => err);
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as NotFoundException).getResponse()).toMatchObject({ code: 'NOT_FOUND' });
+    });
+
+    it('lockPlanForUpdate sobre el plan Demo lanza UnprocessableEntityException PLAN_NOT_EDITABLE y no guarda', async () => {
+      manager.findOne.mockResolvedValue(mockDemoPlan);
+
+      const error = await service.lockPlanForUpdate(asManager(), mockDemoPlan.id).catch((err: unknown) => err);
+
+      expect(error).toBeInstanceOf(UnprocessableEntityException);
+      expect((error as UnprocessableEntityException).getResponse()).toMatchObject({ code: 'PLAN_NOT_EDITABLE' });
+      expect(manager.save).not.toHaveBeenCalled();
+    });
+
+    it('applyPlanChanges con solo priceCents cambia solo ese campo', async () => {
+      const plan = { ...mockTeamPlan };
+      const changes: PlanChanges = { priceCents: 4999 };
+
+      const saved = await service.applyPlanChanges(asManager(), plan, changes);
+
+      expect(manager.save).toHaveBeenCalledWith(plan);
+      expect(saved.priceCents).toBe(4999);
+      expect(saved).toMatchObject({
+        storageLimitBytes: mockTeamPlan.storageLimitBytes,
+        maxMembers: mockTeamPlan.maxMembers,
+        description: mockTeamPlan.description,
+      });
+    });
+
+    it('applyPlanChanges con storageLimitBytes guarda el string en bytes (150 GB)', async () => {
+      const plan = { ...mockTeamPlan };
+      const changes: PlanChanges = { storageLimitBytes: (150n * 1_000_000_000n).toString() };
+
+      const saved = await service.applyPlanChanges(asManager(), plan, changes);
+
+      expect(saved.storageLimitBytes).toBe('150000000000');
+      expect(manager.save).toHaveBeenCalledWith(expect.objectContaining({ storageLimitBytes: '150000000000' }));
+    });
+
+    it('applyPlanChanges con maxMembers y description actualiza esos campos', async () => {
+      const plan = { ...mockTeamPlan };
+      const changes: PlanChanges = { maxMembers: 25, description: 'Para equipos grandes' };
+
+      const saved = await service.applyPlanChanges(asManager(), plan, changes);
+
+      expect(saved).toMatchObject({
+        maxMembers: 25,
+        description: 'Para equipos grandes',
+        priceCents: mockTeamPlan.priceCents,
+        storageLimitBytes: mockTeamPlan.storageLimitBytes,
+      });
+    });
+
+    it('applyPlanChanges sin cambios definidos no altera los campos del plan', async () => {
+      const plan = { ...mockTeamPlan };
+
+      const saved = await service.applyPlanChanges(asManager(), plan, {});
+      expect(saved).toEqual(mockTeamPlan);
+
+      const undefinedChanges: PlanChanges = { priceCents: undefined, maxMembers: undefined };
+      const savedWithUndefined = await service.applyPlanChanges(asManager(), plan, undefinedChanges);
+      expect(savedWithUndefined.priceCents).toBe(mockTeamPlan.priceCents);
+      expect(savedWithUndefined.maxMembers).toBe(mockTeamPlan.maxMembers);
     });
   });
 });

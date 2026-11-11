@@ -97,3 +97,20 @@ export interface BillingOperationItemResponse {
 export interface BillingOperationListResponse {
   items: BillingOperationItemResponse[];
 }
+
+/** SPEC-306: datos del comprobante que produce BillingService; el controlador completa organización, moneda y simulación. */
+export interface BillingReceiptData {
+  receiptNumber: string;
+  planName: string;
+  type: 'charge' | 'renewal';
+  amount: number;
+  cardLast4: string | null;
+  occurredAt: string;
+}
+
+/** SPEC-306: GET /billing/operations/:id/receipt. Sin número de tarjeta, CVV, titular ni vencimiento. */
+export interface BillingReceiptResponse extends BillingReceiptData {
+  organizationName: string;
+  currency: 'USD';
+  simulated: true;
+}
