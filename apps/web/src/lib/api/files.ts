@@ -1,5 +1,5 @@
 import { apiRequest, apiRequestBlob, filenameFromContentDisposition } from "./client";
-import type { ApiRequestOptions, CreateFolderInput, CreateShareLinkInput, CreatedShareLink, CreateFolderResponse, DeleteFileResponse, Drive, DriveLevel, DrivesResponse, FileMetadata, FileVersionsResponse, FolderItemsResponse, FolderListResponse, PurgeFileResponse, RestoreFileResponse, RestoredFileVersionResponse, ShareLinksResponse, TrashResponse, UUID, UploadFileResponse } from "./types";
+import type { ApiRequestOptions, CreateFolderInput, CreateShareLinkInput, CreatedShareLink, CreateFolderResponse, DeleteFileResponse, Drive, DriveLevel, DrivesResponse, FileMetadata, FileVersionsResponse, Folder, FolderItemsResponse, FolderListResponse, PurgeFileResponse, RestoreFileResponse, RestoredFileVersionResponse, ShareLinksResponse, TrashResponse, UpdateFileInput, UpdateFolderInput, UUID, UploadFileResponse } from "./types";
 
 /** SPEC-222: `?driveId=` solo cuando se indica un Drive. Sin él, la API usa el Drive personal. */
 function driveQuery(driveId?: UUID) {
@@ -24,6 +24,30 @@ export function canPurgeDrive(drive: Pick<Drive, "type" | "myLevel">, role: stri
 /** SPEC-223: con `driveId`, la respuesta trae el Drive pedido y su `rootFolderId`. */
 export function listFolders(accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">, driveId?: UUID) {
   return apiRequest<FolderListResponse>(`/folders${driveQuery(driveId)}`, { method: "GET" }, { ...options, accessToken });
+}
+
+/** SPEC-212: hijos directos de una carpeta. Sirve para cargar el selector de destino en árbol de forma perezosa. Con `driveId` (SPEC-223), los del Drive indicado. */
+export function listChildFolders(parentId: UUID, accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">, driveId?: UUID) {
+  const query = [`parentId=${encodeURIComponent(parentId)}`, driveId ? `driveId=${encodeURIComponent(driveId)}` : null].filter(Boolean).join("&");
+  return apiRequest<FolderListResponse>(`/folders?${query}`, { method: "GET" }, { ...options, accessToken });
+}
+
+/** SPEC-212: renombra un archivo y/o lo mueve a otra carpeta del mismo Drive. Devuelve el archivo con su nombre normalizado. */
+export function updateFile(fileId: UUID, input: UpdateFileInput, accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
+  return apiRequest<FileMetadata>(`/files/${encodeURIComponent(fileId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+    headers: { "Content-Type": "application/json" },
+  }, { ...options, accessToken });
+}
+
+/** SPEC-212: renombra una carpeta y/o la mueve bajo otra carpeta del mismo Drive. */
+export function updateFolder(folderId: UUID, input: UpdateFolderInput, accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
+  return apiRequest<Folder>(`/folders/${encodeURIComponent(folderId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+    headers: { "Content-Type": "application/json" },
+  }, { ...options, accessToken });
 }
 
 export function createFolder(input: CreateFolderInput, accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
