@@ -8,8 +8,8 @@ import { Notice } from "@/components/notice";
 import { AppShell } from "@/components/app-shell";
 import { UiIcon } from "@/components/ui-icon";
 import { ApiError } from "@/lib/api/client";
-import { getTrash, purgeFile, purgeFolder, restoreFile, restoreFolder } from "@/lib/api/files";
-import type { TrashItem, TrashResponse } from "@/lib/api/types";
+import { canPurgeDrive, canWriteDrive, getTrash, listDrives, purgeFile, purgeFolder, restoreFile, restoreFolder } from "@/lib/api/files";
+import type { Drive, TrashItem, TrashResponse } from "@/lib/api/types";
 import { formatBytes, formatIsoDate } from "@/lib/format";
 import { RequireSession, useSession, type Session } from "@/lib/session";
 import { useLoad } from "@/lib/use-load";
@@ -49,7 +49,17 @@ export function TrashView() {
 function TrashSession({ session }: { session: Session }) {
   const token = session.accessToken;
   const { failSession } = useSession();
-  const fetchTrash = useCallback((signal: AbortSignal): Promise<TrashResponse> => getTrash(token, { signal }), [token]);
+  // SPEC-223 escenario 8: la papelera se consulta por Drive. Sin selección, se usa el Drive personal, como antes.
+  const [selectedDriveId, setSelectedDriveId] = useState<string | null>(null);
+  const fetchDrives = useCallback((signal: AbortSignal): Promise<Drive[]> => listDrives(token, { signal }).then((response) => response.items), [token]);
+  const drivesLoad = useLoad(fetchDrives, true, LOAD_ERROR);
+  const drives = drivesLoad.state.status === "ready" ? drivesLoad.state.data : [];
+  const personalDrive = drives.find((drive) => drive.type === "personal") ?? null;
+  const activeDrive = drives.find((drive) => drive.id === (selectedDriveId ?? personalDrive?.id)) ?? null;
+  // SPEC-224: restaurar exige escritura; purgar, ser dueño del Drive personal o tenant_admin en un Drive de equipo.
+  const canRestore = canWriteDrive(activeDrive?.myLevel);
+  const canPurge = activeDrive !== null && canPurgeDrive(activeDrive, session.role);
+  const fetchTrash = useCallback((signal: AbortSignal): Promise<TrashResponse> => getTrash(token, { signal }, selectedDriveId ?? undefined), [token, selectedDriveId]);
   const { state, reload } = useLoad(fetchTrash, true, LOAD_ERROR);
   const [removedIds, setRemovedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -57,6 +67,11 @@ function TrashSession({ session }: { session: Session }) {
   const [purgeTarget, setPurgeTarget] = useState<TrashItem | null>(null);
 
   const items = state.status === "ready" ? state.data.items.filter((item) => !removedIds.has(item.id)) : [];
+
+  function changeDrive(id: string) {
+    setSelectedDriveId(id);
+    setRemovedIds(new Set<string>());
+  }
 
   function hideItem(id: string) {
     setRemovedIds((current) => new Set(current).add(id));
@@ -120,6 +135,14 @@ function TrashSession({ session }: { session: Session }) {
         </section>
 
 
+        {drives.length > 0 && (
+          <label className="trash-drive-select">
+            <span>Drive</span>
+            <select value={selectedDriveId ?? personalDrive?.id ?? ""} onChange={(event) => changeDrive(event.target.value)}>
+              {drives.map((drive) => <option key={drive.id} value={drive.id}>{drive.type === "personal" ? "Mi espacio" : drive.name}</option>)}
+            </select>
+          </label>
+        )}
         {state.status === "loading" && <LoadingIndicator>Cargando papelera…</LoadingIndicator>}
         {state.status === "error" && <Notice title="No se pudo cargar la papelera" message={state.message} onRetry={reload} />}
         {state.status === "ready" && items.length === 0 && (
@@ -146,6 +169,8 @@ function TrashSession({ session }: { session: Session }) {
                   pending={busyId === item.id}
                   onRestore={() => restore(item)}
                   onPurge={() => setPurgeTarget(item)}
+                  canRestore={canRestore}
+                  canPurge={canPurge}
                 />
               ))}
             </div>
@@ -174,12 +199,16 @@ function TrashRow({
   pending,
   onRestore,
   onPurge,
+  canRestore,
+  canPurge,
 }: {
   item: TrashItem;
   busy: boolean;
   pending: boolean;
   onRestore: () => void;
   onPurge: () => void;
+  canRestore: boolean;
+  canPurge: boolean;
 }) {
   return (
     <div className="drive-list-row trash-list-row">
@@ -188,13 +217,17 @@ function TrashRow({
       <span>{formatIsoDate(item.deletedAt)}</span>
       <span>{formatIsoDate(item.retentionEndsAt)}</span>
       <span className="drive-row-actions trash-row-actions">
-        <button type="button" onClick={onRestore} disabled={busy} aria-label={`Restaurar «${item.name}»`}>
-          <UiIcon name="restore" size={14} />{pending ? "Procesando…" : "Restaurar"}
-        </button>
-        <button className="trash-purge-button" type="button" onClick={onPurge} disabled={busy} aria-label={`Eliminar definitivamente «${item.name}»`}>
-          <UiIcon name="close" size={14} />
-          Eliminar definitivamente
-        </button>
+        {canRestore && (
+          <button type="button" onClick={onRestore} disabled={busy} aria-label={`Restaurar «${item.name}»`}>
+            <UiIcon name="restore" size={14} />{pending ? "Procesando…" : "Restaurar"}
+          </button>
+        )}
+        {canPurge && (
+          <button className="trash-purge-button" type="button" onClick={onPurge} disabled={busy} aria-label={`Eliminar definitivamente «${item.name}»`}>
+            <UiIcon name="close" size={14} />
+            Eliminar definitivamente
+          </button>
+        )}
       </span>
     </div>
   );

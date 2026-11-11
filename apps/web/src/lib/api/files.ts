@@ -1,8 +1,29 @@
 import { apiRequest, apiRequestBlob, filenameFromContentDisposition } from "./client";
-import type { ApiRequestOptions, CreateFolderInput, CreateShareLinkInput, CreatedShareLink, CreateFolderResponse, DeleteFileResponse, FileMetadata, FileVersionsResponse, FolderItemsResponse, FolderListResponse, PurgeFileResponse, RestoreFileResponse, RestoredFileVersionResponse, ShareLinksResponse, TrashResponse, UUID, UploadFileResponse } from "./types";
+import type { ApiRequestOptions, CreateFolderInput, CreateShareLinkInput, CreatedShareLink, CreateFolderResponse, DeleteFileResponse, Drive, DriveLevel, DrivesResponse, FileMetadata, FileVersionsResponse, FolderItemsResponse, FolderListResponse, PurgeFileResponse, RestoreFileResponse, RestoredFileVersionResponse, ShareLinksResponse, TrashResponse, UUID, UploadFileResponse } from "./types";
 
-export function listFolders(accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
-  return apiRequest<FolderListResponse>("/folders", { method: "GET" }, { ...options, accessToken });
+/** SPEC-222: `?driveId=` solo cuando se indica un Drive. Sin él, la API usa el Drive personal. */
+function driveQuery(driveId?: UUID) {
+  return driveId ? `?driveId=${encodeURIComponent(driveId)}` : "";
+}
+
+/** SPEC-222: Drives del solicitante (personal y de sus equipos), con `myLevel`. */
+export function listDrives(accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
+  return apiRequest<DrivesResponse>("/drives", { method: "GET" }, { ...options, accessToken });
+}
+
+/** SPEC-223/224: `owner` o `write` permiten subir, crear carpetas y mandar a la papelera. */
+export function canWriteDrive(level: DriveLevel | null | undefined): boolean {
+  return level === "owner" || level === "write";
+}
+
+/** SPEC-224: la purga definitiva en el Drive personal la hace su dueño; en un Drive de equipo, solo tenant_admin (ADR-008 §7). */
+export function canPurgeDrive(drive: Pick<Drive, "type" | "myLevel">, role: string | null | undefined): boolean {
+  return drive.type === "personal" ? drive.myLevel === "owner" : role === "tenant_admin";
+}
+
+/** SPEC-223: con `driveId`, la respuesta trae el Drive pedido y su `rootFolderId`. */
+export function listFolders(accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">, driveId?: UUID) {
+  return apiRequest<FolderListResponse>(`/folders${driveQuery(driveId)}`, { method: "GET" }, { ...options, accessToken });
 }
 
 export function createFolder(input: CreateFolderInput, accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
@@ -44,9 +65,9 @@ export async function downloadFile(fileId: UUID, accessToken: string, options?: 
   return { ...result, filename: filenameFromContentDisposition(result.contentDisposition) };
 }
 
-/** SPEC-202: archivos de la papelera del solicitante. */
-export function getTrash(accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">) {
-  return apiRequest<TrashResponse>("/files/trash", { method: "GET" }, { ...options, accessToken });
+/** SPEC-202: archivos de la papelera del solicitante. SPEC-222: con `driveId`, la del Drive indicado. */
+export function getTrash(accessToken: string, options?: Omit<ApiRequestOptions, "accessToken">, driveId?: UUID) {
+  return apiRequest<TrashResponse>(`/files/trash${driveQuery(driveId)}`, { method: "GET" }, { ...options, accessToken });
 }
 
 /** SPEC-203: devuelve un archivo de la papelera a su carpeta. */
