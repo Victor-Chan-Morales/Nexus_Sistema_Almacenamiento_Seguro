@@ -8,7 +8,8 @@ Estas decisiones completan las reglas de `ADR-002` sin reemplazarlas.
 ## Identidad y correo
 
 - La verificación se realizará mediante un proveedor de correo usando `EmailService`.
-- En desarrollo se utilizará Mailpit/Mailtrap; para demostración se podrá usar un proveedor real como Resend o Brevo.
+- En desarrollo se utiliza Mailpit. En el entorno publicado se usa la API de Gmail por HTTPS con OAuth 2.0 limitado a `gmail.send`, mediante la cuenta dedicada del proyecto. La API de Nexus valida la configuración al arrancar. [SPEC-117](../../specs/117-correo-real-dominio-autenticado.md).
+- Registro y alta de miembros verifican que el dominio del correo acepte entrega por MX o por A/AAAA cuando no tenga MX. Una falla temporal de DNS permite continuar. Recuperación y reenvío conservan su respuesta y no consultan DNS.
 - El token se guarda como hash, vence en 15 minutos y solo se utiliza una vez.
 - La clave del proveedor se guarda en variables de entorno y nunca en Git o logs.
 

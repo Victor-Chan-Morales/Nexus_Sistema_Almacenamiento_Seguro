@@ -81,6 +81,29 @@ No subir `.env` a Git ni compartir sus secretos. `.env.example` contiene valores
 - `POSTGRES_SSL_CA`: vacía por defecto. Si se define, es la **ruta absoluta** a un archivo PEM con la autoridad del certificado. Si está vacía, el certificado se verifica con las autoridades del sistema. Solo aplica con `POSTGRES_SSL=true`.
 - Puerto de la API: `API_PORT` tiene prioridad. Si no está definida, la API usa `PORT`, que asigna la plataforma (Render). Si ninguna está definida, usa `3001`. En Render basta con `PORT`; no hace falta definir `API_PORT`.
 
+### Correo real en el despliegue (SPEC-117)
+
+1. En un proyecto de Google Cloud administrado por el equipo, habilita **Gmail API**. En **Google Auth Platform**, configura la audiencia externa y agrega el alcance `https://www.googleapis.com/auth/gmail.send` en **Data Access**. Para una prueba en modo **Testing**, añade `nexuscorreoprueba@gmail.com` como usuario de prueba. Para envío continuo, publica la configuración OAuth y completa la verificación si Google la exige. En **Testing**, el token de renovación de este alcance caduca a los siete días. [Audiencia OAuth](https://support.google.com/cloud/answer/15549945) y [caducidad de tokens](https://developers.google.com/identity/protocols/oauth2#expiration).
+2. Crea un cliente OAuth de tipo **Web application** con `https://developers.google.com/oauthplayground` como URI de redirección autorizado. Abre OAuth 2.0 Playground, activa **Use your own OAuth credentials** y usa el ID y el secreto del cliente del proyecto. Autoriza solo `https://www.googleapis.com/auth/gmail.send` iniciando sesión con `nexuscorreoprueba@gmail.com`. En el paso 2, intercambia el código y guarda el **Refresh token** en los secretos de Render. [OAuth 2.0 Playground](https://developers.google.com/oauthplayground/).
+3. En **Render → servicio de la API → Environment**, carga las variables siguientes. Para el servicio publicado, usa **Save only** hasta desplegar una revisión que incluya Gmail API. Carga el secreto y el token de renovación directamente en el panel. `WEB_URL` debe apuntar al origen HTTPS de la web que corresponde a la API probada. [Variables en Render](https://render.com/docs/configure-environment-variables).
+
+   ```dotenv
+   NODE_ENV=production
+   MAIL_TRANSPORT=gmail-api
+   GMAIL_SENDER=nexuscorreoprueba@gmail.com
+   GMAIL_CLIENT_ID=<ID del cliente OAuth>
+   GMAIL_CLIENT_SECRET=<secreto del cliente OAuth>
+   GMAIL_REFRESH_TOKEN=<token de renovación OAuth>
+   IAM_REQUIRE_VERIFIED_EMAIL=true
+   IAM_CHECK_EMAIL_DOMAIN=true
+   WEB_URL=https://nexus-sistema-almacenamiento-seguro.vercel.app
+   ```
+
+4. Con las variables cargadas en el entorno de prueba, ejecuta `npm run mail:check -- --to <buzón real>` desde la raíz. Si tienes solo la API compilada, usa `node dist/scripts/mail-check.js --to <buzón real>` desde el directorio que contiene `dist`. El código `0` indica que Gmail aceptó el mensaje. El código `2` indica configuración, autenticación o envío fallido. Si Google revoca la autorización, repite el paso 2 y actualiza `GMAIL_REFRESH_TOKEN`.
+5. Para comprobar el envío desde Render Free, prueba un registro y una invitación con cuentas de prueba contra una instancia de la revisión que incluya el transporte HTTPS. Usa una base de pruebas aislada si preparas una vista previa. Confirma recepción en Gmail y Outlook y completa el flujo de verificación desde la web correspondiente. En Gmail abre el menú del mensaje y elige **Mostrar original**. Adjunta al PR el encabezado `Authentication-Results` con SPF, DKIM y DMARC en `pass`, con direcciones personales, tokens y secretos ocultos.
+
+En desarrollo, `npm run infra:up` usa Mailpit. `IAM_CHECK_EMAIL_DOMAIN=true` activa la comprobación de dominio en local. La API de producción valida las variables de Gmail antes de arrancar y realiza el envío por HTTPS.
+
 ## 4. Iniciar PostgreSQL y SeaweedFS
 
 Desde la raíz del proyecto:

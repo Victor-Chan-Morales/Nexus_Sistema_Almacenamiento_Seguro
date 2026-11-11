@@ -30,6 +30,8 @@ Cualquier cambio o adición de librería requiere aprobación previa del Coordin
 | **Pruebas Backend** | Jest + ts-jest; Supertest (solo e2e) | Jest 29.x, Supertest 7.x | Pruebas unitarias por módulo (`*.spec.ts`, junto al código) y e2e en `apps/api/test/`. |
 | **Entorno Local** | Docker Compose | v2+ | `postgres` (host **5433** → 5432), `seaweedfs`, `mailpit` (SMTP 1025, interfaz 8025). Perfiles opcionales: `tools` (migraciones) y `containerized-api` (la API en contenedor). La web y la API normalmente corren en el equipo. |
 
+Mailpit se usa en desarrollo local. El despliegue publicado usa la API de Gmail por HTTPS. [Guía de configuración](docs/GUIA_INSTALACION_Y_EJECUCION.md#correo-real-en-el-despliegue-spec-117).
+
 ---
 
 ## 2. Comandos Esenciales de Trabajo

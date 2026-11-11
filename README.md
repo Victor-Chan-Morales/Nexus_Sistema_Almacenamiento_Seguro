@@ -41,7 +41,7 @@ Abra `http://localhost:3000`. La web incluye estas rutas:
 - Sitio público: `/`, `/servicios`, `/planes` y `/contacto`.
 - Planes y suscripción: `/planes/[planId]`, `/suscripcion`, `/suscripcion/confirmar`, `/suscripcion/exito`, `/suscripcion/fallida`, `/suscripcion/cambiar-plan`, `/suscripcion/cambio-rechazado` y `/suscripcion/vencida`.
 - Acceso: `/registro`, `/registro/completado`, `/verificar-correo`, `/login`, `/recuperar-contrasena`, `/nueva-contrasena` y `/sesion-vencida`.
-- Espacio de trabajo: `/dashboard`, `/dashboard/vacio`, `/dashboard/cuota-excedida`, `/dashboard/super-admin`, `/archivos`, `/archivos/[folderId]`, `/archivos/cuota-excedida`, `/papelera`, `/perfil`, `/configuracion` y `/auditoria`.
+- Espacio de trabajo: `/dashboard`, `/dashboard/super-admin`, `/archivos`, `/archivos/[folderId]`, `/papelera`, `/perfil`, `/configuracion` y `/auditoria`.
 
 ## Servicios de infraestructura y API
 

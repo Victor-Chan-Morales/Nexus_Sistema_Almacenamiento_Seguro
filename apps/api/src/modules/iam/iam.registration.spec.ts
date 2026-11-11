@@ -1,5 +1,6 @@
-import { HttpException } from '@nestjs/common';
+import { HttpException, Logger } from '@nestjs/common';
 import { INITIAL_DEPLOYMENT_MODEL, Role } from './domain/enums';
+import { IamSettings } from './iam.settings';
 import { RegistrationHooks } from './registration-hooks';
 import { RegistrationService } from './services/registration.service';
 
@@ -20,7 +21,7 @@ const DTO = {
 };
 
 /** Orden de las operaciones, para comprobar que los hooks van dentro de la transacción y antes del token. */
-const build = () => {
+const build = (checkEmailDomain = false) => {
   const order: string[] = [];
   const user = { id: 'u1', email: 'ana@test.com', fullName: 'Ana Pérez' };
   const organization = { id: 'o1', name: 'Empresa SA' };
@@ -41,6 +42,7 @@ const build = () => {
   hooks.register('demo-subscription', async () => void order.push('demo-subscription'));
   hooks.register('personal-drive', async () => void order.push('personal-drive'));
   const uow = { run: jest.fn((work: (tx: unknown) => unknown) => work('tx')) };
+  const emailDomains = { check: jest.fn().mockResolvedValue('deliverable') };
 
   const service = new RegistrationService(
     uow as never,
@@ -50,11 +52,36 @@ const build = () => {
     hasher as never,
     hooks,
     verification as never,
+    { checkEmailDomain } as IamSettings,
+    emailDomains,
   );
-  return { service, order, users, organizations, memberships, hasher, verification, hooks, uow };
+  return { service, order, users, organizations, memberships, hasher, verification, hooks, uow, emailDomains };
 };
 
 describe('RegistrationService.register (sin base de datos: puertos simulados)', () => {
+  it('rechaza un dominio inválido antes de guardar datos o encolar correo', async () => {
+    const t = build(true);
+    t.emailDomains.check.mockResolvedValue('undeliverable');
+    await expect(t.service.register(DTO)).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'EMAIL_DOMAIN_INVALID' }),
+      status: 400,
+    });
+    expect(t.emailDomains.check).toHaveBeenCalledWith('test.com');
+    expect(t.uow.run).not.toHaveBeenCalled();
+    expect(t.verification.issue).not.toHaveBeenCalled();
+  });
+
+  it('permite el alta cuando falla DNS y solo registra el dominio', async () => {
+    const t = build(true);
+    t.emailDomains.check.mockResolvedValue('unknown');
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      await expect(t.service.register(DTO)).resolves.toMatchObject({ userId: 'u1' });
+      expect(warn).toHaveBeenCalledWith('No se pudo comprobar el dominio de correo test.com');
+    } finally {
+      warn.mockRestore();
+    }
+  });
   it('crea usuario, organización cloud y membresía tenant_admin dentro de una transacción', async () => {
     const t = build();
     const result = await t.service.register(DTO);

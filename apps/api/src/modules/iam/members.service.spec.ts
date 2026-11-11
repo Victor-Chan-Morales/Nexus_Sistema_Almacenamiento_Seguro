@@ -2,6 +2,7 @@ import { HttpException } from '@nestjs/common';
 import { AuditAction, AuditResource } from '../audit/audit.types';
 import { MEMBER_INVITATION_TOKEN_TTL_HOURS } from './constants';
 import { Role, TokenPurpose } from './domain/enums';
+import { IamSettings } from './iam.settings';
 import { MemberAdmission } from './member-admission';
 import { MembersService } from './services/members.service';
 
@@ -27,6 +28,7 @@ const DTO = { fullName: 'Ana Pérez', email: ' ANA@Empresa.com ', role: Role.COL
 const CREATED_AT = new Date('2026-10-29T12:00:00.000Z');
 
 interface Options {
+  checkEmailDomain?: boolean;
   existing?: { id: string } | null;
   organizationIds?: string[];
   activeCount?: number;
@@ -97,6 +99,7 @@ const build = (opts: Options = {}) => {
   }
 
   const audit = { logEvent: jest.fn().mockResolvedValue(undefined) };
+  const emailDomains = { check: jest.fn().mockResolvedValue('deliverable') };
 
   const service = new MembersService(
     uow as never,
@@ -110,11 +113,24 @@ const build = (opts: Options = {}) => {
     audit as never,
     {} as never,
     {} as never,
+    { checkEmailDomain: opts.checkEmailDomain ?? false } as IamSettings,
+    emailDomains,
   );
-  return { service, log, db, uow, users, organizations, memberships, hasher, opaque, outbox, audit };
+  return { service, log, db, uow, users, organizations, memberships, hasher, opaque, outbox, audit, emailDomains };
 };
 
 describe('MembersService.addMember (sin base de datos: puertos simulados)', () => {
+  it('rechaza un dominio inválido antes de abrir la transacción', async () => {
+    const t = build({ checkEmailDomain: true });
+    t.emailDomains.check.mockResolvedValue('undeliverable');
+    await expect(t.service.addMember(ACTOR, DTO)).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'EMAIL_DOMAIN_INVALID' }),
+      status: 400,
+    });
+    expect(t.emailDomains.check).toHaveBeenCalledWith('empresa.com');
+    expect(t.uow.run).not.toHaveBeenCalled();
+    expect(t.outbox.enqueueWithToken).not.toHaveBeenCalled();
+  });
   it('Escenario 1: crea usuario y membresía activa en la organización del actor y encola la invitación', async () => {
     const t = build();
     const result = await t.service.addMember(ACTOR, DTO);
@@ -230,6 +246,7 @@ describe('MembersService.addMember (sin base de datos: puertos simulados)', () =
     const service = new MembersService(
       t.uow as never, t.users as never, t.organizations as never, t.memberships as never,
       t.hasher as never, t.opaque as never, t.outbox as never, admission, t.audit as never, {} as never, {} as never,
+      { checkEmailDomain: false } as IamSettings, t.emailDomains,
     );
     expect(await codeOf(service.addMember(ACTOR, DTO))).toBe('USER_LIMIT_EXCEEDED');
   });
@@ -333,6 +350,7 @@ describe('MembersService.list (SPEC-104)', () => {
     const service = new MembersService(
       {} as never, {} as never, {} as never, memberships as never,
       {} as never, {} as never, {} as never, admission, {} as never, {} as never, {} as never,
+      {} as never, {} as never,
     );
     return { service, memberships, admission };
   };
@@ -450,6 +468,7 @@ describe('MembersService.update / remove (SPEC-108, puertos simulados con estado
     const service = new MembersService(
       uow as never, users as never, organizations as never, memberships as never,
       {} as never, {} as never, {} as never, admission, audit as never, sessions as never, notices as never,
+      {} as never, {} as never,
     );
     return { service, store, log, uow, memberships, users, sessions, organizations, audit, notices };
   };

@@ -34,6 +34,8 @@ Después de instalar, edita los valores persistidos en `.env` y vuelve a ejecuta
 
 Sin SMTP, la configuración inicial permite iniciar sesión sin verificar el correo. Úsala para pruebas locales. Para comprobar que quien se registra controla su buzón, configura `MAIL_HOST`, `MAIL_PORT`, `MAIL_SECURE`, `MAIL_FROM` y las credenciales SMTP que solicite el proveedor. Define `IAM_REQUIRE_VERIFIED_EMAIL=true` y ejecuta de nuevo `install.sh`. Conserva los permisos del archivo y usa la sintaxis de Compose para valores con caracteres especiales.
 
+El instalador usa `NEXUS_API_NODE_ENV=development` para el arranque local sin SMTP. En un despliegue de producción, define `NEXUS_API_NODE_ENV=production` e `IAM_REQUIRE_VERIFIED_EMAIL=true` y configura Gmail API antes de arrancar. Consulta [la configuración de Gmail por HTTPS](../../docs/GUIA_INSTALACION_Y_EJECUCION.md#correo-real-en-el-despliegue-spec-117).
+
 ```bash
 ./deploy/on-premises/smoke-test.sh
 # Con SMTP, indica un correo o alias aún sin registrar y pega el enlace cuando se solicite.

@@ -58,6 +58,7 @@ export default function SettingsPage() {
   const [role, setRole] = useState<MemberRole>("colaborador");
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
   async function handleAddMember(e: FormEvent<HTMLFormElement>) {
@@ -65,6 +66,7 @@ export default function SettingsPage() {
     if (!isAdmin || !accessToken || formSubmitting) return;
 
     setFormError(null);
+    setEmailError(null);
     setFormSuccess(null);
 
     const trimmedName = fullName.trim();
@@ -103,6 +105,9 @@ export default function SettingsPage() {
             break;
           case "VALIDATION_ERROR":
             setFormError(err.message || "Los datos ingresados no son válidos.");
+            break;
+          case "EMAIL_DOMAIN_INVALID":
+            setEmailError(err.message);
             break;
           default:
             setFormError(err.message || "Error al registrar el miembro.");
@@ -262,11 +267,14 @@ export default function SettingsPage() {
                     id="member-email"
                     type="email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => { setEmail(e.target.value); setEmailError(null); }}
+                    aria-invalid={Boolean(emailError)}
+                    aria-describedby={emailError ? "member-email-error" : undefined}
                     placeholder="ana@empresa.com"
                     required
                     disabled={formSubmitting}
                   />
+                  {emailError && <div id="member-email-error" className="auth-alert" role="alert">{emailError}</div>}
                 </div>
 
                 <div className="field">

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { AuditService } from '../../audit/audit.service';
 import { AuditAction, AuditResource } from '../../audit/audit.types';
@@ -10,9 +10,11 @@ import { UpdateMemberDto } from '../dto/update-member.dto';
 import { Membership } from '../entities/membership.entity';
 import { User } from '../entities/user.entity';
 import { IamErrors } from '../iam.errors';
-import { isUniqueViolation, normalizeEmail } from '../iam.utils';
+import { IamSettings } from '../iam.settings';
+import { assertRecipientDomain, isUniqueViolation, normalizeEmail } from '../iam.utils';
 import { AuthUser } from '../interfaces/auth-user.interface';
 import { MemberAdmission } from '../member-admission';
+import { EmailDomainChecker } from '../ports/email-domain-checker';
 import {
   MembershipRepository,
   OrganizationRepository,
@@ -32,6 +34,8 @@ import { EmailOutboxService } from './email-outbox.service';
  */
 @Injectable()
 export class MembersService {
+  private readonly logger = new Logger(MembersService.name);
+
   constructor(
     private readonly uow: UnitOfWork,
     private readonly users: UserRepository,
@@ -44,6 +48,8 @@ export class MembersService {
     private readonly audit: AuditService,
     private readonly sessions: SessionRepository,
     private readonly notices: AccountNotices,
+    private readonly settings: IamSettings,
+    private readonly emailDomains: EmailDomainChecker,
   ) {}
 
   /**
@@ -72,6 +78,7 @@ export class MembersService {
 
   async addMember(actor: AuthUser, dto: AddMemberDto): Promise<MemberDto> {
     const email = normalizeEmail(dto.email);
+    if (this.settings.checkEmailDomain) await assertRecipientDomain(email, this.emailDomains, this.logger);
     // El límite se lee antes de la transacción: la fuente usa otra conexión del pool y, leída dentro,
     // con varias altas simultáneas agotaría el pool mientras cada una mantiene la suya. Sin fuente o sin plan es 0.
     const limit = (await this.admission.userLimit(actor.organizationId)) ?? 0;

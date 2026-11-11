@@ -13,7 +13,7 @@
 | **Prioridad** | P1 |
 | **Estimación** | 5 h |
 | **Hito Objetivo** | Entrega final del curso |
-| **Estado** | Revisión del transporte pendiente de aprobación |
+| **Estado** | Aprobada |
 
 ---
 
@@ -269,7 +269,7 @@ Script `apps/api/src/scripts/mail-check.ts`, expuesto como `mail:check` en `pack
 
 ## 12. Preguntas Abiertas
 
-1. **Transporte propuesto:** API de Gmail por HTTPS. La API publicada usa Render Free, que bloquea SMTP en los puertos previstos en la revisión anterior.
+1. **Transporte:** API de Gmail por HTTPS. La API publicada usa Render Free, que bloquea SMTP en los puertos previstos en la revisión anterior.
 2. **Dominio. Resuelto:** no hay dominio propio. Se usa la cuenta de Gmail.
 3. **Resuelto:** no desplegar con Mailpit. La guarda de §8.3 se mantiene.
 4. **Resuelto:** si la consulta DNS falla, se deja pasar el registro (`unknown`) y se escribe una advertencia.

@@ -52,10 +52,12 @@ unset NEXUS_PUBLIC_HOST NEXUS_BIND_ADDRESS NEXUS_WEB_PORT NEXUS_API_PORT
 unset COMPOSE_PROJECT_NAME COMPOSE_ENV_FILES COMPOSE_FILE COMPOSE_PROFILES
 unset POSTGRES_PASSWORD S3_ACCESS_KEY S3_SECRET_KEY S3_FILER_SIGNING_KEY JWT_SECRET
 unset FILES_MASTER_KEY FILES_MASTER_KEY_V2 FILES_MASTER_KEY_CURRENT_VERSION
-unset IAM_REQUIRE_VERIFIED_EMAIL MAIL_HOST MAIL_PORT MAIL_SECURE MAIL_USER MAIL_PASS MAIL_FROM
+unset NEXUS_API_NODE_ENV IAM_REQUIRE_VERIFIED_EMAIL MAIL_HOST MAIL_PORT MAIL_SECURE MAIL_REQUIRE_TLS MAIL_USER MAIL_PASS MAIL_FROM
+unset MAIL_TRANSPORT GMAIL_SENDER GMAIL_CLIENT_ID GMAIL_CLIENT_SECRET GMAIL_REFRESH_TOKEN
 compose=(docker compose --project-directory "$directory" --env-file "$env_file" -f "$directory/docker-compose.yml")
 
 verify_email=false
+mail_transport=smtp
 mail_host=
 if [[ -e $env_file || -L $env_file ]]; then
   [[ -f $env_file && ! -L $env_file ]] || fail 'El archivo .env debe ser un archivo regular.'
@@ -68,6 +70,7 @@ if [[ -e $env_file || -L $env_file ]]; then
   public_host=$(jq -er '.services.api.environment.WEB_URL | capture("^http://(?<host>[^:]+):[0-9]+$").host' <<<"$config") ||
     fail 'Configura NEXUS_PUBLIC_HOST como un nombre DNS o IPv4, sin protocolo ni puerto.'
   verify_email=$(jq -r '.services.api.environment.IAM_REQUIRE_VERIFIED_EMAIL' <<<"$config")
+  mail_transport=$(jq -r '.services.api.environment.MAIL_TRANSPORT' <<<"$config")
   mail_host=$(jq -r '.services.api.environment.MAIL_HOST' <<<"$config")
   unset config
 else
@@ -85,7 +88,8 @@ if [[ $bind_address != 0.0.0.0 ]]; then
   grep -Fq " $bind_address/" <<<"$interfaces" || fail "La dirección $bind_address no está configurada en el servidor."
 fi
 [[ $verify_email == true || $verify_email == false ]] || fail 'IAM_REQUIRE_VERIFIED_EMAIL debe ser true o false.'
-[[ $verify_email == false || -n $mail_host ]] || fail 'Configura MAIL_HOST para exigir la verificación por correo.'
+[[ $verify_email == false || $mail_transport == gmail-api || -n $mail_host ]] ||
+  fail 'Configura Gmail API o MAIL_HOST para exigir la verificación por correo.'
 
 valid_port() { [[ $1 =~ ^[1-9][0-9]{0,4}$ ]] && (( $1 <= 65535 )); }
 if ! valid_port "$web_port" || ! valid_port "$api_port"; then

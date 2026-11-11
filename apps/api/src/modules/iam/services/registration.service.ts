@@ -1,11 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { INITIAL_DEPLOYMENT_MODEL, Role } from '../domain/enums';
 import { RegisterDto } from '../dto/register.dto';
 import { Organization } from '../entities/organization.entity';
 import { User } from '../entities/user.entity';
 import { IamErrors } from '../iam.errors';
-import { isUniqueViolation, normalizeEmail } from '../iam.utils';
+import { IamSettings } from '../iam.settings';
+import { assertRecipientDomain, isUniqueViolation, normalizeEmail } from '../iam.utils';
 import { RegisterResponse } from '../interfaces/auth-user.interface';
+import { EmailDomainChecker } from '../ports/email-domain-checker';
 import {
   MembershipRepository,
   OrganizationRepository,
@@ -19,6 +21,8 @@ import { EmailVerificationService } from './email-verification.service';
 /** Caso de uso de registro: usuario + organización + membresía (+ hooks de otros módulos) en una transacción. */
 @Injectable()
 export class RegistrationService {
+  private readonly logger = new Logger(RegistrationService.name);
+
   constructor(
     private readonly uow: UnitOfWork,
     private readonly users: UserRepository,
@@ -27,10 +31,13 @@ export class RegistrationService {
     private readonly hasher: PasswordHasher,
     private readonly hooks: RegistrationHooks,
     private readonly verification: EmailVerificationService,
+    private readonly settings: IamSettings,
+    private readonly emailDomains: EmailDomainChecker,
   ) {}
 
   async register(dto: RegisterDto): Promise<RegisterResponse> {
     const email = normalizeEmail(dto.email);
+    if (this.settings.checkEmailDomain) await assertRecipientDomain(email, this.emailDomains, this.logger);
     const passwordHash = await this.hasher.hash(dto.password);
 
     let created: { user: User; organization: Organization; outboxId: string };
