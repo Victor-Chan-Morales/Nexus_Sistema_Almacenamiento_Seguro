@@ -28,4 +28,4 @@ const currentUser = await getCurrentUser(session.accessToken);
 
 Las rutas y reglas vigentes están en `CONTRACTS.md`, en la versión que indica su encabezado. No agregues rutas que no estén ahí.
 
-Los datos de maqueta siguen en `demo.ts` y `billing-demo.ts` para prototipos que aún no se migran. Las rutas `/dashboard` y `/archivos` usan los clientes API; sus respuestas no deben mezclarse con los datos locales de maqueta.
+Ya no quedan datos de maqueta en `apps/web/src/`; se retiraron en SPEC-606. Las rutas `/dashboard`, `/archivos` y `/perfil` usan los clientes API o la sesión, y sus respuestas no deben mezclarse con datos locales del navegador.

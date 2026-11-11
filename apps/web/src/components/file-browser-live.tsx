@@ -66,11 +66,11 @@ function FileTypeIcon({ name }: { name: string }) {
   return <span className="drive-file-icon"><UiIcon name={fileIcons.get(extensionOf(name)) ?? "fileGeneric"} /></span>;
 }
 
-export function FileBrowserLive({ quotaExceeded = false }: { quotaExceeded?: boolean }) {
-  return <RequireSession>{(session) => <FileBrowserSession session={session} quotaExceeded={quotaExceeded} />}</RequireSession>;
+export function FileBrowserLive() {
+  return <RequireSession>{(session) => <FileBrowserSession session={session} />}</RequireSession>;
 }
 
-function FileBrowserSession({ session, quotaExceeded }: { session: Session; quotaExceeded: boolean }) {
+function FileBrowserSession({ session }: { session: Session }) {
   const params = useParams<{ folderId?: string }>();
   const router = useRouter();
   const { signOut, failSession } = useSession();
@@ -335,7 +335,7 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
 
           {plan && limitBytes > 0 && <section className="drive-storage-summary"><div className="drive-storage-head"><div><span className="drive-storage-icon"><UiIcon name="storage" size={16} /></span><span><b>Almacenamiento</b><small>{percent}% utilizado</small></span></div><b>{formatBytes(usedBytes)} <small>de {formatBytes(limitBytes)}</small></b></div><div className={`drive-storage-bar ${atLimit ? "is-full" : ""}`}><i style={{ width: `${percent}%` }} /></div><div className="drive-storage-foot"><span>{formatBytes(Math.max(0, limitBytes - usedBytes))} disponibles</span><Link href="/suscripcion">Administrar plan</Link></div></section>}
           {!plan && data && <section className="drive-quota-alert"><span>!</span><div><b>No hay una suscripción activa</b><p>La cuota es cero hasta que la organización tenga un plan.</p></div><Link href="/planes">Ver planes</Link></section>}
-          {(quotaExceeded || atLimit) && <section className="drive-quota-alert"><span>!</span><div><b>Almacenamiento completo</b><p>Libera espacio o cambia a un plan con mayor capacidad para subir archivos.</p></div><Link href="/planes">Ver planes</Link></section>}
+          {atLimit && <section className="drive-quota-alert"><span>!</span><div><b>Almacenamiento completo</b><p>Libera espacio o cambia a un plan con mayor capacidad para subir archivos.</p></div><Link href="/planes">Ver planes</Link></section>}
           {actionError && <div className="drive-quota-alert" role="alert"><span>!</span><div><b>No se pudo completar la operación</b><p>{actionError}</p></div><button type="button" className="drive-subtle-button" onClick={() => setActionError("")}>Cerrar</button></div>}
 
           <div className="drive-toolbar"><label className="drive-search"><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar en esta carpeta" /></label><button className="drive-upload-button" type="button" onClick={() => document.getElementById("drive-upload-input")?.click()} disabled={!canUpload} aria-label="Subir archivo"><UiIcon name="upload" size={15} /><span>{busy ? "Procesando…" : "Subir archivo"}</span></button></div>

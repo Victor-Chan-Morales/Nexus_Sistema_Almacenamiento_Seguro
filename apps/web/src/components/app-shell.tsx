@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Brand } from "@/components/brand";
 import { AccountMenu } from "@/components/account-menu";
-import { DemoBanner } from "@/components/demo-banner";
 import { UiIcon } from "@/components/ui-icon";
 import { initialsOf, RequireSession, useSession } from "@/lib/session";
 
@@ -25,14 +24,13 @@ const roleLabels: Record<string, string> = { tenant_admin: "Administrador", owne
 
 /**
  * Marco del espacio de trabajo. Exige sesión válida en el cliente (la API valida de nuevo cada request).
- * `demo` solo se activa en pantallas que todavía no consumen la API.
  * `requireSuperAdmin` (SPEC-502) oculta el contenido a quien no sea Super Admin y lo redirige a /dashboard.
  */
-export function AppShell({ active, children, superAdmin = false, demo = false, requireSuperAdmin = false }: { active: string; children: React.ReactNode; superAdmin?: boolean; demo?: boolean; requireSuperAdmin?: boolean }) {
-  return <RequireSession>{(session) => <ShellFrame active={active} superAdmin={superAdmin} demo={demo} requireSuperAdmin={requireSuperAdmin} name={session.user.fullName} email={session.user.email} organization={session.organization.name} role={session.role}>{children}</ShellFrame>}</RequireSession>;
+export function AppShell({ active, children, superAdmin = false, requireSuperAdmin = false }: { active: string; children: React.ReactNode; superAdmin?: boolean; requireSuperAdmin?: boolean }) {
+  return <RequireSession>{(session) => <ShellFrame active={active} superAdmin={superAdmin} requireSuperAdmin={requireSuperAdmin} name={session.user.fullName} email={session.user.email} role={session.role}>{children}</ShellFrame>}</RequireSession>;
 }
 
-function ShellFrame({ active, children, superAdmin, demo, requireSuperAdmin, name, email, organization, role }: { active: string; children: React.ReactNode; superAdmin: boolean; demo: boolean; requireSuperAdmin: boolean; name: string; email: string; organization: string; role: string }) {
+function ShellFrame({ active, children, superAdmin, requireSuperAdmin, name, email, role }: { active: string; children: React.ReactNode; superAdmin: boolean; requireSuperAdmin: boolean; name: string; email: string; role: string }) {
   const pathname = usePathname();
   const router = useRouter();
   const { session, signOut } = useSession();
@@ -59,7 +57,6 @@ function ShellFrame({ active, children, superAdmin, demo, requireSuperAdmin, nam
     </aside>
     <div className="main-area">
       <header className="topbar"><div className="breadcrumb">Nexus <span>/</span> {currentLabel}</div><div className="top-actions"><button className="icon-button" aria-label="Notificaciones"><UiIcon name="notifications" size={18} /><i /></button><AccountMenu name={name} email={email} /></div></header>
-      {demo && <DemoBanner />}
       <main className="page-content">{children}</main>
     </div>
   </div>;
