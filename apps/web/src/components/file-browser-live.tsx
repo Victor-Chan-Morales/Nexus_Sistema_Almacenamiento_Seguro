@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { type ChangeEvent, type FormEvent, type DragEvent, useCallback, useMemo, useRef, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { type ChangeEvent, type FormEvent, type DragEvent, Suspense, useCallback, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/lib/api/client";
 import { getDashboard } from "@/lib/api/dashboard";
-import { createFolder, deleteFile, deleteFolder, downloadFile, getFolderItems, listFolders, uploadFile } from "@/lib/api/files";
+import { canWriteDrive, createFolder, deleteFile, deleteFolder, downloadFile, getFolderItems, listDrives, uploadFile } from "@/lib/api/files";
 import { getStoragePolicy } from "@/lib/api/storage";
-import type { DashboardResponse, FileMetadata, Folder, StoragePolicy } from "@/lib/api/types";
+import type { DashboardResponse, Drive, FileMetadata, Folder, StoragePolicy } from "@/lib/api/types";
 import { formatBytes, formatIsoDate, usagePercent } from "@/lib/format";
 import { locationLabel, storageErrorMessage } from "@/lib/storage-labels";
 import { useLoad } from "@/lib/use-load";
@@ -17,6 +17,7 @@ import { Dialog } from "@/components/dialog";
 import { FileVersionsModal } from "@/components/file-versions-modal";
 import { ShareDialog } from "@/components/share-dialog";
 import { AccountMenu } from "@/components/account-menu";
+import { DriveSwitcher } from "@/components/drive-switcher";
 import { LoadingIndicator, useToast } from "@/components/toast";
 import { UiIcon } from "@/components/ui-icon";
 
@@ -24,8 +25,11 @@ const MAX_FILE_BYTES = 100_000_000;
 const ALLOWED_EXTENSIONS = new Set(["pdf", "docx", "xlsx", "pptx", "jpg", "png", "txt", "zip"]);
 const LOAD_ERROR = "No pudimos cargar tus archivos. Inténtalo de nuevo.";
 
+/** SPEC-223: el Drive activo sale de `GET /drives`, que trae el `myLevel` del solicitante. */
 type BrowserData = {
   driveName: string;
+  drive: Drive;
+  drives: Drive[];
   rootFolderId: string;
   folder: Folder;
   folders: Folder[];
@@ -35,11 +39,19 @@ type BrowserData = {
   policy: StoragePolicy | null;
 };
 
+/** SPEC-223 escenario 7 y D7: Drive o carpeta que no es accesible. Se muestra un aviso, no un error. */
+type BrowserMissing = {
+  missing: true;
+  kind: "drive" | "folder";
+  drives: Drive[];
+};
+
 function errorMessage(error: unknown, fallback: string) {
   if (!(error instanceof ApiError)) return fallback;
   if (error.code === "STORAGE_QUOTA_EXCEEDED" || error.status === 422) return "La cuota disponible no alcanza para esta operación.";
   if (error.status === 413) return "El archivo supera el límite de 100 MB.";
   if (error.status === 415) return "Ese tipo de archivo no está permitido.";
+  if (error.code === "DRIVE_PERMISSION_DENIED") return "Tu nivel en este Drive cambió. Recargamos tus permisos.";
   if (error.status === 404) return "No encontramos esta carpeta o archivo.";
   if (error.status === 0) return error.message;
   return fallback;
@@ -67,7 +79,8 @@ function FileTypeIcon({ name }: { name: string }) {
 }
 
 export function FileBrowserLive({ quotaExceeded = false }: { quotaExceeded?: boolean }) {
-  return <RequireSession>{(session) => <FileBrowserSession session={session} quotaExceeded={quotaExceeded} />}</RequireSession>;
+  // SPEC-223: useSearchParams requiere un límite de Suspense.
+  return <Suspense fallback={<LoadingIndicator>Cargando archivos…</LoadingIndicator>}><RequireSession>{(session) => <FileBrowserSession session={session} quotaExceeded={quotaExceeded} />}</RequireSession></Suspense>;
 }
 
 function FileBrowserSession({ session, quotaExceeded }: { session: Session; quotaExceeded: boolean }) {
@@ -75,6 +88,8 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
   const router = useRouter();
   const { signOut, failSession } = useSession();
   const folderId = params.folderId;
+  // SPEC-223: `?drive=<id>` elige el Drive de la raíz; dentro de una carpeta, el Drive sale de la propia carpeta.
+  const driveParam = useSearchParams().get("drive");
   const [query, setQuery] = useState("");
   const [folderName, setFolderName] = useState("");
   const [newFolderDestination, setNewFolderDestination] = useState("");
@@ -93,28 +108,46 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
   const pendingUploads = useRef(new Map<string, string>());
   const token = session.accessToken;
 
-  const fetchData = useCallback(async (signal: AbortSignal): Promise<BrowserData> => {
-    const root = await listFolders(token, { signal });
-    const targetFolderId = folderId ?? root.drive.rootFolderId;
+  const fetchData = useCallback(async (signal: AbortSignal): Promise<BrowserData | BrowserMissing> => {
+    // SPEC-222/223: `GET /drives` lista el Drive personal y los de equipo con `myLevel`. Un Drive que no aparece no es accesible.
     // SPEC-804: la política es informativa para el explorador; si falla, la pantalla carga igual sin selector.
-    const [contents, dashboard, policy] = await Promise.all([
-      getFolderItems(targetFolderId, token, { signal }),
+    const [drives, dashboard, policy] = await Promise.all([
+      listDrives(token, { signal }).then((response) => response.items),
       getDashboard(token, { signal }),
       getStoragePolicy(token, { signal }).catch(() => null),
     ]);
+    const rootDrive = driveParam
+      ? drives.find((item) => item.id === driveParam)
+      : drives.find((item) => item.type === "personal");
+    const startFolderId = folderId ?? rootDrive?.rootFolderId;
+    const kind = folderId ? "folder" : "drive";
+    if (!startFolderId) return { missing: true, kind, drives };
+    const contents = await getFolderItems(startFolderId, token, { signal }).catch((error: unknown) => {
+      if (error instanceof ApiError && error.status === 404) return null;
+      throw error;
+    });
+    const drive = contents ? drives.find((item) => item.id === contents.folder.driveId) : undefined;
+    if (!contents || !drive) return { missing: true, kind, drives };
     return {
-      driveName: root.drive.name,
-      rootFolderId: root.drive.rootFolderId,
+      driveName: drive.name,
+      drive,
+      drives,
+      rootFolderId: drive.rootFolderId,
       folder: contents.folder,
       folders: contents.folders,
       files: contents.files,
       dashboard,
       policy,
     };
-  }, [folderId, token]);
+  }, [driveParam, folderId, token]);
 
   const { state, reload } = useLoad(fetchData, true, LOAD_ERROR);
-  const data = state.status === "ready" ? state.data : null;
+  const loaded = state.status === "ready" ? state.data : null;
+  const missing = loaded && "missing" in loaded ? loaded : null;
+  const data = loaded && !("missing" in loaded) ? loaded : null;
+  const drives = data?.drives ?? missing?.drives ?? [];
+  // SPEC-223 escenarios 4 y 5: el nivel del Drive activo decide qué acciones se muestran. La API vuelve a autorizar.
+  const canWrite = canWriteDrive(data?.drive.myLevel);
   const filteredFolders = useMemo(() => data?.folders.filter((item) => item.name.toLowerCase().includes(query.toLowerCase())) ?? [], [data, query]);
   const filteredFiles = useMemo(() => data?.files.filter((item) => item.name.toLowerCase().includes(query.toLowerCase())) ?? [], [data, query]);
   const plan = data?.dashboard.plan;
@@ -123,9 +156,11 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
   const percent = usagePercent(usedBytes, limitBytes);
   const atLimit = limitBytes > 0 && usedBytes >= limitBytes;
   const parentFolderId = data?.folder.parentFolderId;
+  // SPEC-223 D4: en un Drive de equipo, "Mi espacio" vuelve a su raíz con `?drive=`.
+  const driveHomeHref = data?.drive.type === "team" ? `/archivos?drive=${encodeURIComponent(data.drive.id)}` : "/archivos";
   const parentHref = parentFolderId && data && parentFolderId !== data.rootFolderId
     ? `/archivos/${encodeURIComponent(parentFolderId)}`
-    : "/archivos";
+    : driveHomeHref;
 
   // SPEC-804 escenario 4: en un modelo híbrido, una carpeta principal debe elegir Nube o Local. Las subcarpetas no muestran selector.
   const creatingInRoot = Boolean(data && data.folder.id === data.rootFolderId);
@@ -151,10 +186,16 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
       reload();
     } catch (error) {
       if (!failSession(error)) setActionError(createFolderErrorMessage(error));
+      reloadIfPermissionChanged(error);
     } finally { setBusy(false); }
   }
 
-  const canUpload = Boolean(data && data.folder.id === (folderId ?? data.rootFolderId) && plan && limitBytes > 0 && !busy && !showCreateFolder && !folderDeleteTarget);
+  const canUpload = Boolean(canWrite && data && data.folder.id === (folderId ?? data.rootFolderId) && plan && limitBytes > 0 && !busy && !showCreateFolder && !folderDeleteTarget);
+
+  /** SPEC-223 escenario 6: un 403 DRIVE_PERMISSION_DENIED indica que el nivel cambió; se recarga para ocultar lo que ya no aplica. */
+  function reloadIfPermissionChanged(error: unknown) {
+    if (error instanceof ApiError && error.code === "DRIVE_PERMISSION_DENIED") reload();
+  }
 
   async function uploadOne(file: File, targetId: string, availableBytes: number) {
     const extension = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() : "";
@@ -199,6 +240,7 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
             break;
           }
           notify("error", `${label}. ${errorMessage(error, "No fue posible subir el archivo.")}`);
+          reloadIfPermissionChanged(error);
         }
       }
     } finally {
@@ -284,6 +326,7 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
       reload();
     } catch (error) {
       if (!failSession(error)) notify("error", errorMessage(error, "No fue posible mover el archivo a la papelera."));
+      reloadIfPermissionChanged(error);
     } finally { setBusy(false); }
   }
 
@@ -296,6 +339,7 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
       reload();
     } catch (error) {
       if (!failSession(error)) notify("error", errorMessage(error, "No fue posible mover la carpeta a la papelera."));
+      reloadIfPermissionChanged(error);
     } finally { setBusy(false); }
   }
 
@@ -306,11 +350,10 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
   return <div className="drive-shell">
     <aside className="drive-sidebar">
       <Link className="drive-logo" href="/dashboard" aria-label="Nexus, ir al dashboard"><Brand /></Link>
-      <button className="drive-upload-main" type="button" onClick={() => document.getElementById("drive-upload-input")?.click()} disabled={!canUpload} aria-label="Subir archivo"><UiIcon name="upload" size={18} /><span>Subir archivo</span></button>
+      {canWrite && <button className="drive-upload-main" type="button" onClick={() => document.getElementById("drive-upload-input")?.click()} disabled={!canUpload} aria-label="Subir archivo"><UiIcon name="upload" size={18} /><span>Subir archivo</span></button>}
       <input id="drive-upload-input" type="file" hidden accept=".pdf,.docx,.xlsx,.pptx,.jpg,.png,.txt,.zip" onChange={uploadSelected} />
       <nav className="drive-nav" aria-label="Navegación de archivos">
-        <span className="drive-nav-section">MI ESPACIO</span>
-        <Link href="/archivos" aria-current={isRoot ? "page" : undefined}><UiIcon name="files" />Todos los archivos</Link>
+        <DriveSwitcher drives={drives} activeDriveId={data?.drive.id ?? null} />
         <span className="drive-nav-section drive-nav-section-spaced">ORGANIZACIÓN</span>
         <Link href="/papelera"><UiIcon name="trash" />Papelera</Link>
       </nav>
@@ -331,30 +374,31 @@ function FileBrowserSession({ session, quotaExceeded }: { session: Session; quot
         >
           {dragging && canUpload && <div className="drive-drop-hint" role="status">Suelta para subir a {displayName}</div>}
           {progress && <LoadingIndicator>Subiendo {progress.current} de {progress.total}…</LoadingIndicator>}
-          <div className="drive-title-row"><div><p className="drive-eyebrow">DRIVE PERSONAL</p><h1>{displayName}</h1><p>{data?.folder?.sizeBytes !== undefined ? `${formatBytes(data.folder.sizeBytes)} en total · Carpetas y archivos guardados en Nexus.` : "Carpetas y archivos guardados en Nexus."}</p></div><button className="drive-create-button" type="button" onClick={() => { setShowCreateFolder(true); setActionError(""); }} disabled={!data || busy}><UiIcon name="plus" size={15} />Crear carpeta</button></div>
+          <div className="drive-title-row"><div><p className="drive-eyebrow">{data?.drive.type === "team" ? "DRIVE DE EQUIPO" : "DRIVE PERSONAL"}</p>{data && !canWrite && <span className="drive-readonly-badge">Solo lectura</span>}<h1>{displayName}</h1><p>{data?.folder?.sizeBytes !== undefined ? `${formatBytes(data.folder.sizeBytes)} en total · Carpetas y archivos guardados en Nexus.` : "Carpetas y archivos guardados en Nexus."}</p></div>{canWrite && <button className="drive-create-button" type="button" onClick={() => { setShowCreateFolder(true); setActionError(""); }} disabled={!data || busy}><UiIcon name="plus" size={15} />Crear carpeta</button>}</div>
 
           {plan && limitBytes > 0 && <section className="drive-storage-summary"><div className="drive-storage-head"><div><span className="drive-storage-icon"><UiIcon name="storage" size={16} /></span><span><b>Almacenamiento</b><small>{percent}% utilizado</small></span></div><b>{formatBytes(usedBytes)} <small>de {formatBytes(limitBytes)}</small></b></div><div className={`drive-storage-bar ${atLimit ? "is-full" : ""}`}><i style={{ width: `${percent}%` }} /></div><div className="drive-storage-foot"><span>{formatBytes(Math.max(0, limitBytes - usedBytes))} disponibles</span><Link href="/suscripcion">Administrar plan</Link></div></section>}
           {!plan && data && <section className="drive-quota-alert"><span>!</span><div><b>No hay una suscripción activa</b><p>La cuota es cero hasta que la organización tenga un plan.</p></div><Link href="/planes">Ver planes</Link></section>}
           {(quotaExceeded || atLimit) && <section className="drive-quota-alert"><span>!</span><div><b>Almacenamiento completo</b><p>Libera espacio o cambia a un plan con mayor capacidad para subir archivos.</p></div><Link href="/planes">Ver planes</Link></section>}
           {actionError && <div className="drive-quota-alert" role="alert"><span>!</span><div><b>No se pudo completar la operación</b><p>{actionError}</p></div><button type="button" className="drive-subtle-button" onClick={() => setActionError("")}>Cerrar</button></div>}
 
-          <div className="drive-toolbar"><label className="drive-search"><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar en esta carpeta" /></label><button className="drive-upload-button" type="button" onClick={() => document.getElementById("drive-upload-input")?.click()} disabled={!canUpload} aria-label="Subir archivo"><UiIcon name="upload" size={15} /><span>{busy ? "Procesando…" : "Subir archivo"}</span></button></div>
+          <div className="drive-toolbar"><label className="drive-search"><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar en esta carpeta" /></label>{canWrite && <button className="drive-upload-button" type="button" onClick={() => document.getElementById("drive-upload-input")?.click()} disabled={!canUpload} aria-label="Subir archivo"><UiIcon name="upload" size={15} /><span>{busy ? "Procesando…" : "Subir archivo"}</span></button>}</div>
 
           {data && !isRoot && <div className="drive-crumbs"><Link href={parentHref}>Mi espacio</Link><span>/</span><b>{data.folder.name}</b></div>}
           {state.status === "loading" && <LoadingIndicator>Cargando archivos…</LoadingIndicator>}
           {state.status === "error" && <div className="drive-empty-state" role="alert"><b>No se pudieron cargar los archivos</b><p>{state.message}</p><button className="drive-empty-button" type="button" onClick={reload}>Reintentar</button></div>}
 
+          {missing && <div className="drive-empty-state" role="alert"><b>{missing.kind === "drive" ? "No encontramos este Drive" : "No encontramos esta carpeta"}</b><p>{missing.kind === "drive" ? "Puede que ya no tengas acceso a este Drive." : "Puede que ya no tengas acceso o que se haya eliminado."}</p><Link className="drive-empty-button" href="/archivos">Ir a Mi espacio</Link></div>}
           {data && <div className="drive-list-card">
             <div className="drive-list-head"><span>Nombre</span><span>Tipo</span><span>Tamaño</span><span>Modificado</span><span>Acciones</span></div>
-            {filteredFolders.map((folder) => <div className="drive-list-row" key={`folder-${folder.id}`}><Link className="drive-item-name" href={`/archivos/${encodeURIComponent(folder.id)}`}><span className="drive-folder-glyph"><UiIcon name="folder" size={17} /></span><b>{folder.name}</b>{folder.destinationLocation && <span className={`location-badge ${folder.destinationLocation === "cloud" ? "location-badge-cloud" : "location-badge-local"}`}>{locationLabel(folder.destinationLocation)}</span>}</Link><span>Carpeta</span><span>{formatBytes(folder.sizeBytes ?? 0)}</span><span>{formatIsoDate(folder.createdAt)}</span><span className="drive-row-actions"><Link href={`/archivos/${encodeURIComponent(folder.id)}`}>Abrir</Link><button className="folder-trash-button" type="button" onClick={() => setFolderDeleteTarget(folder)} disabled={busy} aria-label={`Mover carpeta y contenido a la papelera: ${folder.name}`} title="Mover carpeta y contenido a la papelera"><UiIcon name="trash" size={15} /></button></span></div>)}
-            {filteredFiles.map((file) => <div className={`drive-list-row ${selectedFile?.id === file.id ? "selected" : ""}`} key={`file-${file.id}`}><button className="drive-item-name drive-item-button" type="button" onClick={() => setSelectedFile(file)}><FileTypeIcon name={file.name} /><b>{file.name}</b></button><span>{file.mimeType || extensionOf(file.name)}</span><span>{formatBytes(file.sizeBytes)}</span><span>{formatIsoDate(file.uploadedAt)}</span><span className="drive-row-actions"><button type="button" onClick={() => downloadSelected(file)} disabled={busy}>Descargar</button><button type="button" onClick={() => setShareTarget(file)} disabled={busy} aria-label={`Compartir «${file.name}»`}>Compartir</button><button type="button" onClick={() => setVersionsTarget(file)} disabled={busy} aria-label={`Versiones de «${file.name}»`}>Versiones</button><button type="button" onClick={() => deleteSelected(file)} disabled={busy} aria-label={`Mover a la papelera «${file.name}»`}>Mover a papelera</button></span></div>)}
+            {filteredFolders.map((folder) => <div className="drive-list-row" key={`folder-${folder.id}`}><Link className="drive-item-name" href={`/archivos/${encodeURIComponent(folder.id)}`}><span className="drive-folder-glyph"><UiIcon name="folder" size={17} /></span><b>{folder.name}</b>{folder.destinationLocation && <span className={`location-badge ${folder.destinationLocation === "cloud" ? "location-badge-cloud" : "location-badge-local"}`}>{locationLabel(folder.destinationLocation)}</span>}</Link><span>Carpeta</span><span>{formatBytes(folder.sizeBytes ?? 0)}</span><span>{formatIsoDate(folder.createdAt)}</span><span className="drive-row-actions"><Link href={`/archivos/${encodeURIComponent(folder.id)}`}>Abrir</Link>{canWrite && <button className="folder-trash-button" type="button" onClick={() => setFolderDeleteTarget(folder)} disabled={busy} aria-label={`Mover carpeta y contenido a la papelera: ${folder.name}`} title="Mover carpeta y contenido a la papelera"><UiIcon name="trash" size={15} /></button>}</span></div>)}
+            {filteredFiles.map((file) => <div className={`drive-list-row ${selectedFile?.id === file.id ? "selected" : ""}`} key={`file-${file.id}`}><button className="drive-item-name drive-item-button" type="button" onClick={() => setSelectedFile(file)}><FileTypeIcon name={file.name} /><b>{file.name}</b></button><span>{file.mimeType || extensionOf(file.name)}</span><span>{formatBytes(file.sizeBytes)}</span><span>{formatIsoDate(file.uploadedAt)}</span><span className="drive-row-actions"><button type="button" onClick={() => downloadSelected(file)} disabled={busy}>Descargar</button>{canWrite && <button type="button" onClick={() => setShareTarget(file)} disabled={busy} aria-label={`Compartir «${file.name}»`}>Compartir</button>}<button type="button" onClick={() => setVersionsTarget(file)} disabled={busy} aria-label={`Versiones de «${file.name}»`}>Versiones</button>{canWrite && <button type="button" onClick={() => deleteSelected(file)} disabled={busy} aria-label={`Mover a la papelera «${file.name}»`}>Mover a papelera</button>}</span></div>)}
             {visibleItemsCount === 0 && <div className="drive-empty-state"><span><UiIcon name="files" size={20} /></span><b>{query ? "No encontramos coincidencias" : "Esta carpeta está vacía"}</b><p>{query ? "Prueba con otro término de búsqueda." : "Crea una carpeta o sube un archivo para empezar."}</p>{!query && <button className="drive-empty-button" type="button" onClick={() => setShowCreateFolder(true)}>Crear carpeta</button>}</div>}
           </div>}
 
           <p className="drive-demo-note">Los archivos y carpetas mostrados vienen de la API de Nexus.</p>
         </section>
 
-        {selectedFile && <aside className="drive-detail-panel"><button className="drive-detail-close" type="button" onClick={() => setSelectedFile(null)} aria-label="Cerrar detalles">×</button><div className="drive-preview"><FileTypeIcon name={selectedFile.name} /><span>Metadatos del archivo</span></div><div className="drive-detail-name"><FileTypeIcon name={selectedFile.name} /><div><b>{selectedFile.name}</b><small>{selectedFile.mimeType}</small></div></div><dl className="drive-detail-list"><dt>Tamaño</dt><dd>{formatBytes(selectedFile.sizeBytes)}</dd><dt>Versión</dt><dd>{selectedFile.versionId}</dd><dt>Subido</dt><dd>{formatIsoDate(selectedFile.uploadedAt)}</dd></dl><div className="drive-detail-actions"><button className="drive-primary-button" type="button" onClick={() => downloadSelected(selectedFile)} disabled={busy}>Descargar</button><button className="drive-subtle-button" type="button" onClick={() => setShareTarget(selectedFile)} disabled={busy}>Compartir</button><button className="drive-subtle-button" type="button" onClick={() => setVersionsTarget(selectedFile)} disabled={busy}>Versiones</button><button className="drive-subtle-button" type="button" onClick={() => deleteSelected(selectedFile)} disabled={busy}>Mover a papelera</button></div></aside>}
+        {selectedFile && <aside className="drive-detail-panel"><button className="drive-detail-close" type="button" onClick={() => setSelectedFile(null)} aria-label="Cerrar detalles">×</button><div className="drive-preview"><FileTypeIcon name={selectedFile.name} /><span>Metadatos del archivo</span></div><div className="drive-detail-name"><FileTypeIcon name={selectedFile.name} /><div><b>{selectedFile.name}</b><small>{selectedFile.mimeType}</small></div></div><dl className="drive-detail-list"><dt>Tamaño</dt><dd>{formatBytes(selectedFile.sizeBytes)}</dd><dt>Versión</dt><dd>{selectedFile.versionId}</dd><dt>Subido</dt><dd>{formatIsoDate(selectedFile.uploadedAt)}</dd></dl><div className="drive-detail-actions"><button className="drive-primary-button" type="button" onClick={() => downloadSelected(selectedFile)} disabled={busy}>Descargar</button>{canWrite && <button className="drive-subtle-button" type="button" onClick={() => setShareTarget(selectedFile)} disabled={busy}>Compartir</button>}<button className="drive-subtle-button" type="button" onClick={() => setVersionsTarget(selectedFile)} disabled={busy}>Versiones</button>{canWrite && <button className="drive-subtle-button" type="button" onClick={() => deleteSelected(selectedFile)} disabled={busy}>Mover a papelera</button>}</div></aside>}
       </div>
     </main>
 

@@ -65,6 +65,8 @@ Se preparó navegación y contenido inicial en estas rutas. La implementación v
 | `/papelera` | Papelera con estado vacío, restauración, confirmación y eliminación definitiva | Basado en `docs/figma/carga_archivos/mk_04_papelera.png`. Implementada en SPEC-205 (`components/trash-view.tsx`): listado, estados de carga/vacío/error, restaurar, eliminar definitivamente con diálogo accesible y aviso de cuota. Cotejo visual contra el PNG pendiente |
 | `/perfil` | Perfil de solo lectura con nombre, correo, organización y rol de la sesión, y acceso a recuperación de contraseña | Sin frame específico; cotejo visual pendiente |
 | `/configuracion` | Gestión de miembros del equipo | Conectada a la API (SPEC-106) |
+| `/equipos` | Lista de equipos con su nivel; el administrador crea equipos y administra miembros con su nivel; enlace "Abrir Drive" por equipo | Conectada a la API (SPEC-223); sin frame específico, cotejo visual pendiente |
+| `/archivos?drive=<id>`, `/papelera` | Selector de Drive: "Mi espacio" y los Drives de equipo; etiqueta "Solo lectura" y acciones ocultas según el nivel | Conectada a la API (SPEC-223); sin frame específico, cotejo visual pendiente |
 | `/auditoria` | Bitácora conectada a la API: tabla (fecha, actor, acción con insignia por familia, recurso), filtro visual por acción, "Cargar más" por cursor y aviso para colaborador | Sin frame específico; cotejo visual pendiente |
 | `/almacenamiento` | Modelo de despliegue (Nube, Servidor local, Híbrido) con el actual marcado, diálogo de cambio, destinos con prueba de conexión y solicitud de instalación (SPEC-804) | Sin frame específico; cotejo visual pendiente. Capturas en `docs/evidencia/spec-804/` |
 

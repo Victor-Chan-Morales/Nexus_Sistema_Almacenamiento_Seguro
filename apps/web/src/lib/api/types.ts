@@ -132,6 +132,49 @@ export type PersonalDrive = {
   rootFolderId: UUID;
 };
 
+/** SPEC-222: nivel del solicitante en un Drive. `owner` es el dueño de su Drive personal. */
+export type DriveLevel = "owner" | "read" | "write";
+
+/** SPEC-222: un Drive accesible (`GET /drives`). `teamId` solo tiene valor en Drives de equipo. */
+export type Drive = {
+  id: UUID;
+  name: string;
+  type: "personal" | "team";
+  teamId: UUID | null;
+  rootFolderId: UUID;
+  myLevel: DriveLevel;
+};
+
+export type DrivesResponse = { items: Drive[] };
+
+/** SPEC-220: nivel de un miembro de equipo. */
+export type TeamLevel = "read" | "write";
+
+/** SPEC-220: equipo en `GET /teams`. `myLevel` es `write` para todo tenant_admin, sea o no miembro. */
+export type TeamItem = {
+  id: UUID;
+  name: string;
+  driveId: UUID | null;
+  memberCount: number;
+  myLevel: TeamLevel | null;
+};
+
+export type TeamsResponse = { items: TeamItem[] };
+export type CreateTeamInput = { name: string };
+export type CreatedTeam = { id: UUID; name: string; driveId: UUID; createdAt: ISODateTime };
+
+export type TeamMemberItem = {
+  userId: UUID;
+  fullName: string;
+  email: string;
+  level: TeamLevel;
+  joinedAt: ISODateTime;
+};
+
+export type TeamMembersResponse = { items: TeamMemberItem[] };
+export type AddTeamMemberInput = { userId: UUID; level: TeamLevel };
+export type ChangeTeamMemberLevelInput = { level: TeamLevel };
+
 export type FolderListResponse = {
   drive: PersonalDrive;
   items: Folder[];
