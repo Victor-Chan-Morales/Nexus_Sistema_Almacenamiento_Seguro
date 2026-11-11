@@ -13,6 +13,7 @@ import { Session } from '../src/modules/iam/entities/session.entity';
 import { EmailOutboxService } from '../src/modules/iam/services/email-outbox.service';
 import { EmailVerificationService } from '../src/modules/iam/services/email-verification.service';
 import { RegistrationHooks } from '../src/modules/iam/registration-hooks';
+import { EmailDomainChecker } from '../src/modules/iam/ports/email-domain-checker';
 import { VerificationMailer } from '../src/modules/iam/ports/verification-mailer';
 
 /** Captura el token que normalmente viajaría por correo (en producción solo está en el email). */
@@ -46,6 +47,8 @@ describe('IAM (e2e) — contrato CONTRACTS.md v0.4', () => {
   let dataSource: DataSource;
   let jwt: JwtService;
   const mailer = new FakeEmailService();
+  const emailDomains = { check: jest.fn().mockResolvedValue('deliverable') };
+  const previousDomainSetting = process.env.IAM_CHECK_EMAIL_DOMAIN;
   const stamp = Date.now();
   const emailOf = (n: string) => `iam.${n}.${stamp}@example.com`;
   const body = (email: string, org = `Org ${email}`) => ({
@@ -57,9 +60,12 @@ describe('IAM (e2e) — contrato CONTRACTS.md v0.4', () => {
 
   beforeAll(async () => {
     process.env.IAM_REQUIRE_VERIFIED_EMAIL = 'true';
+    process.env.IAM_CHECK_EMAIL_DOMAIN = 'true';
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(VerificationMailer)
       .useValue(mailer)
+      .overrideProvider(EmailDomainChecker)
+      .useValue(emailDomains)
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -74,6 +80,8 @@ describe('IAM (e2e) — contrato CONTRACTS.md v0.4', () => {
   });
 
   afterAll(async () => {
+    if (previousDomainSetting === undefined) delete process.env.IAM_CHECK_EMAIL_DOMAIN;
+    else process.env.IAM_CHECK_EMAIL_DOMAIN = previousDomainSetting;
     await app.close();
   });
 
@@ -92,6 +100,24 @@ describe('IAM (e2e) — contrato CONTRACTS.md v0.4', () => {
     return raw;
   };
   const cookieHeader = (setCookie: string) => setCookie.split(';')[0];
+
+  it('rechaza un dominio sin correo en el registro y omite DNS en recuperación y reenvío', async () => {
+    const invalidEmail = 'sin-correo@nexus-no-mail.invalid';
+    emailDomains.check.mockClear().mockResolvedValueOnce('undeliverable');
+    const registered = await request(server()).post('/api/auth/register').send(body(invalidEmail)).expect(400);
+    expectErrorShape(registered, 'EMAIL_DOMAIN_INVALID');
+    expect(emailDomains.check).toHaveBeenCalledWith('nexus-no-mail.invalid');
+    expect(await dataSource.getRepository(User).findOneBy({ email: invalidEmail })).toBeNull();
+
+    emailDomains.check.mockClear();
+    for (const action of ['forgot-password', 'resend-verification']) {
+      const invalid = await request(server()).post(`/api/auth/${action}`).send({ email: invalidEmail });
+      const valid = await request(server()).post(`/api/auth/${action}`).send({ email: emailOf(action) });
+      expect(invalid.status).toBe(200);
+      expect(invalid.body).toEqual(valid.body);
+    }
+    expect(emailDomains.check).not.toHaveBeenCalled();
+  });
 
   async function registerAndVerify(n: string) {
     const email = emailOf(n);

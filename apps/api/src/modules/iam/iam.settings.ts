@@ -11,6 +11,11 @@ export class IamSettings {
     return this.config.get<string>('IAM_REQUIRE_VERIFIED_EMAIL') !== 'false';
   }
 
+  get checkEmailDomain(): boolean {
+    return this.config.get<string>('NODE_ENV') === 'production'
+      || this.config.get<string>('IAM_CHECK_EMAIL_DOMAIN') === 'true';
+  }
+
   get refreshCookie(): { secure: boolean; sameSite: 'lax' | 'strict' | 'none' } {
     const secure =
       (this.config.get<string>('COOKIE_SECURE') ?? String(process.env.NODE_ENV === 'production')) === 'true';

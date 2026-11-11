@@ -1,4 +1,15 @@
+import { Logger } from '@nestjs/common';
+import { IamErrors } from './iam.errors';
+import { EmailDomainChecker } from './ports/email-domain-checker';
+
 export const normalizeEmail = (email: string): string => email.trim().toLowerCase();
+
+export async function assertRecipientDomain(email: string, checker: EmailDomainChecker, logger: Logger): Promise<void> {
+  const domain = email.slice(email.lastIndexOf('@') + 1);
+  const verdict = await checker.check(domain);
+  if (verdict === 'undeliverable') throw IamErrors.invalidEmailDomain();
+  if (verdict === 'unknown') logger.warn(`No se pudo comprobar el dominio de correo ${domain}`);
+}
 
 export const addMinutes = (minutes: number): Date => new Date(Date.now() + minutes * 60_000);
 

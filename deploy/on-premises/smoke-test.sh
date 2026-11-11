@@ -14,15 +14,17 @@ directory=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 compose=(docker compose --project-directory "$directory" --env-file "$directory/.env" -f "$directory/docker-compose.yml")
 unset NEXUS_PUBLIC_HOST NEXUS_WEB_PORT NEXUS_API_PORT NEXUS_BIND_ADDRESS
 unset COMPOSE_PROJECT_NAME COMPOSE_ENV_FILES COMPOSE_FILE COMPOSE_PROFILES
-unset IAM_REQUIRE_VERIFIED_EMAIL MAIL_HOST
+unset IAM_REQUIRE_VERIFIED_EMAIL MAIL_HOST MAIL_TRANSPORT
 config=$("${compose[@]}" config --format json 2>/dev/null) || fail 'Revisa la configuración de la instalación.'
 web=$(jq -er '.services.api.environment.WEB_URL' <<<"$config")
 api=$(jq -er '.services.web.build.args.NEXT_PUBLIC_API_BASE_URL' <<<"$config")
 verify=$(jq -r '.services.api.environment.IAM_REQUIRE_VERIFIED_EMAIL' <<<"$config")
 smtp=$(jq -r '.services.api.environment.MAIL_HOST | length' <<<"$config")
+mail_transport=$(jq -r '.services.api.environment.MAIL_TRANSPORT' <<<"$config")
 unset config
 if [[ ${1:-} == --verify ]]; then verify=true; fi
-[[ $verify == false || $smtp != 0 ]] || fail 'Configura SMTP para comprobar la verificación de correo.'
+[[ $verify == false || $mail_transport == gmail-api || $smtp != 0 ]] ||
+  fail 'Configura Gmail API o SMTP para comprobar la verificación de correo.'
 email=${NEXUS_SMOKE_EMAIL:-}
 if [[ $verify == true && -z $email ]]; then
   fail 'Define NEXUS_SMOKE_EMAIL con un correo de prueba que pueda recibir el enlace.'
