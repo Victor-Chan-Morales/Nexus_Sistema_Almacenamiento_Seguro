@@ -34,8 +34,14 @@ describe('configuración de correo', () => {
     const service = new EmailService(serviceConfig({ ...config, WEB_URL: 'https://nexus.example.com' }));
     const send = jest.spyOn(service['transporter'], 'sendMail').mockResolvedValue({ messageId: 'fixture' });
     try {
-      await service.sendVerification('destino@example.com', 'Prueba', 'token-fixture');
-      expect(send).toHaveBeenCalledTimes(1);
+      await service.sendVerification('destino@example.com', 'Ana & <Prueba>', 'token-fixture');
+      const link = 'https://nexus.example.com/verificar-correo?token=token-fixture';
+      expect(send).toHaveBeenCalledWith(expect.objectContaining({
+        subject: 'Verifica tu correo en Nexus',
+        text: expect.stringContaining(link),
+        html: expect.stringContaining(`href="${link}"`),
+      }));
+      expect(send.mock.calls[0][0].html).toContain('Ana &amp; &lt;Prueba&gt;');
       expect(log.mock.calls).toEqual([['Correo de verificación enviado']]);
     } finally {
       log.mockRestore();
