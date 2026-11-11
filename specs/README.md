@@ -6,6 +6,7 @@
 > - **Contratos:** `CONTRACTS.md`. Cada spec nueva agrega sus rutas a la sección **v0.6** antes de programar.
 > - **Numeración de requisitos:** la de la propuesta (RF-001…RF-016, RNF-001…RNF-011). Lo que exige el curso y la propuesta no numera se cita como "Curso §4.1/§4.2".
 > - **Estado:** el coordinador aprobó las specs pendientes el 2026-11-04. Aún no tienen responsable asignado, salvo las que ya lo indicaban.
+> - **Implementación:** la columna Estado refleja lo fusionado en `origin/main` (commit `8da4b0c`, verificado el 2026-11-10). Lo que solo existe en ramas sin fusionar no se marca como hecho.
 
 ---
 
@@ -68,8 +69,8 @@ Todas siguen el flujo normal de aprobación y fusión.
 | `SPEC-002` | ADR-006: cifrado `node:crypto` AES-256-GCM | N1 | RF-004, RF-005, RNF-003 | — | — | ✅ Hecho |
 | `SPEC-003` | Integración continua (GitHub Actions) | N1 | Calidad | — | — | ✅ Hecho |
 | `SPEC-004` | [Alinear los documentos con el alcance final](004-alinear-alcance-final.md) | N1 | Gobernanza | P1 | — | ✅ Hecho |
-| `SPEC-005` | [Rotación de llaves](005-rotacion-llaves.md) | N2 | RF-005 | P1 | 006, 802 | Aprobada |
-| `SPEC-006` | [Pruebas del cifrado](006-pruebas-cifrado.md) | N1 | RF-004, RF-005, RNF-003 | P1 | 004 | Aprobada |
+| `SPEC-005` | [Rotación de llaves](005-rotacion-llaves.md) | N2 | RF-005 | P1 | 006, 802 | ✅ Hecho |
+| `SPEC-006` | [Pruebas del cifrado](006-pruebas-cifrado.md) | N1 | RF-004, RF-005, RNF-003 | P1 | 004 | ✅ Hecho |
 
 ## 1xx: IAM, Roles y Miembros
 
@@ -82,14 +83,14 @@ Todas siguen el flujo normal de aprobación y fusión.
 | `SPEC-105` | Frontend: recuperar contraseña | N1 | Curso §4.1 | — | — | ✅ Hecho |
 | `SPEC-106` | Frontend: miembros en `/configuracion` | N1 | RF-003 | — | — | ✅ Hecho |
 | `SPEC-107` | Revocar sesiones al cambiar contraseña | — | — | — | — | ⤵ Absorbida por SPEC-103 |
-| `SPEC-108` | [Administrar miembros: backend](108-administrar-miembros.md) | N2 | RF-003 | P1 | 004 | Aprobada |
-| `SPEC-109` | [Administrar miembros: pantalla](109-frontend-administrar-miembros.md) | N1 | RF-003 | P1 | 108 | Aprobada |
-| `SPEC-112` | [Bloqueo progresivo por intentos fallidos](112-bloqueo-intentos-fallidos.md) | N2 | Riesgos §16 | P1 | 004 | Aprobada |
+| `SPEC-108` | [Administrar miembros: backend](108-administrar-miembros.md) | N2 | RF-003 | P1 | 004 | ✅ Hecho |
+| `SPEC-109` | [Administrar miembros: pantalla](109-frontend-administrar-miembros.md) | N1 | RF-003 | P1 | 108 | ✅ Hecho |
+| `SPEC-112` | [Bloqueo progresivo por intentos fallidos](112-bloqueo-intentos-fallidos.md) | N2 | Riesgos §16 | P1 | 004 | ✅ Hecho |
 | `SPEC-113` | [Editar perfil y cambiar contraseña](113-perfil-cambiar-contrasena.md) | N2 | RF-001, Curso §4.1 | P2 | 601 | ✅ Hecho |
-| `SPEC-114` | [Eliminar empresa (bloquear y conservar)](114-eliminar-empresa.md) | N2 | Administración §8 | P1 | 108 | Aprobada |
-| `SPEC-115` | [Correos informativos en Mailpit](115-correos-mailpit.md) | N2 | Curso §4.1 | P2 | 108, 114 | Aprobada |
+| `SPEC-114` | [Eliminar empresa (bloquear y conservar)](114-eliminar-empresa.md) | N2 | Administración §8 | P1 | 108 | ✅ Hecho |
+| `SPEC-115` | [Correos informativos en Mailpit](115-correos-mailpit.md) | N2 | Curso §4.1 | P2 | 108, 114 | ✅ Hecho |
 | `SPEC-116` | [Reenviar el correo de verificación](116-reenviar-verificacion.md) | N2 | RF-001, Curso §4.1 | P1 | 004 | ✅ Hecho |
-| `SPEC-117` | [Correo real con la API de Gmail](117-correo-real-dominio-autenticado.md) | N2 | RF-001, Curso §4.1 | P1 | 103, 108 | Aprobada |
+| `SPEC-117` | [Correo real con la API de Gmail](117-correo-real-dominio-autenticado.md) | N2 | RF-001, Curso §4.1 | P1 | 103, 108 | ✅ Hecho |
 
 ## 2xx: Archivos, Versiones, Enlaces y Equipos
 
@@ -105,19 +106,19 @@ Todas siguen el flujo normal de aprobación y fusión.
 | `SPEC-208` | [Descargar carpeta en ZIP](208-descargar-carpeta-zip.md) | N2 | Usabilidad | P3 | 221 | Aprobada |
 | `SPEC-209` | [Crear, listar y revocar enlaces](209-enlaces-compartidos.md) | N2 | RF-010, RF-011 | P1 | 206 | ✅ Hecho |
 | `SPEC-210` | [Descargar y restaurar una versión](210-descargar-restaurar-version.md) | N2 | RF-008 | P1 | 206, 207 | ✅ Hecho |
-| `SPEC-211` | [Renombrar y mover: backend](211-renombrar-mover.md) | N2 | RF-007 | P2 | 221, 224 | Aprobada |
-| `SPEC-212` | [Renombrar y mover: pantalla](212-frontend-renombrar-mover.md) | N1 | RF-007 | P2 | 211 | Aprobada |
+| `SPEC-211` | [Renombrar y mover: backend](211-renombrar-mover.md) | N2 | RF-007 | P2 | 221, 224 | ✅ Hecho |
+| `SPEC-212` | [Renombrar y mover: pantalla](212-frontend-renombrar-mover.md) | N1 | RF-007 | P2 | 211 | ⚠️ Parcial (falta mover) |
 | `SPEC-213` | [Búsqueda global por nombre](213-busqueda-global.md) | N1 | RF-007 | P2 | 221 | Aprobada |
-| `SPEC-214` | [Arrastrar y soltar e íconos por tipo](214-arrastrar-iconos.md) | N1 | UI/UX §8 | P1 | — | Aprobada |
-| `SPEC-215` | [Purga automática a los 30 días](215-purga-automatica.md) | N2 | RF-009, RF-013 | P1 | 221, 407 | Aprobada |
-| `SPEC-216` | [Acceso público al enlace](216-acceso-publico-enlace.md) | N2 | RF-010, RF-011, RF-012 | P1 | 209, 210, 407 | Aprobada |
+| `SPEC-214` | [Arrastrar y soltar e íconos por tipo](214-arrastrar-iconos.md) | N1 | UI/UX §8 | P1 | — | ✅ Hecho |
+| `SPEC-215` | [Purga automática a los 30 días](215-purga-automatica.md) | N2 | RF-009, RF-013 | P1 | 221, 407 | ✅ Hecho |
+| `SPEC-216` | [Acceso público al enlace](216-acceso-publico-enlace.md) | N2 | RF-010, RF-011, RF-012 | P1 | 209, 210, 407 | ✅ Hecho |
 | `SPEC-217` | [Pantallas de compartir](217-frontend-compartir.md) | N1 | RF-010, RF-011 | P1 | 209, 216 | ✅ Hecho |
-| `SPEC-218` | [Nombres de carpeta únicos](218-nombres-carpeta-unicos.md) | N2 | RF-007 | P1 | 221 | Aprobada |
+| `SPEC-218` | [Nombres de carpeta únicos](218-nombres-carpeta-unicos.md) | N2 | RF-007 | P1 | 221 | ✅ Hecho |
 | `SPEC-220` | [Equipos y sus miembros](220-equipos-miembros.md) | N2 | RF-006, RF-003 | P1 | 221 | ✅ Hecho |
 | `SPEC-221` | [Centralizar el acceso a Drives](221-acceso-drive.md) | N2 | RF-006, RF-007, RF-003 | P1 | 006 | ✅ Hecho |
-| `SPEC-222` | [Drive de equipo: lectura](222-drive-equipo-lectura.md) | N2 | RF-006 | P1 | 220, 209, 210 | Aprobada |
-| `SPEC-223` | [Pantallas de equipos](223-frontend-equipos.md) | N1 | RF-006 | P1 | 224 | Aprobada |
-| `SPEC-224` | [Drive de equipo: edición](224-drive-equipo-edicion.md) | N2 | RF-006, RF-009 | P1 | 222 | Aprobada |
+| `SPEC-222` | [Drive de equipo: lectura](222-drive-equipo-lectura.md) | N2 | RF-006 | P1 | 220, 209, 210 | ✅ Hecho |
+| `SPEC-223` | [Pantallas de equipos](223-frontend-equipos.md) | N1 | RF-006 | P1 | 224 | ✅ Hecho |
+| `SPEC-224` | [Drive de equipo: edición](224-drive-equipo-edicion.md) | N2 | RF-006, RF-009 | P1 | 222 | ✅ Hecho |
 
 ## 3xx: Facturación
 
@@ -127,9 +128,9 @@ Todas siguen el flujo normal de aprobación y fusión.
 | `SPEC-302` | Renovación | N2 | RF-013, Curso §4.2 | — | — | ✅ Hecho |
 | `SPEC-303` | Frontend: historial y "Renovar" | N1 | RF-013, Curso §4.2 | — | — | ✅ Hecho |
 | `SPEC-304` | Bloqueo de reducción de plan por espacio ocupado | — | RF-013 | — | — | ✅ Cubierta |
-| `SPEC-305` | [Pago simulado con tarjetas de prueba](305-pago-simulado-tarjetas.md) | N2 | RF-013, Curso §4.2 | P1 | 004 | Aprobada |
-| `SPEC-306` | [Comprobantes descargables](306-comprobantes.md) | N1 | RF-013, Curso §4.2 | P2 | 305 | Aprobada |
-| `SPEC-307` | [Comparativa de planes](307-comparativa-planes.md) | N1 | RF-013, Curso §4.2 | P2 | — | Aprobada |
+| `SPEC-305` | [Pago simulado con tarjetas de prueba](305-pago-simulado-tarjetas.md) | N2 | RF-013, Curso §4.2 | P1 | 004 | ✅ Hecho |
+| `SPEC-306` | [Comprobantes descargables](306-comprobantes.md) | N1 | RF-013, Curso §4.2 | P2 | 305 | ✅ Hecho |
+| `SPEC-307` | [Comparativa de planes](307-comparativa-planes.md) | N1 | RF-013, Curso §4.2 | P2 | — | ✅ Hecho |
 
 ## 4xx: Auditoría
 
@@ -138,19 +139,19 @@ Todas siguen el flujo normal de aprobación y fusión.
 | `SPEC-401` | Servicio base de auditoría | N2 | RF-012, RNF-007 | — | — | ✅ Hecho |
 | `SPEC-402` | `GET /audit/events` | N1 | RF-012 | — | — | ✅ Hecho |
 | `SPEC-403` | Frontend: pantalla de auditoría | N1 | RF-012 | — | — | ✅ Hecho |
-| `SPEC-404` | [Verificar la cadena de auditoría](404-verificar-cadena-auditoria.md) | N2 | RNF-007, RF-012 | P1 | 407 | Aprobada |
+| `SPEC-404` | [Verificar la cadena de auditoría](404-verificar-cadena-auditoria.md) | N2 | RNF-007, RF-012 | P1 | 407 | ✅ Hecho |
 | `SPEC-405` | Enganches de auditoría | N1 | RF-012, RNF-007 | — | — | ✅ Hecho |
 | `SPEC-406` | [Filtros y exportación](406-filtros-exportacion-auditoria.md) | N2 | RF-012 | P2 | 407 | Aprobada |
-| `SPEC-407` | [Actores y resultados de auditoría](407-actores-auditoria.md) | N2 | RF-012, RNF-007 | P1 | 004 | Aprobada |
+| `SPEC-407` | [Actores y resultados de auditoría](407-actores-auditoria.md) | N2 | RF-012, RNF-007 | P1 | 004 | ✅ Hecho |
 
 ## 5xx: Super Admin
 
 | ID | Especificación | Nivel | Requisitos | Prioridad | Dependencias | Estado |
 |---|---|:---:|---|:---:|---|:---:|
-| `SPEC-501` | [Identidad y consultas](501-super-admin-identidad.md) | N2 | RF-016 | P1 | 004 | Aprobada |
-| `SPEC-502` | [Panel con datos reales](502-frontend-super-admin.md) | N1 | RF-016 | P1 | 501, 503 | Aprobada |
-| `SPEC-503` | [Acciones de plataforma e instalaciones](503-acciones-plataforma.md) | N2 | RF-016, RF-015 | P1 | 501, 803 | Aprobada |
-| `SPEC-504` | [Editar catálogo de planes](504-editar-planes.md) | N2 | RF-016 | P2 | 501, 502 | Aprobada |
+| `SPEC-501` | [Identidad y consultas](501-super-admin-identidad.md) | N2 | RF-016 | P1 | 004 | ✅ Hecho |
+| `SPEC-502` | [Panel con datos reales](502-frontend-super-admin.md) | N1 | RF-016 | P1 | 501, 503 | ✅ Hecho |
+| `SPEC-503` | [Acciones de plataforma e instalaciones](503-acciones-plataforma.md) | N2 | RF-016, RF-015 | P1 | 501, 803 | ✅ Hecho |
+| `SPEC-504` | [Editar catálogo de planes](504-editar-planes.md) | N2 | RF-016 | P2 | 501, 502 | ✅ Hecho |
 
 > Hasta SPEC-502, `/dashboard/super-admin` es una maqueta con cifras inventadas que cualquier sesión puede abrir.
 
@@ -158,11 +159,11 @@ Todas siguen el flujo normal de aprobación y fusión.
 
 | ID | Especificación | Nivel | Requisitos | Prioridad | Dependencias | Estado |
 |---|---|:---:|---|:---:|---|:---:|
-| `SPEC-601` | [Perfil con datos reales](601-frontend-perfil-usuario.md) | N1 | RF-001 | P2 | — | Aprobada |
-| `SPEC-602` | [Avisos y estados de carga](602-avisos-estados-carga.md) | N0 | RNF-009 | P2 | — | Aprobada |
+| `SPEC-601` | [Perfil con datos reales](601-frontend-perfil-usuario.md) | N1 | RF-001 | P2 | — | ✅ Hecho |
+| `SPEC-602` | [Avisos y estados de carga](602-avisos-estados-carga.md) | N0 | RNF-009 | P2 | — | ✅ Hecho |
 | `SPEC-603` | [Accesibilidad](603-accesibilidad.md) | N1 | RNF-008, RNF-009 | P3 | — | Aprobada |
-| `SPEC-605` | [Pulido de login y landing](605-pulido-login-landing.md) | N0 | RNF-009 | P2 | — | Aprobada |
-| `SPEC-606` | [Retirar restos de demostración](606-retirar-demostracion.md) | N1 | Regla 11 | P2 | 502, 601, 307 | Aprobada |
+| `SPEC-605` | [Pulido de login y landing](605-pulido-login-landing.md) | N0 | RNF-009 | P2 | — | ✅ Hecho |
+| `SPEC-606` | [Retirar restos de demostración](606-retirar-demostracion.md) | N1 | Regla 11 | P2 | 502, 601, 307 | ✅ Hecho |
 
 ## 8xx: Destinos y despliegue
 
@@ -172,9 +173,9 @@ Todas siguen el flujo normal de aprobación y fusión.
 | `SPEC-802` | [Administrar destinos](802-administrar-destinos.md) | N2 | RF-014, RF-015 | P1 | 801 | ✅ Hecho |
 | `SPEC-803` | [Elegir Nube, Local o Híbrido](803-elegir-modelo-despliegue.md) | N2 | RF-014, RF-015 | P1 | 802 | ✅ Hecho |
 | `SPEC-804` | [Pantalla de almacenamiento](804-frontend-almacenamiento.md) | N2 | RF-014 | P1 | 803 | ✅ Hecho |
-| `SPEC-805` | [Instalación on-premises en un comando](805-instalacion-on-premises.md) | N2 | RF-015, RNF-010 | P1 | 801 | Aprobada |
+| `SPEC-805` | [Instalación on-premises en un comando](805-instalacion-on-premises.md) | N2 | RF-015, RNF-010 | P1 | 801 | ✅ Hecho |
 | `SPEC-806` | [HTTPS y cabeceras de seguridad](806-https-cabeceras.md) | N2 | RNF-002, RNF-011 | P1 | 805 | Aprobada |
-| `SPEC-807` | [Conexión a PostgreSQL con SSL y puerto](807-conexion-postgres-ssl.md) | N2 | RNF-002, RNF-010 | P1 | — | Aprobada |
+| `SPEC-807` | [Conexión a PostgreSQL con SSL y puerto](807-conexion-postgres-ssl.md) | N2 | RNF-002, RNF-010 | P1 | — | ✅ Hecho |
 
 ---
 
