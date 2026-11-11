@@ -52,6 +52,7 @@ function ShellFrame({ active, children, superAdmin, requireSuperAdmin, name, ema
       <p className="nav-caption">{superAdmin ? "ADMINISTRACIÓN DE PLATAFORMA" : "ESPACIO DE TRABAJO"}</p>
       <nav className="side-nav" aria-label="Navegación principal">
         {items.map(([icon, label, href]) => <Link key={href} href={href} aria-current={active === href || pathname.startsWith(`${href}/`) ? "page" : undefined}><span className="nav-icon"><UiIcon name={icon} size={17} /></span>{label}</Link>)}
+        {!superAdmin && session?.isSuperAdmin && <Link href="/dashboard/super-admin"><span className="nav-icon"><UiIcon name="organizations" size={17} /></span>Consola de plataforma</Link>}
       </nav>
       <div className="sidebar-bottom"><Link href="/perfil" className="sidebar-account-link" aria-label="Ver mi perfil"><span className="avatar">{initials}</span><span><strong>{name}</strong><small>{roleLabels[role] ?? role}</small></span></Link><button className="icon-button" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={async () => { await signOut(); router.push("/login"); }}><UiIcon name="logout" size={17} /></button></div>
     </aside>
